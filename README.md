@@ -1,0 +1,2 @@
+# abacus
+Personal budget app

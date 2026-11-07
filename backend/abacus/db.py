@@ -7,8 +7,10 @@ DATABASE_URL = database_url()
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 Session = sessionmaker(engine, expire_on_commit=False)
 
+
 class Base(DeclarativeBase):
     pass
+
 
 def session():
     with Session() as db:

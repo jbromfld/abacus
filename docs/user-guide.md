@@ -468,10 +468,11 @@ available; without it, only monthly budget impact is calculated.
 ### Web research and trip funding
 
 Configure your own Brave key as described in [Operations](operations.md#optional-local-model-and-web-research).
-**Use current web research** becomes available. Use **Public research topic** to
-supply travel-only terms, or let the app extract them from your latest trip request.
-Queries exclude database financial details; the sent search terms are shown with
-the reply. Research provides excerpts, clickable sources/retrieval dates, missing
+**Use current web research** becomes available but defaults off. Enter a
+**Public research topic** with travel details only, select **Preview public searches**,
+and approve the displayed terms before asking. Editing the topic clears approval.
+The preview does not contact Brave; only an approved request searches. Chat and
+history never become search queries. The sent terms are also shown with the reply. Research provides excerpts, clickable sources/retrieval dates, missing
 details, and partial/failure labels. It does not verify exact-date availability or
 book anything. Confirm dates, traveler counts, departure airports, currency,
 accommodation preferences, fees, and estimates before relying on a trip plan.
@@ -520,3 +521,12 @@ for retry and do not change financial records. See [timeout troubleshooting](ope
 
 All notices remain inside the app. There are no email, push, OS notifications, bank
 connections, automatic transfers, booking tools, or watched-folder imports.
+
+### Review recovery and large date ranges
+
+Retrying PDF extraction with existing review rows asks before replacing edits.
+Failed extraction retains saved edits; successful re-extraction replaces them.
+Normal transaction lists omit statement source text. Import review retains the
+original descriptions and page references for inspection. Dates must fall in
+1900–9998. Expense breakdown ranges may cover at most 120 calendar months; narrow
+the range for longer histories.

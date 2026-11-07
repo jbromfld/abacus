@@ -11,7 +11,7 @@ extraction and Budget advisor; Brave adds optional public web research.
 | [Operations](operations.md) | Configuration, upgrades, backups, testing, and troubleshooting |
 | [API reference](api.md) | All `/api` endpoints, conventions, examples, and import lifecycle |
 | [Classification and training](../training/README.md) | Matching precedence, exports, and the future classifier stub |
-| [Detailed feature notes](../README.md#planning-rules) | Implementation details and edge cases |
+| [Detailed feature notes](user-guide.md) | Implementation details and edge cases |
 
 ## Find a feature
 
@@ -39,6 +39,8 @@ extraction and Budget advisor; Brave adds optional public web research.
 | Database credentials, Ollama, Brave, and timezone | [Configuration](operations.md#configuration) |
 | Start after reboot/login; start/stop/restart and logs | [Automatic macOS startup](operations.md#automatic-startup-on-macos) |
 | Recovery, missing data, timeouts, and matching problems | [Troubleshooting](operations.md#troubleshooting) |
+
+See [pre-merge review fixes and verification](review-fixes.md) for the current hardening work and migration 0012.
 
 ## Keeping documentation current
 

@@ -12,7 +12,7 @@ requirements, enum values, and validation responses for the running version.
 - Money is an integer in currency minor units: USD 200.00 is `20000`, JPY 200 is `200`.
   Transaction/recurring/purchase amounts must be positive; refunds use a positive
   amount with kind `refund`. Savings, floors, observations, and guides allow zero.
-- Months are `YYYY-MM`; dates are `YYYY-MM-DD`. Valid month years are 1900–9998.
+- Months are `YYYY-MM`; dates are `YYYY-MM-DD`. Valid month and transaction-date years are 1900–9998.
   End months/date ranges are inclusive. Annual paid periods use `YYYY` instead.
 - Repeat list parameters, e.g. `?end=2026-12&category_ids=ID1&category_ids=ID2`.
 - Most creates return 201. Deletes return `{"ok":true}`. List endpoints return arrays;
@@ -35,6 +35,7 @@ the existing values. Use dedicated PATCH endpoints where provided.
 | PUT | `/api/settings` | `currency`, `model`, `advisor_enabled`, optional `reserve_alerts_enabled`, `reserve_checkpoint_day` (1–31) |
 | GET | `/api/models` | Installed local model names and connection error text |
 | GET | `/api/advisor/research-status` | Brave availability/status, without exposing the key |
+| POST | `/api/advisor/research-preview` | `{topic}` prepares public queries and a confirmation value; no outbound request |
 | POST | `/api/advisor/chat` | Read-only question with fresh budget context; described below |
 
 Changing currency is rejected once financial/planning data locks it. Enabling the
@@ -228,7 +229,8 @@ characters). Optional fields:
 | `monthly_bill` or `bill_estimate_id` | Structured monthly payment or saved estimate; exclusive with purchase scenarios |
 | `savings` | Explicit opening snapshot override for this request |
 | `use_web` | Enable optional Brave research; default false at the API |
-| `research_topic` | Public travel-only search terms, up to 1,000 characters |
+| `research_topic` | Required explicit public topic when using web research; chat/history never supply it |
+| `research_confirmation` | Confirmation from `/advisor/research-preview` for this exact topic and query plan; required before outbound search |
 | `planning:{available_savings,monthly_buffer}` | Optional separate trip-funding assumptions |
 
 The response is `{reply,context}`. Context includes monthly forecasts, recent
@@ -285,3 +287,25 @@ Errors normally use JSON `detail`; validation errors can be a list rather than a
 string. Background processing failure appears in the import's `status`/`error`,
 not as a committed partial result. Read the response before retrying; already
 committed imports/conversions cannot be blindly committed a second time.
+
+## Bulk reads and provenance
+
+`GET /api/forecasts?start=YYYY-MM&months=12` returns 1–24 consecutive monthly
+forecasts with actual totals. The ending month must remain within 1900–9998.
+`GET /api/trends` uses fixed-count aggregate reads; it returns forecast and actual
+amounts separately. Expense breakdown accepts at most 120 inclusive calendar months,
+returning 422 for a longer range before loading financial data.
+
+`GET /api/transactions` returns compact display records; `provenance` contains only
+the generated ACH marker, if present. `GET /api/transactions/{id}` returns full
+review provenance, expanding shared PDF page references on demand. PDF page text
+is stored once per import/page after commit; review and source details retain it.
+
+`POST /api/imports/{id}/process` accepts optional `{replace_review:true}`. Existing
+PDF review rows require this explicit replacement consent (409 otherwise). Failure
+preserves saved review rows. Job generation tokens prevent an older worker from
+writing over a newer attempt. Processing releases its DB connection during model calls.
+
+The dues response no longer includes the unused, always-empty `missing_monthly`
+and `missing_monthly_count` fields. Undated budget allowances continue to be omitted
+from payment-tracking lists.

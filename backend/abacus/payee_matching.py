@@ -1,11 +1,12 @@
 """Local, editable merchant matching configuration. No transaction data is changed."""
+
 import json
 import logging
-from pathlib import Path
 import re
 from difflib import SequenceMatcher
+from pathlib import Path
 
-CONFIG_PATH = Path(__file__).with_name('payee_matching.json')
+CONFIG_PATH = Path(__file__).with_name("payee_matching.json")
 
 
 def load_matching_config():
@@ -16,19 +17,19 @@ def load_matching_config():
     """
     try:
         data = json.loads(CONFIG_PATH.read_text())
-        threshold = float(data['fuzzy_threshold'])
-        margin = float(data['fuzzy_margin'])
+        threshold = float(data["fuzzy_threshold"])
+        margin = float(data["fuzzy_margin"])
         if not 0.8 <= threshold <= 1 or not 0 < margin <= 1:
-            raise ValueError('threshold must be 0.8–1 and margin must be >0–1')
+            raise ValueError("threshold must be 0.8–1 and margin must be >0–1")
         patterns = []
-        for entry in data['patterns']:
-            pattern = re.compile(entry['pattern'], re.IGNORECASE)
-            replacement = entry['replacement']
-            pattern.sub(replacement, '')  # Validate replacement backreferences too.
+        for entry in data["patterns"]:
+            pattern = re.compile(entry["pattern"], re.IGNORECASE)
+            replacement = entry["replacement"]
+            pattern.sub(replacement, "")  # Validate replacement backreferences too.
             patterns.append((pattern, replacement))
         return patterns, threshold, margin
     except (OSError, ValueError, TypeError, KeyError, re.error, IndexError) as exc:
-        logging.getLogger(__name__).warning('Payee matching config disabled: %s', exc)
+        logging.getLogger(__name__).warning("Payee matching config disabled: %s", exc)
         return [], 1.0, 1.0
 
 
@@ -42,7 +43,7 @@ def similar_category(payee, kind, groups, threshold, margin):
             continue
         if candidate.split()[0] != payee.split()[0]:
             continue
-        if re.findall(r'\d+', candidate) != re.findall(r'\d+', payee):
+        if re.findall(r"\d+", candidate) != re.findall(r"\d+", payee):
             continue
         score = SequenceMatcher(None, payee, candidate, autojunk=False).ratio()
         for category in categories:

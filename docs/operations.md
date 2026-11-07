@@ -4,7 +4,7 @@
 
 ## Install and run
 
-Use Python 3.11+, `uv`, Node.js 20.19+ or 22.12+, and local PostgreSQL. Ollama and a
+Use Python 3.11+, `uv`, Node.js 24 LTS or 26+, and local PostgreSQL. Ollama and a
 Brave key are optional. Run commands from the repository root unless noted.
 
 ```sh
@@ -186,8 +186,10 @@ timeout attribute is not a general import timeout setting.
 
 To add web research, obtain your own Brave Search API key, set it in `.env`, and
 refresh **Budget advisor → Travel research → Refresh connection**. Research becomes
-available and initially selected when a key is available; a reconciliation handoff
-explicitly starts with it off. Your selection remains under your control. Brave
+available but stays off by default. Enter an explicit public topic, choose
+**Preview public searches**, review the exact queries, and approve sending them
+to Brave. Changing the topic clears that approval. Private chat/history are never
+used to construct queries, even when no public topic is supplied. Brave
 usage/quota belongs to your account; no API key is bundled or exposed to the browser.
 
 There are at most three searches per researched turn, up to four results per query.
@@ -266,7 +268,13 @@ or tests at the personal budget database.
 createdb --host=127.0.0.1 --port=5432 --username=YOUR_DB_USER --password abacus_test
 export TEST_DATABASE_URL='postgresql+psycopg://YOUR_DB_USER:URL_ENCODED_PASSWORD@127.0.0.1:5432/abacus_test'
 DATABASE_URL="$TEST_DATABASE_URL" uv run alembic upgrade head
+DATABASE_URL="$TEST_DATABASE_URL" uv run alembic check
 uv run pytest -q
+uv run ruff check backend migrations scripts
+uv run ruff format --check backend migrations scripts
+npm run lint --prefix frontend
+npm run format:check --prefix frontend
+npm run test --prefix frontend
 npm run check --prefix frontend
 npm run build --prefix frontend
 ```
@@ -282,8 +290,14 @@ constraints.
 
 Manual release checks: narrow/short screens, keyboard forms and dialogs, chart
 reference tables, one reviewed CSV import/overlap, undo, a reserve balance update,
-and optional local-model smoke check. A successful build may include a Vite bundle
-size advisory; inspect performance separately if changing dependencies or chart code.
+and optional local-model smoke check. Historical charts and optional advisor/planner
+views load on demand; inspect bundle sizes when changing dependencies.
+
+GitHub Actions provisions an isolated PostgreSQL service, upgrades migrations, checks
+schema drift, and runs backend tests and all frontend checks above. A data-bearing
+migration regression also verifies PDF provenance survives downgrade/upgrade.
+The frontend `minimatch` override selects a patched glob parser (GHSA-g3hv-75wg-m249);
+keep it until the lint tools resolve a patched version themselves.
 
 Export reviewed labels for local experiments:
 

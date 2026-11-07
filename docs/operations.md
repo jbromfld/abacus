@@ -244,7 +244,7 @@ rather than putting a password into the command. A SQLAlchemy URL containing
 pg_dump --host=127.0.0.1 --port=5432 --username=YOUR_DB_USER --password \
   --format=custom --file=abacus-backup.dump abacus
 
-createdb --host=127.0.0.1 --port=5432 --username=YOUR_DB_USER --password abacus_restored
+createdb --host=127.0.0.1 --port=5432 --username=YOUR_DB_USER --password
 pg_restore --host=127.0.0.1 --port=5432 --username=YOUR_DB_USER --password \
   --no-owner --dbname=abacus_restored abacus-backup.dump
 ```

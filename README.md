@@ -21,7 +21,7 @@ uv sync
 cp .env.example .env
 # Edit HOST, PORT, USER, PASS, and DATABASE for your local PostgreSQL login.
 # If the database does not exist yet, create it with your local login:
-createdb --host=127.0.0.1 --port=5432 --username=YOUR_DB_USER --password abacus
+createdb --host=127.0.0.1 --port=5432 --username=YOUR_DB_USER --password
 uv run alembic upgrade head
 cd frontend
 npm ci

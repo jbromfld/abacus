@@ -11,6 +11,7 @@ Month = Annotated[str, StringConstraints(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"), Af
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
 Money = Annotated[int, Field(strict=True, gt=0, le=9_000_000_000_000)]
 Kind = Literal['purchase', 'refund', 'fee', 'payment', 'transfer']
+BillDate = Annotated[date, Field(ge=date(1900, 1, 1), le=date(9998, 12, 31))]
 
 class CategoryIn(BaseModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
@@ -30,12 +31,21 @@ class RecurringIn(BaseModel):
     category_id: str | None = None
     start_month: Month
     end_month: Month | None = None
+    due_day: int | None = Field(default=None, ge=1, le=31)
+    due_month: int | None = Field(default=None, ge=1, le=12)
+    payment_tracking_start: BillDate | None = None
     ach_enabled: bool = False
     ach_day: int | None = Field(default=None, ge=1, le=31)
     ach_start_month: Month | None = None
     ach_account_id: str | None = None
     @model_validator(mode='after')
     def valid(self):
+        if self.kind == 'receivable' and (self.due_day or self.due_month or self.payment_tracking_start):
+            raise ValueError('Due dates and payment tracking are available for payables only.')
+        if self.due_month and (self.frequency != 'annual' or not self.due_day):
+            raise ValueError('An annual due month requires an annual payable and a due day.')
+        if self.due_day and self.frequency == 'annual' and not self.due_month:
+            self.due_month = int(self.start_month[5:])
         if self.ach_enabled:
             if self.kind != 'payable' or self.frequency != 'monthly':
                 raise ValueError('Automatic ACH recording is available for monthly payables.')
@@ -49,6 +59,10 @@ class RecurringIn(BaseModel):
 
 class RecurringCreate(RecurringIn):
     amount: Money
+
+class BillPaymentIn(BaseModel):
+    paid: bool
+    paid_on: BillDate | None = None
 
 class ChangeIn(BaseModel):
     month: Month

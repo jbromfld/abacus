@@ -63,13 +63,66 @@ statement completeness verification.
 ## Planning rules
 
 - Each month is independent: forecast income minus recurring payables minus **included** purchase estimates. There is no opening balance or carry-forward.
-- Annual expenses are entered as yearly totals. **Distribute annual expense across 12 months** defaults on (including existing schedules), allocating the total monthly from the first active month. Uncheck it to count the full total only in that first month and its yearly anniversaries, for example for a digital subscription. This option appears for annual payables only; monthly entries and annual income ignore it. Changing the flag recalculates the entire forecast schedule, including earlier months, without changing recorded actual transactions. Integer rounding cents are distributed across the first months of each 12-month rate cycle so the allocations sum exactly to the yearly amount. Annual income still counts fully in its anniversary month. Optional final months are inclusive; for distributed expenses, a partial active year includes only its active monthly allocations.
+- Annual expenses are entered as yearly totals. **Distribute annual expense across 12 months** defaults on (including existing schedules), allocating the total monthly from the first active month. Uncheck it to count the full total only in the configured annual due month (or the first-month anniversary until configured), for example for a digital subscription. This option appears for annual payables only; monthly entries and annual income ignore it. Changing the flag recalculates the entire forecast schedule, including earlier months, without changing recorded actual transactions. Integer rounding cents are distributed across the first months of each 12-month rate cycle so the allocations sum exactly to the yearly amount. Annual income still counts fully in its anniversary month. Optional final months are inclusive; for distributed expenses, a partial active year includes only its active monthly allocations.
 - **Adjust amount** adds an ongoing default from a chosen month or an override for that month only. Overrides take precedence; later defaults preserve earlier months. You can remove changes except the initial default.
-- The first month is editable. Moving it changes the active forecast range and the annual allocation anchor or annual due month. Amount changes and overrides retain their calendar dates; a default amount is established at the new start using the applicable existing default (or the earliest known default when moving earlier). Changes outside the active range are retained but do not contribute to forecasts. Name/category/direction edits affect the schedule globally; use amount changes for historical amount preservation. For distributed annual expenses, amount changes remain yearly totals and establish a new monthly-allocation rate from their effective month; a one-month override uses only that month’s share of its entered annual total. For annual expenses counted in their due month, effective changes apply to the next due month; one-month overrides must select a due month and replace its full payment.
+- The first month is editable. Moving it changes the active forecast range and annual allocation anchor. For annual payments without a configured due month it also changes their anniversary month; explicitly configured due months remain independent. Amount changes and overrides retain their calendar dates; a default amount is established at the new start using the applicable existing default (or the earliest known default when moving earlier). Changes outside the active range are retained but do not contribute to forecasts. Name/category/direction edits affect the schedule globally; use amount changes for historical amount preservation. For distributed annual expenses, amount changes remain yearly totals and establish a new monthly-allocation rate from their effective month; a one-month override uses only that month’s share of its entered annual total. For annual expenses counted in their due month, effective changes apply to the next due month; one-month overrides must select a due month and replace its full payment.
 - Purchases start as drafts. Preview includes the selected purchase once without saving its inclusion status.
 - Actual spending is separate from forecasts: purchases and fees add spending, refunds subtract it, and payments/transfers contribute zero. All stored amounts are positive integer minor units. Use transaction dates, not statement periods, for monthly grouping.
 - Forecast deficits and actual spending above forecast income produce separate **in-app** alerts. No email, push, bank connections, or automatic payments.
 - USD, EUR, GBP, CAD, AUD, CHF use two decimal places; JPY uses none. One currency per budget, fixed after entries/imports exist. No currency conversion.
+
+## Upcoming bills and payment confirmations
+
+Overview replaces its recurring-account ledger with **Upcoming monthly bills**
+(today through 30 days from today, inclusive), **Overdue monthly bills**, and a
+separate **Annual expenses** panel for bills and budget allowances. These dates follow `APP_TIMEZONE` and today's
+calendar date, independently of the forecast month selected at the top. Due lists
+refresh every minute and when the app returns to the foreground.
+
+Edit a payable in **Recurring accounts** to set **Bill due day** and, for annual
+bills, **Annual bill due month**. These contractual dates are separate from the
+ACH debit day. Short months clamp days 29–31 to their final day. Existing schedules
+have no assumed due dates. Undated entries without ACH are budget allowances,
+not bills with missing information. Monthly allowances such as groceries, pets,
+and entertainment stay in the forecast without due-date prompts. Undated annual
+allowances such as medical copays show their annual budget and monthly allocation
+in Annual expenses, without payment controls. Their distribution setting remains
+editable in Recurring accounts. Receivables and purchase plans
+are excluded from these lists. Schedule start/end months still bound occurrences.
+
+**Track payments from** defaults to today when a due day is first configured.
+Choose an earlier date explicitly to include earlier unconfirmed bills. No overdue
+history is inferred before that boundary. Annual bills show their full yearly
+payment amount, including the due month's effective amount/override, regardless of
+monthly forecast distribution. All active annual schedules are listed separately,
+even when their next payment is within 30 days. Their oldest unconfirmed payment,
+overdue count, and next scheduled date are shown when applicable.
+
+For bills paid manually, use **Mark paid** to confirm an occurrence with a paid date no later than today;
+early payment is allowed. **Edit paid date** corrects that date, and **Mark unpaid**
+reverses the status. Confirmations retain their scheduled-date and amount snapshots
+in expandable history. Monthly confirmations cover a calendar month; annual ones
+cover a calendar year, so editing a bill's due date or amount does not erase an
+existing confirmation for that period.
+
+Paid status never creates, removes, or changes an actual-spending transaction.
+ACH bills do not require manual paid confirmation. Recorded scheduled ACH debits
+automatically show **Paid by ACH**; upcoming automatic occurrences show **Scheduled
+ACH**. If no contractual due day is set, the ACH debit day and recording start
+define the schedule. Automatic occurrences never appear as manually overdue.
+ACH status is derived from the existing recorded transaction, including its date
+and amount, without creating another transaction or confirmation. Disabling future
+ACH recording preserves the paid status of existing debits. Automatic payment rows
+have no Mark paid/Mark unpaid controls; correct their actual transaction or schedule
+if necessary. This reflects the local recorded schedule, not a bank confirmation.
+Imports and manual transactions do not infer paid status for manually paid bills. Annual payables counted entirely in one month use the configured due
+month for their forecast; until a due date is configured, their original first-month
+anniversary behavior remains. Distributed annual forecasts remain monthly.
+
+The API provides `GET /api/recurring/dues` and idempotent
+`PUT /api/recurring/{id}/payments/{period}` with `paid` and optional `paid_on`.
+Periods are `YYYY-MM` for monthly bills and `YYYY` for annual bills. No bank
+integration or external notifications are involved.
 
 ## Automatic ACH actual spending
 

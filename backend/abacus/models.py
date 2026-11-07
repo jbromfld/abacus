@@ -30,11 +30,14 @@ class Recurring(Base):
     category_id: Mapped[str | None] = mapped_column(ForeignKey("categories.id"))
     start_month: Mapped[str] = mapped_column(String(7))
     end_month: Mapped[str | None] = mapped_column(String(7))
+    due_day: Mapped[int | None] = mapped_column(Integer)
+    due_month: Mapped[int | None] = mapped_column(Integer)
+    payment_tracking_start: Mapped[date | None] = mapped_column(Date)
     ach_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     ach_day: Mapped[int | None] = mapped_column(Integer)
     ach_start_month: Mapped[str | None] = mapped_column(String(7))
     ach_account_id: Mapped[str | None] = mapped_column(ForeignKey('accounts.id'))
-    __table_args__ = (CheckConstraint("kind IN ('payable','receivable')"), CheckConstraint("frequency IN ('monthly','annual')"), CheckConstraint("kind != 'payable' OR category_id IS NOT NULL"))
+    __table_args__ = (CheckConstraint("kind IN ('payable','receivable')"), CheckConstraint("frequency IN ('monthly','annual')"), CheckConstraint("kind != 'payable' OR category_id IS NOT NULL"), CheckConstraint('due_day BETWEEN 1 AND 31', name='recurring_due_day_range'), CheckConstraint('due_month BETWEEN 1 AND 12', name='recurring_due_month_range'))
 
 class AmountChange(Base):
     __tablename__ = "amount_changes"
@@ -44,6 +47,16 @@ class AmountChange(Base):
     amount: Mapped[int] = mapped_column(BigInteger)
     override: Mapped[bool] = mapped_column(Boolean, default=False)
     __table_args__ = (UniqueConstraint("recurring_id", "month", "override"), CheckConstraint("amount > 0"))
+
+class BillPayment(Base):
+    __tablename__ = 'bill_payments'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    recurring_id: Mapped[str] = mapped_column(ForeignKey('recurring.id', ondelete='CASCADE'))
+    period: Mapped[str] = mapped_column(String(7))
+    due_date: Mapped[date] = mapped_column(Date)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    paid_on: Mapped[date | None] = mapped_column(Date)
+    __table_args__ = (UniqueConstraint('recurring_id', 'period'), CheckConstraint('amount > 0'))
 
 class Purchase(Base):
     __tablename__ = "purchases"

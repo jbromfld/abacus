@@ -9,16 +9,24 @@ def shift_month(month, delta):
     return f'{total // 12:04d}-{total % 12 + 1:02d}'
 
 
+def annual_due_month(item):
+    return f'{getattr(item, "due_month", None) or int(item.start_month[5:]):02d}' if item.kind == 'payable' else item.start_month[5:]
+
+
+def effective_change(item, changes, month):
+    applicable = [c for c in changes if c.recurring_id == item.id and ((c.override and c.month == month) or (not c.override and c.month <= month))]
+    overrides = [c for c in applicable if c.override]
+    defaults = [c for c in applicable if not c.override]
+    return overrides[0] if overrides else max(defaults, key=lambda c: c.month) if defaults else None
+
+
 def scheduled_amount(item, changes, month):
     if month < item.start_month or (item.end_month and month > item.end_month):
         return 0
     distribute = item.frequency == 'annual' and item.kind == 'payable' and item.distribute_annual
-    if item.frequency == 'annual' and not distribute and month[5:] != item.start_month[5:]:
+    if item.frequency == 'annual' and not distribute and month[5:] != annual_due_month(item):
         return 0
-    applicable = [c for c in changes if c.recurring_id == item.id and ((c.override and c.month == month) or (not c.override and c.month <= month))]
-    overrides = [c for c in applicable if c.override]
-    defaults = [c for c in applicable if not c.override]
-    change = overrides[0] if overrides else max(defaults, key=lambda c: c.month) if defaults else None
+    change = effective_change(item, changes, month)
     if change is None:
         return 0
     if not distribute:

@@ -3,7 +3,7 @@ export type Account = Category & {stale_alert_enabled:boolean;csv_mapping:Record
 export type PayeeRule = {id:string;payee:string;kind:string;category_id:string};
 export type Settings = {currency:string;model:string;advisor_enabled:boolean};
 export type Change = {id:string;month:string;amount:number;override:boolean};
-export type Recurring = {id:string;name:string;kind:'payable'|'receivable';frequency:'monthly'|'annual';distribute_annual:boolean;category_id:string|null;start_month:string;end_month:string|null;ach_enabled:boolean;ach_day:number|null;ach_start_month:string|null;ach_account_id:string|null;changes:Change[]};
+export type Recurring = {id:string;name:string;kind:'payable'|'receivable';frequency:'monthly'|'annual';distribute_annual:boolean;category_id:string|null;start_month:string;end_month:string|null;due_day:number|null;due_month:number|null;payment_tracking_start:string|null;ach_enabled:boolean;ach_day:number|null;ach_start_month:string|null;ach_account_id:string|null;changes:Change[]};
 export type Purchase = {id:string;name:string;amount:number;month:string;category_id:string;notes:string;included:boolean};
 export type Transaction = {id:string;date:string;description:string;amount:number;kind:string;category_id:string|null;account_id:string;import_id?:string;provenance?:{type?:string}};
 export type Forecast = {month:string;income:number;expenses:number;remaining:number;deficit:boolean;actual_deficit:boolean;actual:{expenses:number;status:string;marked_complete:boolean;transaction_count:number};lines:{id:string;name:string;kind:string;amount:number;category_id:string|null}[]};
@@ -31,3 +31,7 @@ export async function loadImport(id:string):Promise<ImportJob>{
  if(job.source.type==='csv'&&!job.source.mapping&&['prepared','review','failed','interrupted'].includes(job.status))return api<ImportJob>(`/imports/${id}/mapping/default`,'POST');
  return job;
 }
+
+export type BillOccurrence={recurring_id:string;period:string;name:string;category_id:string|null;due_date:string;amount:number;paid:boolean;paid_on:string|null;confirmed_due_date:string|null;ach_recorded:boolean;automatic:boolean;paid_source:'ach'|'manual'|null;status:'paid'|'overdue'|'today'|'upcoming'|'automatic'};
+export type AnnualBill={recurring_id:string;name:string;category_id:string|null;distribute_annual:boolean;missing_due_date:boolean;allowance:boolean;annual_amount:number;monthly_allocation:number|null;next:BillOccurrence|null;overdue:BillOccurrence[];overdue_count:number};
+export type DueSummary={today:string;through:string;monthly_upcoming:BillOccurrence[];monthly_overdue:BillOccurrence[];annual:AnnualBill[];missing_monthly:{recurring_id:string;name:string}[];missing_monthly_count:number;paid_history:BillOccurrence[]};

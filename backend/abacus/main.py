@@ -24,6 +24,10 @@ from .research import research_status
 from .card_alerts import account_information
 from .csv_profiles import apply_saved_mapping
 from .ach import record_due
+from .dues import due_settings, upcoming_dues, occurrence, automatic_occurrence, local_today
+from .models import BillPayment, RecurringDebit
+from .schemas import BillPaymentIn
+from .budget import annual_due_month
 from .imports import prepare_file, executor, process_import, validate_rows, available_models, csv_rows
 
 @asynccontextmanager
@@ -202,7 +206,7 @@ def create_recurring(data: RecurringCreate, db: DB):
     category(db, data.category_id)
     if data.ach_account_id:
         get(db, Account, data.ach_account_id)
-    item = Recurring(**data.model_dump(exclude={'amount'}))
+    item = Recurring(**due_settings(data))
     db.add(item); db.flush()
     db.add(AmountChange(recurring_id=item.id, month=item.start_month, amount=data.amount, override=False))
     db.commit()
@@ -212,6 +216,39 @@ def create_recurring(data: RecurringCreate, db: DB):
 @app.post('/api/recurring/record-due')
 def record_due_ach(db: DB):
     return {'added': record_due(db)}
+
+@app.get('/api/recurring/dues')
+def bill_dues(db: DB):
+    return upcoming_dues(db)
+
+@app.put('/api/recurring/{id}/payments/{period}')
+def confirm_bill_payment(id: str, period: str, data: BillPaymentIn, db: DB):
+    item = db.scalar(select(Recurring).where(Recurring.id == id).with_for_update())
+    if item is None:
+        raise HTTPException(404, 'Recurring account not found.')
+    if item.kind != 'payable':
+        raise HTTPException(422, 'Payment confirmations are for payables only.')
+    payment = db.scalar(select(BillPayment).where(BillPayment.recurring_id == id, BillPayment.period == period))
+    changes = db.scalars(select(AmountChange).where(AmountChange.recurring_id == id)).all()
+    row = occurrence(item, changes, period)
+    if not row and not payment:
+        raise HTTPException(422, 'Choose an occurrence within this bill’s active schedule and payment tracking period.')
+    if automatic_occurrence(item,period) or db.scalar(select(RecurringDebit.id).where(
+            RecurringDebit.recurring_id == id, RecurringDebit.month == period, RecurringDebit.transaction_id.is_not(None))):
+        raise HTTPException(409, 'ACH payments are tracked automatically from their recorded debits. Edit the actual transaction or ACH schedule instead.')
+    if data.paid and data.paid_on and data.paid_on > local_today():
+        raise HTTPException(422, 'The paid date cannot be in the future.')
+    if data.paid:
+        if payment is None:
+            payment = BillPayment(recurring_id=id, period=period, due_date=date.fromisoformat(row['due_date']), amount=row['amount'])
+            db.add(payment)
+        elif payment.paid_on is None and row:
+            payment.due_date, payment.amount = date.fromisoformat(row['due_date']), row['amount']
+        payment.paid_on = data.paid_on or payment.paid_on or local_today()
+    elif payment:
+        payment.paid_on = None
+    db.commit()
+    return {'recurring_id':id, 'period':period, 'paid':bool(payment and payment.paid_on), 'paid_on':payment.paid_on if payment else None}
 
 @app.put('/api/recurring/{id}')
 def edit_recurring(id: str, data: RecurringIn, db: DB):
@@ -232,7 +269,7 @@ def edit_recurring(id: str, data: RecurringIn, db: DB):
             baseline = earlier[-1] if earlier else defaults[0]
             db.add(AmountChange(recurring_id=id, month=data.start_month,
                                 amount=baseline.amount, override=False))
-    save(db, item, data.model_dump())
+    save(db, item, due_settings(data, item))
     record_due(db)
     return item
 
@@ -242,7 +279,7 @@ def change_amount(id: str, data: ChangeIn, db: DB):
     if data.month < item.start_month or (item.end_month and data.month > item.end_month):
         raise HTTPException(422, 'Choose a month within this schedule.')
     if (data.override and item.frequency == 'annual' and item.kind == 'payable'
-            and not item.distribute_annual and data.month[5:] != item.start_month[5:]):
+            and not item.distribute_annual and data.month[5:] != annual_due_month(item)):
         raise HTTPException(422, 'A one-month override for this annual expense must use its due month.')
     change = db.scalar(select(AmountChange).where(AmountChange.recurring_id == id, AmountChange.month == data.month, AmountChange.override == data.override))
     return save(db, change or AmountChange(recurring_id=id), data.model_dump())

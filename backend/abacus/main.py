@@ -28,6 +28,11 @@ from .dues import due_settings, upcoming_dues, occurrence, automatic_occurrence,
 from .models import BillPayment, RecurringDebit
 from .schemas import BillPaymentIn
 from .budget import annual_due_month
+from .models import BillEstimate
+from .schemas import BillEstimateIn, SavingsIn, SavingsProjectionIn
+from .savings import savings_settings, project_savings
+from .category_planning import category_averages
+from .schemas import CategoryGuideIn
 from .imports import prepare_file, executor, process_import, validate_rows, available_models, csv_rows
 
 @asynccontextmanager
@@ -105,7 +110,7 @@ def settings(db: DB):
 @app.put('/api/settings')
 def update_settings(data: SettingsIn, db: DB):
     setting = get(db, Settings, 1)
-    if setting.currency != data.currency and any(db.scalar(select(func.count()).select_from(model)) for model in (Recurring, Purchase, Transaction, StatementImport)):
+    if setting.currency != data.currency and (setting.savings_balance is not None or db.scalar(select(Category.id).where(Category.monthly_guide.is_not(None)).limit(1)) or any(db.scalar(select(func.count()).select_from(model)) for model in (Recurring, Purchase, Transaction, StatementImport, BillEstimate))):
         raise HTTPException(409, 'Currency is fixed once budget entries or imports exist.')
     if data.advisor_enabled and not data.model:
         raise HTTPException(422, 'Choose a local model before enabling Budget advisor.')
@@ -140,7 +145,12 @@ def advisor_chat(data: AdvisorIn, db: DB):
         raise HTTPException(422, 'Choose an installed local model in Settings.')
     if data.purchase_id:
         get(db, Purchase, data.purchase_id)
-    context = budget_context(db, data)
+    if data.bill_estimate_id:
+        get(db, BillEstimate, data.bill_estimate_id)
+    try:
+        context = budget_context(db, data)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
     model = setting.model
     # Release the read transaction before waiting for the optional local model.
     db.rollback()
@@ -155,10 +165,81 @@ def advisor_chat(data: AdvisorIn, db: DB):
         raise HTTPException(503, 'Cannot get a reply from local Ollama. Check that it is running and the selected model is installed. Your budget is unchanged.')
     return {'reply': reply, 'context': context}
 
+@app.get('/api/savings')
+def read_savings(db: DB):
+    return savings_settings(db)
+
+@app.put('/api/savings')
+def save_savings(data: SavingsIn, db: DB):
+    setting = get(db, Settings, 1)
+    setting.savings_balance, setting.savings_month, setting.savings_floor = data.amount, data.month, data.floor
+    db.commit()
+    return savings_settings(db)
+
+@app.post('/api/savings/projection')
+def preview_savings(data: SavingsProjectionIn, db: DB):
+    try:
+        return project_savings(db,data)
+    except LookupError as exc:
+        raise HTTPException(404,str(exc))
+    except ValueError as exc:
+        raise HTTPException(422,str(exc))
+
+@app.get('/api/bill-estimates')
+def bill_estimates(db: DB):
+    return db.scalars(select(BillEstimate).order_by(BillEstimate.start_month,BillEstimate.name)).all()
+
+@app.post('/api/bill-estimates',status_code=201)
+def create_bill_estimate(data: BillEstimateIn, db: DB):
+    get(db, Category, data.category_id)
+    return save(db,BillEstimate(),data.model_dump())
+
+@app.put('/api/bill-estimates/{id}')
+def edit_bill_estimate(id: str, data: BillEstimateIn, db: DB):
+    item = get(db,BillEstimate,id)
+    if item.included:
+        raise HTTPException(409,'This estimate has been added. Edit its recurring bill instead.')
+    get(db,Category,data.category_id)
+    return save(db,item,data.model_dump())
+
+@app.delete('/api/bill-estimates/{id}')
+def delete_bill_estimate(id: str, db: DB):
+    db.delete(get(db,BillEstimate,id));db.commit()
+    return {'ok':True}
+
+@app.post('/api/bill-estimates/{id}/include')
+def include_bill_estimate(id: str, db: DB):
+    item = db.scalar(select(BillEstimate).where(BillEstimate.id==id).with_for_update())
+    if item is None:
+        raise HTTPException(404,'Bill estimate not found.')
+    if item.included:
+        raise HTTPException(409,'This estimate has already been added to recurring bills.')
+    data = RecurringCreate(name=item.name,amount=item.amount,kind='payable',frequency='monthly',
+        category_id=item.category_id,start_month=item.start_month,end_month=item.end_month,due_day=item.due_day)
+    recurring = Recurring(**due_settings(data))
+    db.add(recurring);db.flush()
+    db.add(AmountChange(recurring_id=recurring.id,month=recurring.start_month,amount=item.amount,override=False))
+    item.included, item.recurring_id = True, recurring.id
+    db.commit()
+    return item
+
 
 @app.get('/api/categories')
 def categories(db: DB):
     return db.scalars(select(Category).order_by(Category.name)).all()
+
+@app.patch('/api/categories/{id}/guide')
+def category_guide(id: str, data: CategoryGuideIn, db: DB):
+    return save(db,get(db,Category,id),data.model_dump())
+
+@app.get('/api/spending/averages')
+def spending_averages(end: Month, db: DB, category_ids: Annotated[list[str] | None, Query()] = None):
+    for id in category_ids or []:
+        get(db,Category,id)
+    try:
+        return category_averages(db,end,category_ids)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc))
 
 @app.post('/api/categories', status_code=201)
 def create_category(data: CategoryIn, db: DB):

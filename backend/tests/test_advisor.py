@@ -109,3 +109,53 @@ def test_unknown_purchase_is_not_sent_to_model(client,db,monkeypatch):
     enable(db)
     monkeypatch.setattr('abacus.advisor.chat_with_model',lambda *args:pytest.fail('Unknown purchase reached model'))
     assert client.post('/api/advisor/chat',json=dict(month='2025-12',message='Question',purchase_id='missing')).status_code==404
+
+
+def test_reconciliation_compares_forecast_changes_not_actuals_or_drafts(client,category_id,account_id,db,monkeypatch):
+    from abacus.models import Category
+    from abacus.advisor import forecast_comparison
+    salary=client.post('/api/recurring',json=dict(name='Salary',kind='receivable',frequency='monthly',start_month='2026-01',amount=300000)).json()
+    bill=client.post('/api/recurring',json=dict(name='Card bill',kind='payable',frequency='monthly',start_month='2026-01',amount=280000,category_id=category_id)).json()
+    client.put('/api/recurring/'+bill['id']+'/amount',json=dict(month='2026-12',amount=290000))
+    client.put('/api/recurring/'+salary['id']+'/amount',json=dict(month='2026-12',amount=295000))
+    client.post('/api/recurring',json=dict(name='Annual subscription',kind='payable',frequency='annual',start_month='2026-01',amount=9367,distribute_annual=False,due_month=12,due_day=15,category_id=category_id))
+    client.post('/api/recurring',json=dict(name='Distributed tax',kind='payable',frequency='annual',start_month='2026-01',amount=12000,distribute_annual=True,category_id=category_id))
+    client.post('/api/purchases',json=dict(name='November purchase',amount=2000,month='2026-11',included=True,category_id=category_id))
+    client.post('/api/purchases',json=dict(name='Excluded draft',amount=99999,month='2026-12',category_id=category_id))
+    client.post('/api/transactions',json=dict(description='Private purchase',date='2026-12-02',amount=90000,kind='purchase',category_id=category_id,account_id=account_id))
+    db.get(Category,category_id).monthly_guide=99999;db.commit()
+    before=client.get('/api/forecast?month=2026-12').json()
+    result=forecast_comparison(db,'2026-12')
+    assert result['previous']==dict(income_minor=300000,expenses_minor=283000,remaining_minor=17000,income_recorded=True)
+    assert result['current']==dict(income_minor=295000,expenses_minor=300367,remaining_minor=-5367,income_recorded=True)
+    assert result['income_change_minor']==-5000 and result['expense_change_minor']==17367
+    assert result['remaining_change_minor']==-22367 and result['shortfall_minor']==5367
+    assert sum(c['remaining_impact_minor'] for c in result['changes'])==result['remaining_change_minor']
+    rows={c['name']:c for c in result['changes']}
+    assert set(rows)=={'Salary','Card bill','Annual subscription','November purchase'}
+    assert rows['Annual subscription']['frequency']=='annual' and not rows['Annual subscription']['annual_distributed']
+    assert rows['November purchase']['change']=='removed' and rows['November purchase']['source']=='included_purchase'
+    assert result['current_expense_categories']==[{'name':'Groceries','amount_minor':300367}]
+    enable(db);captured=[]
+    monkeypatch.setattr('abacus.advisor.chat_with_model',lambda model,messages:captured.append(messages) or 'Review the card bill increase and annual subscription.')
+    response=client.post('/api/advisor/chat',json={'month':'2026-12','message':'Help reconcile the deficit compared with November.'})
+    assert response.status_code==200,response.text
+    assert response.json()['context']['forecast_comparison']==result
+    sent=json.loads(captured[0][0]['content'].split('BUDGET SNAPSHOT:\n')[1])
+    assert sent['forecast_comparison']==result
+    assert 'already owed card bill' in captured[0][0]['content']
+    assert client.get('/api/forecast?month=2026-12').json()==before
+    assert db.scalar(select(func.count()).select_from(Transaction))==1
+
+
+def test_reconciliation_unchanged_deficit_and_year_boundary(client,category_id,db):
+    from abacus.advisor import forecast_comparison
+    client.post('/api/recurring',json=dict(name='Income',kind='receivable',frequency='monthly',start_month='2026-12',amount=10000))
+    client.post('/api/recurring',json=dict(name='Rent',kind='payable',frequency='monthly',start_month='2026-12',amount=15000,category_id=category_id))
+    result=forecast_comparison(db,'2027-01')
+    assert result['previous_month']=='2026-12'
+    assert result['changes']==[] and result['shortfall_minor']==5000
+    assert result['remaining_change_minor']==0
+    missing=forecast_comparison(db,'2026-12')
+    assert not missing['previous']['income_recorded']
+    assert missing['previous']['remaining_minor']==0

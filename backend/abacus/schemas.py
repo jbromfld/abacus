@@ -126,6 +126,66 @@ class PlanningAssumptions(BaseModel):
     monthly_buffer: Annotated[int, Field(strict=True, ge=0, le=9_000_000_000_000)] | None = None
 
 
+NonnegativeMoney = Annotated[int, Field(strict=True, ge=0, le=9_000_000_000_000)]
+
+class CategoryGuideIn(BaseModel):
+    monthly_guide: NonnegativeMoney | None = None
+
+class SavingsIn(BaseModel):
+    amount: NonnegativeMoney
+    month: Month
+    floor: NonnegativeMoney = 0
+
+class MonthlyBillScenario(BaseModel):
+    name: Name = 'Potential monthly bill'
+    amount: Money
+    start_month: Month
+    end_month: Month | None = None
+
+    @model_validator(mode='after')
+    def valid_range(self):
+        if self.end_month and self.end_month < self.start_month:
+            raise ValueError('The bill’s final month must follow its starting month.')
+        return self
+
+class BillEstimateIn(MonthlyBillScenario):
+    category_id: str
+    due_day: int | None = Field(default=None, ge=1, le=31)
+
+class RecurringChangeScenario(BaseModel):
+    recurring_id: str = Field(max_length=36)
+    action: Literal['modify', 'remove']
+    start_month: Month
+    end_month: Month | None = None
+    amount: Money | None = None
+
+    @model_validator(mode='after')
+    def valid_change(self):
+        if self.action == 'modify' and self.amount is None:
+            raise ValueError('Enter the new recurring amount.')
+        if self.action == 'remove' and self.amount is not None:
+            raise ValueError('A removal scenario does not take a replacement amount.')
+        if self.end_month and self.end_month < self.start_month:
+            raise ValueError('The final scenario month must follow its starting month.')
+        return self
+
+class SavingsProjectionIn(BaseModel):
+    savings: SavingsIn | None = None
+    start_month: Month | None = None
+    months: Literal[12, 24] = 24
+    bill: MonthlyBillScenario | None = None
+    estimate_id: str | None = Field(default=None, max_length=36)
+    recurring_change: RecurringChangeScenario | None = None
+
+    @model_validator(mode='after')
+    def valid_scenario(self):
+        if sum(value is not None for value in (self.bill,self.estimate_id,self.recurring_change)) > 1:
+            raise ValueError('Preview one new bill, estimate, or recurring change at a time.')
+        if self.savings is None and self.start_month is None:
+            raise ValueError('Choose a planning month or provide a savings snapshot.')
+        return self
+
+
 class AdvisorIn(BaseModel):
     month: Month
     use_web: bool = False
@@ -135,11 +195,18 @@ class AdvisorIn(BaseModel):
     history: list[AdvisorMessage] = Field(default_factory=list, max_length=12)
     purchase_id: str | None = Field(default=None, max_length=36)
     scenario: PurchaseScenario | None = None
+    savings: SavingsIn | None = None
+    monthly_bill: MonthlyBillScenario | None = None
+    bill_estimate_id: str | None = Field(default=None, max_length=36)
 
     @model_validator(mode='after')
     def valid_context(self):
         if self.purchase_id and self.scenario:
             raise ValueError('Select a saved purchase or enter an estimate, not both.')
+        if self.monthly_bill and self.bill_estimate_id:
+            raise ValueError('Choose a saved bill estimate or a new monthly bill, not both.')
+        if (self.monthly_bill or self.bill_estimate_id) and (self.purchase_id or self.scenario):
+            raise ValueError('Preview one purchase or monthly bill scenario at a time.')
         if sum(len(m.content) for m in self.history) > 24000:
             raise ValueError('Chat history is too long. Start a new conversation.')
         return self

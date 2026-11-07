@@ -1,11 +1,11 @@
 import os
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 
 # Deliberately refuse to run against a personal/development budget database.
 os.environ['DATABASE_URL'] = os.environ.get('TEST_DATABASE_URL', 'postgresql+psycopg://localhost/abacus_test')
 from abacus.db import engine, Session
-from abacus.models import Transaction, StatementImport, AmountChange, Recurring, Purchase, Account, MonthStatus, Settings, Category, PayeeRule
+from abacus.models import Transaction, StatementImport, AmountChange, Recurring, Purchase, Account, MonthStatus, Settings, Category, PayeeRule, BillEstimate
 from abacus.main import app
 from fastapi.testclient import TestClient
 
@@ -16,10 +16,12 @@ def clean_database(monkeypatch, tmp_path):
     if not engine.url.database or not engine.url.database.startswith('abacus_test'):
         pytest.fail('TEST_DATABASE_URL database must start with abacus_test; tests delete its app data.')
     with Session() as db:
-        for model in [PayeeRule, Transaction, StatementImport, AmountChange, Recurring, Purchase, Account, MonthStatus]:
+        for model in [BillEstimate, PayeeRule, Transaction, StatementImport, AmountChange, Recurring, Purchase, Account, MonthStatus]:
             db.execute(delete(model))
         setting = db.get(Settings, 1)
         setting.model, setting.currency, setting.advisor_enabled = '', 'USD', False
+        setting.savings_balance, setting.savings_month, setting.savings_floor = None, None, 0
+        db.execute(update(Category).values(monthly_guide=None))
         db.commit()
     yield
 

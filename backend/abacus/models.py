@@ -12,6 +12,7 @@ class Category(Base):
     __tablename__ = "categories"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     name: Mapped[str] = mapped_column(String(80), unique=True)
+    monthly_guide: Mapped[int | None] = mapped_column(BigInteger)
 
 class Settings(Base):
     __tablename__ = "settings"
@@ -19,6 +20,9 @@ class Settings(Base):
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     model: Mapped[str] = mapped_column(String(200), default="")
     advisor_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    savings_balance: Mapped[int | None] = mapped_column(BigInteger)
+    savings_month: Mapped[str | None] = mapped_column(String(7))
+    savings_floor: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
 
 class Recurring(Base):
     __tablename__ = "recurring"
@@ -68,6 +72,19 @@ class Purchase(Base):
     notes: Mapped[str] = mapped_column(String(2000), default="")
     included: Mapped[bool] = mapped_column(Boolean, default=False)
     __table_args__ = (CheckConstraint("amount > 0"),)
+
+class BillEstimate(Base):
+    __tablename__ = 'bill_estimates'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    name: Mapped[str] = mapped_column(String(160))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    start_month: Mapped[str] = mapped_column(String(7))
+    end_month: Mapped[str | None] = mapped_column(String(7))
+    category_id: Mapped[str] = mapped_column(ForeignKey('categories.id'))
+    due_day: Mapped[int | None] = mapped_column(Integer)
+    included: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    recurring_id: Mapped[str | None] = mapped_column(ForeignKey('recurring.id', ondelete='SET NULL'))
+    __table_args__ = (CheckConstraint('amount > 0'), CheckConstraint('due_day BETWEEN 1 AND 31', name='estimate_due_day_range'))
 
 class Account(Base):
     __tablename__ = "accounts"

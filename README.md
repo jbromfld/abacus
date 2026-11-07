@@ -210,6 +210,70 @@ model is configured. PDF extraction still requires the model. See
 training-data exporter, and the future classifier stub. No trained statistical
 model is currently installed or used.
 
+## Savings and monthly-bill what-if planning
+
+**Recurring accounts** keeps **Savings** alongside **Expected income**. Enter
+starting savings with the slider or exact currency amount, select the month whose
+opening balance it represents, and optionally set a minimum savings floor.
+**Save savings** remembers these inputs locally; slider changes remain
+temporary until saved. No balance is read from a bank or automatically advanced.
+
+In **Purchase planner**, choose **Add payment** and enter an amount and start/end months to preview a
+12- or 24-month projection without changing the budget. For example, starting at
+$5,000 with $350 monthly room, a $200 monthly bill leaves $150 monthly room and,
+if that remains steady with no additional payment-timing dips, $8,600 after 24
+months. Choose a category to **Save estimate** as a draft. Only **Add to recurring
+bills** converts it into a real monthly payable. Conversion is atomic and cannot
+add the same estimate twice; an included estimate is already in the baseline.
+Its optional due day is used when converted. Configure ACH separately if needed.
+
+Choose **Change payment** or **Remove payment** to select an existing payable and
+preview an effective month and optional end month. Changes preserve earlier
+months, one-month overrides, and later scheduled amount changes. Annual amount
+changes use the full annual total. These previews do not edit saved accounts; use
+Recurring accounts to apply an actual change. Without a savings snapshot, the
+planner still compares monthly expenses and remaining budget without inventing
+a cash balance.
+
+Python calculates monthly budget room, projected baseline/scenario savings, the
+lowest starting/month-end balance, savings-floor breaches, and months falling
+below zero. Dated annual bills such as tax replace their distributed monthly
+allocations with one full payment in the due month for this cash projection.
+They are never added on top of those allocations. Annual entries without due
+dates, such as medical-copay allowances, retain their budget timing. Non-distributed
+annual bills already count in their due month and are not added again.
+
+The chart and expandable table show the same values, including named annual
+payments. Missing forecast income is reported as incomplete rather than a positive
+affordability result. Full-month forecasts are used; intra-month payday ordering,
+interest, inflation, and live bank balances are not modeled. Recorded actuals are
+not added to forecast expenses. Savings carry forward only inside this hypothetical
+projection; normal monthly budget calculations remain independent.
+
+When enabled, **Discuss this preview with Budget advisor** sends the exact scenario
+and savings inputs to the advisor. The advisor also uses the saved snapshot for
+ordinary questions. A single unambiguous phrase such as “another $200 monthly bill”
+is recognized deterministically, assuming the selected budget month as its start.
+Ambiguous amounts, currencies, dates, or durations require the explicit monthly-bill
+controls in Purchase planner; the model does not invent arithmetic. The advisor receives the same
+Python-calculated annual-payment and savings results as Purchase planner. Purchase/travel
+funding assumptions remain separate from this recurring-bill projection.
+
+New interfaces: `GET/PUT /api/savings`, `POST /api/savings/projection`, draft CRUD at
+`/api/bill-estimates`, and `POST /api/bill-estimates/{id}/include`. Money remains
+integer minor units. Saved savings and estimates lock the budget currency just
+like other financial records.
+
+Overview’s forecast-deficit alert links to **Reconcile with Budget advisor** (or
+Settings to enable it). It opens a prepared question for the selected month and
+the previous month; press **Ask** to send it locally. Web research starts disabled
+for this comparison. Python supplies exact income, expense, and remaining-budget
+deltas, named schedule/purchase changes, and the shortfall. The advisor can suggest
+optional reductions but cannot apply them. Actuals and informational category guides
+are excluded from the forecast comparison; reducing future card spending does not
+reduce an already owed card bill. The reply includes an inspectable comparison and
+a link to preview changes in Purchase planner.
+
 ## Optional Budget advisor
 
 Advisor replies are read from Ollama's local streaming transport, allowing slow
@@ -230,7 +294,7 @@ timeout must also allow the longer advisor request.
 1. Start Ollama locally. In Settings, select **Refresh models**, choose an installed
    model, check **Enable Budget advisor in the main menu**, and save.
 2. Open **Budget advisor**. Ask a general budget question, select a saved draft or
-   included purchase, or enter a new amount and target month as a what-if scenario.
+   included purchase or saved bill estimate. Create and edit scenarios in **Purchase planner**.
 3. The backend reads a fresh snapshot for every question: the selected month plus
    11 future forecast months (23 with web research enabled); three months of category spending and completeness;
    up to 20 upcoming drafts; and the selected purchase scenario. Expand **Budget
@@ -240,7 +304,7 @@ The advisor is disabled by default and is read-only. It cannot change the budget
 or make purchases. Python calculates scenario balances before the model sees them;
 included purchases are never deducted twice. Each month remains independent, and
 actual spending stays separate from forecast expenses. Savings and bank balances
-are unknown, so forecast room alone does not establish cash affordability.
+are unknown unless explicitly supplied; forecast room alone does not establish cash affordability.
 
 Only aggregates, your explicit planning assumptions, and purchase/category names are provided to the local model, never raw statements,
 card identifiers, individual transaction descriptions, or credentials. Chat requests use [Ollama’s no-thinking option](https://ollama.com/blog/thinking) and a bounded reply length to reduce empty replies and latency on compatible local models. Model requests go
@@ -315,6 +379,33 @@ its accessible data table to open that month's breakdown in Current.
   existing Transactions control once all records for that month are entered.
 
 ## Trends and completeness
+
+**Expected income** is shown in **Recurring accounts**, for the selected forecast
+month. Overview keeps planned expenses, remaining budget, and recorded actual
+spending alongside due dates and the savings planner.
+
+Historical **Spending, over time** shows a monthly mean for all spending or the
+selected categories. **Category means & planning guides** provides every category's
+mean, a manual monthly reference amount, and **Use mean** to adopt the suggested
+value. These guides are informational only: they never add expenses, change room
+in the budget, or reduce savings projections. This lets card-funded categories
+such as pets, dining, and travel have reference amounts without duplicating card
+bills. The advisor receives them as informational context, not extra costs.
+
+Means use past months within the chart's selected 12-month window. Missing,
+current, and future months are excluded; explicitly complete zero-spending months
+count. Past recorded months not marked complete are included with a visible
+incomplete-data warning. A category with no spending in an included month counts
+as zero for that month, so missing card data can understate its mean. Refunds
+reduce the signed mean; payments and transfers are excluded. Means are calculated
+in Python and rounded to integer minor units. A negative mean suggests a zero
+planning guide. With no eligible months, the mean remains unknown instead of zero.
+
+Suggestions update with the selected historical window; saved manual guides stay
+fixed until edited, replaced using **Use mean**, or cleared. No statistical model
+or external service is needed. The interfaces are `GET /api/spending/averages`
+with `end` and optional `category_ids`, and
+`PATCH /api/categories/{id}/guide` with `monthly_guide` in minor units or `null`.
 
 In **Spending → Historical**, trends default to a rolling 12 months ending in the previous month. Choose another ending month independently of Current and the budget forecast. Select one or more categories for individual lines and toggle forecast overlays. An expandable table provides the same numbers. Historical category filters apply to trends; the Current transaction list keeps its own description search.
 

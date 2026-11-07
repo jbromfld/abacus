@@ -337,3 +337,44 @@ def test_advisor_monthly_budget_context_without_saved_savings(client,category_id
     assert context['savings_projection']['first_bill_month_remaining']==15000
     assert not context['savings_projection']['savings_known']
     assert context['rules']['bank_balances_and_savings_are_unknown']
+
+
+@pytest.mark.parametrize('months',[12,24])
+def test_as_is_projection_needs_no_bill_and_retains_annual_reserves(client,category_id,account_id,db,months):
+    baseline(client,category_id,annual=True)
+    recurring(client,category_id,'Winter tax',60000,frequency='annual',distribute_annual=True,due_day=15,due_month=1)
+    client.post('/api/purchases',json=dict(name='Included purchase',amount=10000,month='2026-01',category_id=category_id,included=True))
+    client.post('/api/purchases',json=dict(name='Excluded draft',amount=50000,month='2026-01',category_id=category_id))
+    client.post('/api/transactions',json=dict(date='2026-01-04',description='Actual already tracked separately',amount=20000,kind='purchase',category_id=category_id,account_id=account_id))
+    before=client.get('/api/forecast?month=2026-01').json()
+    response=client.post('/api/savings/projection',json={'savings':{'amount':500000,'month':'2026-01'},'months':months})
+    assert response.status_code==200,response.text
+    result=response.json();jan,feb,july=result['months'][0],result['months'][1],result['months'][6]
+    assert result['bill'] is None and result['recurring_change'] is None
+    assert result['total_budget_change']==0 and result['total_new_bill_cost']==0
+    assert len(result['months'])==months
+    assert jan['forecast_expenses']==80000 and jan['cash_expenses']==125000
+    assert jan['baseline_savings']==475000
+    assert feb['forecast_expenses']==70000 and feb['cash_expenses']==55000
+    assert feb['baseline_savings']-jan['baseline_savings']==45000
+    assert july['cash_expenses']==175000
+    assert sum(p['distributed_allocation_removed'] for p in result['months'])==180000*(months//12)
+    assert sum(p['cash_expenses'] for p in result['months'])==840000*(months//12)+10000
+    assert result['ending_savings']==500000+360000*(months//12)-10000
+    assert all(p['baseline_savings']==p['scenario_savings'] and p['forecast_expenses']==p['scenario_forecast_expenses'] for p in result['months'])
+    assert client.get('/api/forecast?month=2026-01').json()==before
+    assert db.scalar(select(func.count()).select_from(BillEstimate))==0
+    assert db.scalar(select(func.count()).select_from(Transaction))==1
+
+
+def test_as_is_projection_without_savings_shows_cash_flow_only(client,category_id):
+    baseline(client,category_id,annual=True)
+    response=client.post('/api/savings/projection',json={'start_month':'2026-06','months':12})
+    assert response.status_code==200,response.text
+    result=response.json()
+    assert result['status']=='budget_only' and not result['savings_known']
+    assert result['months'][0]['forecast_remaining']==35000
+    assert result['months'][0]['cash_remaining_after_bill']==45000
+    assert result['months'][1]['cash_remaining_after_bill']==-75000
+    assert result['ending_savings'] is None and result['lowest_savings'] is None
+    assert result['bill'] is None and result['recurring_change'] is None

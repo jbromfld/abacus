@@ -233,6 +233,7 @@ def test_normalized_categories_do_not_change_exact_csv_duplicate_identity(client
 @pytest.mark.parametrize('first,second', [
     ('Amazon.com*PH0J27603', 'Amazon.com*7G1TY39K3'),
     ('AMAZON MKTPL*Z14FV4LT3', 'AMAZON MKTPL*RI3DB1453'),
+    ('amazon prime*f76vd1p63', 'AMAZON PRIME*5A56L8SR0'),
 ])
 def test_amazon_order_codes_share_category(client, account_id, category_id, first, second):
     manual(client, account_id, category_id, description=first)
@@ -244,7 +245,7 @@ def test_amazon_order_codes_share_category(client, account_id, category_id, firs
 
 
 def test_amazon_channels_and_other_star_merchants_remain_distinct():
-    assert normalize_payee('Amazon.com*ABC123') != normalize_payee('AMAZON MKTPL*ABC123')
+    assert len({normalize_payee(name) for name in ('Amazon.com*ABC123','AMAZON MKTPL*ABC123','Amazon Prime*ABC123')}) == 3
     assert normalize_payee('Other*ABC123') != normalize_payee('Other*XYZ987')
 
 

@@ -180,14 +180,15 @@ leading years/dates, punctuation, and spacing are ignored for normalized matchin
 such as Route 66 or Studio 54 remain significant. Specific remembered variants
 take priority; new variants use a group only when its categories agree. Conflicts
 stay for manual review. Existing rules work immediately without rewriting history. CSV mapping applies these rules immediately; use **Apply
-remembered payees** to fill empty categories in an existing review. Settings lets
-you edit or forget rules. Rules preserve transaction types and never overwrite
+remembered payees** to fill empty categories in an existing review. Settings displays the saved exact descriptions, including newer variants; this list
+is not a list of normalized merchant groups. It lets you edit or forget individual
+rules without erasing specific category corrections. Rules preserve transaction types and never overwrite
 existing review categories. Only saved transactions teach labels; unsaved model
 proposals do not. Rules persist when imports are undone/deleted, until forgotten.
 
 Merchant pattern matching is configured in `backend/abacus/payee_matching.json`.
 The default Python regex strips changing order codes from `Amazon.com*…` and
-`AMAZON MKTPL*…`, keeping these two merchant groups separate. Add entries to
+`AMAZON MKTPL*…` and `AMAZON PRIME*…`, keeping these three merchant groups separate. Add entries to
 `patterns` with `pattern` and `replacement` strings (JSON needs doubled backslashes).
 Patterns run case-insensitively before the normal store/date cleanup. This is trusted
 local configuration; use simple, bounded patterns. Edits take effect on the next
@@ -217,6 +218,14 @@ starting savings with the slider or exact currency amount, select the month whos
 opening balance it represents, and optionally set a minimum savings floor.
 **Save savings** remembers these inputs locally; slider changes remain
 temporary until saved. No balance is read from a bank or automatically advanced.
+
+**Purchase planner** opens on **Current budget**, a 12- or 24-month as-is
+projection requiring no hypothetical changes. It uses saved savings when available,
+shows projected balances and annual payment dips, and offers the same **Monthly
+comparison & assumptions** table with income, forecast expenses, cash expenses,
+monthly room, and named annual payments. Without savings it shows the budget and
+cash flow without inventing a balance. Dated annual allocations remain in savings
+until the full payment month; normal forecasts keep their monthly allocations.
 
 In **Purchase planner**, choose **Add payment** and enter an amount and start/end months to preview a
 12- or 24-month projection without changing the budget. For example, starting at

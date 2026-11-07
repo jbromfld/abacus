@@ -94,6 +94,8 @@ class SettingsIn(BaseModel):
     currency: Literal['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF'] = 'USD'
     model: str = Field(default='', max_length=200)
     advisor_enabled: bool = False
+    reserve_alerts_enabled: bool | None = None
+    reserve_checkpoint_day: int | None = Field(default=None,ge=1,le=31)
 
 class MappingIn(BaseModel):
     date_column: str
@@ -210,3 +212,12 @@ class AdvisorIn(BaseModel):
         if sum(len(m.content) for m in self.history) > 24000:
             raise ValueError('Chat history is too long. Start a new conversation.')
         return self
+
+
+class SavingsObservationIn(BaseModel):
+    amount: NonnegativeMoney
+    as_of: BillDate
+
+class ReservePlanIn(BaseModel):
+    amount: NonnegativeMoney
+    month: Month

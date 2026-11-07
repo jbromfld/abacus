@@ -2,6 +2,17 @@
 
 A local personal budget app: recurring income and bills, purchase estimates, actual spending, and 12-month category trends. React/TypeScript + FastAPI + PostgreSQL, with classification memory, an optional local Budget advisor, and optional Ollama PDF extraction.
 
+## Documentation
+
+- [Documentation index and feature map](docs/README.md)
+- [User guide: every screen and workflow](docs/user-guide.md)
+- [Setup, configuration, upgrades, backups, and troubleshooting](docs/operations.md)
+- [Complete API reference](docs/api.md)
+- [Classification memory and future training](training/README.md)
+
+The sections below retain the detailed feature reference. Start with the user
+guide for daily use or Quick start for installation.
+
 ## Quick start
 
 Requirements: Python 3.11+, `uv`, Node.js 20.19+ or 22.12+, and a running local PostgreSQL instance. Ollama is optional; manual transaction entry and CSV review work without it.
@@ -39,7 +50,7 @@ Open http://127.0.0.1:5173. Vite proxies `/api` to port 8017. If you use another
 
 ## Card freshness alerts
 
-In **Settings → Card accounts**, check **Alert after 30 days** next to each card
+In **Settings → Bank & card accounts**, check **Alert after 30 days** next to each card
 that should be monitored. Monitoring is off by default and can be toggled
 independently for each card. Warnings appear in the app across all views, with an
 **Import statement** action that preselects the card and current statement month.
@@ -97,6 +108,9 @@ payment amount, including the due month's effective amount/override, regardless 
 monthly forecast distribution. All active annual schedules are listed separately,
 even when their next payment is within 30 days. Their oldest unconfirmed payment,
 overdue count, and next scheduled date are shown when applicable.
+
+Unpaid manual monthly bills use a muted red **Mark paid** button; paid and automatic
+ACH rows retain distinct controls/status text.
 
 For bills paid manually, use **Mark paid** to confirm an occurrence with a paid date no later than today;
 early payment is allowed. **Edit paid date** corrects that date, and **Mark unpaid**
@@ -190,6 +204,10 @@ Merchant pattern matching is configured in `backend/abacus/payee_matching.json`.
 The default Python regex strips changing order codes from `Amazon.com*…` and
 `AMAZON MKTPL*…` and `AMAZON PRIME*…`, keeping these three merchant groups separate. Add entries to
 `patterns` with `pattern` and `replacement` strings (JSON needs doubled backslashes).
+Named rules also group A2 PCI Parking, Panera Bread, PetSmart, and REI across
+store/location variants, and ActBlue across donation-recipient suffixes following
+`*`. These deliberately group the merchant as a whole; exact saved category labels
+still take priority and conflicting normalized groups remain for review.
 Patterns run case-insensitively before the normal store/date cleanup. This is trusted
 local configuration; use simple, bounded patterns. Edits take effect on the next
 classification pass, including **Apply remembered payees** in an existing review.
@@ -283,6 +301,49 @@ are excluded from the forecast comparison; reducing future card spending does no
 reduce an already owed card bill. The reply includes an inspectable comparison and
 a link to preview changes in Purchase planner.
 
+## Annual bill reserve checks
+
+Overview and Purchase planner show an optional **Annual bill reserve** check. In
+Settings, **Annual bill reserve alerts** enables/disables it; **Reserve checkpoint
+day** defaults to 1 and clamps to the last day of short months. All checks use
+`APP_TIMEZONE`, refresh every minute and on focus/visibility, and stay inside the app.
+
+In Recurring accounts, open **Annual bill reserve plan**, then **Set funding target**.
+Explicitly save an opening balance and baseline month. The plan freezes the current
+dated, monthly-distributed annual payables and their effective changes/overrides.
+Editing schedules shows a review notice; only **Replace funding target** adopts the
+new schedules or baseline. Recording a balance never resets the target.
+
+At each checkpoint, the target is the baseline plus prior months’ annual allocations
+minus annual payments scheduled before that date, floored at zero. Optional monthly
+surplus is excluded: $500 plus November’s $791.67 allocation targets $1,291.67 on
+December 1. Annual allowances without dates and annual bills paid without monthly
+distribution are outside this reserve plan. It treats the full baseline as available
+for these bills; it does not separately earmark other savings goals.
+
+Use **Record savings balance** for a dated manual opening balance, before payments
+due on that date. Record an after-payment balance on the following date. Reusing a
+date corrects that observation; the latest dated balance checks progress. The existing
+savings slider still sets Purchase planner’s opening snapshot and also records that
+month’s opening balance when not in the future. Neither operation alters the reserve
+target. Dated observations alone do not change the projection snapshot.
+
+Missing observations show **Update savings**, not an invented missed transfer. A fresh
+balance below its target shows the gap. Upcoming payments within 30 days are checked
+against the recorded balance plus planned allocations, with prior scheduled payments
+subtracted. Same-day bills share the same funds. Future allocations are unconfirmed;
+this is a timing assumption, not a guarantee or an inferred transfer/payment. Targets
+subtract scheduled due payments after their due day, regardless of paid-status records;
+record the actual balance to verify the result. Payment and actual-spending records
+are never created or confirmed by this feature.
+
+**View funding plan** explains the current/upcoming 12 checkpoints. **Dismiss until next checkpoint**
+keeps reminders quiet until that date; a new balance entry clears the dismissal.
+The APIs are `GET /api/reserve-check`, `PUT /api/reserve-check/plan`, and
+`POST /api/reserve-check/balances` and `/api/reserve-check/dismiss`. Migration `0011`
+preserves existing savings as a dated opening observation and does not invent a
+funding target; setup is explicit.
+
 ## Optional Budget advisor
 
 Advisor replies are read from Ollama's local streaming transport, allowing slow
@@ -315,7 +376,7 @@ included purchases are never deducted twice. Each month remains independent, and
 actual spending stays separate from forecast expenses. Savings and bank balances
 are unknown unless explicitly supplied; forecast room alone does not establish cash affordability.
 
-Only aggregates, your explicit planning assumptions, and purchase/category names are provided to the local model, never raw statements,
+Only aggregates, your explicit planning assumptions, and schedule/purchase/category names are provided to the local model, never raw statements,
 card identifiers, individual transaction descriptions, or credentials. Chat requests use [Ollama’s no-thinking option](https://ollama.com/blog/thinking) and a bounded reply length to reduce empty replies and latency on compatible local models. Model requests go
 to the selected loopback Ollama instance with no transaction or booking tools and
 no cloud-model fallback. Optional web research uses Brave Search separately as described below. The model can still make mistakes; compare its explanation with
@@ -348,7 +409,7 @@ Relative dates use `APP_TIMEZONE` (default `America/Detroit`) and the current da
 
 Optional **Funds already set aside** and **Monthly breathing room to preserve** inputs support a separate, hypothetical 24-month funding projection. Contributions are the nonnegative forecast room after the stated monthly buffer, starting no earlier than the current month. Actual transaction spending is not added to forecast expenses. A selected included purchase is counted once. Monthly contributions are not reserved in the budget or guaranteed cash; income timing, other draft purchases, competing trips, and monthly buffer shortfalls can change comfort.
 
-Without stated savings and a monthly buffer, the advisor asks before claiming comfortable payment timing. Missing forecast income makes cumulative funding unknown. The snapshot shows the projection and any buffer shortfalls. For a Python-calculated funding month, select a saved purchase or enter the proposed trip's total as an estimate scenario. A cost range generated by the model remains provisional until you choose a scenario total; the model cannot turn an unsourced estimate into a guaranteed cash-ready date. The main budget still treats each month independently—this projection does not enable carry-forward.
+Without stated savings and a monthly buffer, the advisor asks before claiming comfortable payment timing. Missing forecast income makes cumulative funding unknown. The snapshot shows the projection and any buffer shortfalls. For a Python-calculated funding month, create the proposed trip as a purchase estimate in Purchase planner and select it as saved planning context in the advisor. A cost range generated by the model remains provisional until you choose a scenario total; the model cannot turn an unsourced estimate into a guaranteed cash-ready date. The main budget still treats each month independently—this projection does not enable carry-forward.
 
 ## Expense breakdown and date-range drill-down
 
@@ -391,7 +452,8 @@ its accessible data table to open that month's breakdown in Current.
 
 **Expected income** is shown in **Recurring accounts**, for the selected forecast
 month. Overview keeps planned expenses, remaining budget, and recorded actual
-spending alongside due dates and the savings planner.
+spending alongside due dates and annual-bill reserve checks. Savings projections
+live in Purchase planner.
 
 Historical **Spending, over time** shows a monthly mean for all spending or the
 selected categories. **Category means & planning guides** provides every category's

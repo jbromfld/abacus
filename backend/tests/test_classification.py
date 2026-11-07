@@ -284,3 +284,25 @@ def test_matching_config_reload_and_invalid_config(tmp_path, monkeypatch, caplog
     assert matching.load_matching_config() == ([], 1, 1)
     config.write_text(json.dumps(dict(fuzzy_threshold=.94, fuzzy_margin=.05, patterns=[dict(pattern='[', replacement='') ])))
     assert matching.load_matching_config() == ([], 1, 1)
+
+
+@pytest.mark.parametrize('first,second,canonical',[
+    ('a2 pci parking 82 ramp','a2 pci parking mobile irvine ca','a2 pci parking'),
+    ('actblue* abdul.el-saye boston ma','actblue* dga-action boston ma','actblue'),
+    ('panera bread #600874 k','panera bread #601105 p','panera bread'),
+    ('petsmart # 0695','petsmart #2779','petsmart'),
+    ('rei #124 ann arbor','rei.com 800-426-4840','rei'),
+])
+def test_configured_merchant_formats_share_reviewed_category(client,account_id,category_id,first,second,canonical):
+    assert normalize_payee(first)==normalize_payee(second)==canonical
+    manual(client,account_id,category_id,description=first)
+    row=mapped_csv(client,account_id,[second])['rows'][0]
+    assert row['category_id']==category_id and row['classification']=='normalized_payee'
+    assert row['description']==second
+
+
+@pytest.mark.parametrize('description',[
+    'reilly auto parts', 'petsmartish shop', 'panera breadfruit shop', 'a2 pci parkings', 'actblueberry*AB12',
+])
+def test_merchant_rules_do_not_capture_similarly_named_businesses(description):
+    assert normalize_payee(description) not in {'rei','petsmart','panera bread','a2 pci parking','actblue'}

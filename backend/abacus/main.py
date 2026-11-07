@@ -32,7 +32,9 @@ from .models import BillEstimate
 from .schemas import BillEstimateIn, SavingsIn, SavingsProjectionIn
 from .savings import savings_settings, project_savings
 from .category_planning import category_averages
-from .schemas import CategoryGuideIn
+from .schemas import CategoryGuideIn, SavingsObservationIn, ReservePlanIn
+from .models import ReservePlan, SavingsObservation
+from .reserves import reserve_check, schedule_snapshot, observe
 from .imports import prepare_file, executor, process_import, validate_rows, available_models, csv_rows
 
 @asynccontextmanager
@@ -110,7 +112,7 @@ def settings(db: DB):
 @app.put('/api/settings')
 def update_settings(data: SettingsIn, db: DB):
     setting = get(db, Settings, 1)
-    if setting.currency != data.currency and (setting.savings_balance is not None or db.scalar(select(Category.id).where(Category.monthly_guide.is_not(None)).limit(1)) or any(db.scalar(select(func.count()).select_from(model)) for model in (Recurring, Purchase, Transaction, StatementImport, BillEstimate))):
+    if setting.currency != data.currency and (setting.savings_balance is not None or db.scalar(select(Category.id).where(Category.monthly_guide.is_not(None)).limit(1)) or any(db.scalar(select(func.count()).select_from(model)) for model in (Recurring, Purchase, Transaction, StatementImport, BillEstimate, ReservePlan, SavingsObservation))):
         raise HTTPException(409, 'Currency is fixed once budget entries or imports exist.')
     if data.advisor_enabled and not data.model:
         raise HTTPException(422, 'Choose a local model before enabling Budget advisor.')
@@ -122,7 +124,10 @@ def update_settings(data: SettingsIn, db: DB):
             raise
         except Exception:
             raise HTTPException(503, 'Cannot reach local Ollama. Start it and try again.')
-    return save(db, setting, data.model_dump())
+    if data.reserve_checkpoint_day is not None and data.reserve_checkpoint_day != setting.reserve_checkpoint_day:
+        plan=db.get(ReservePlan,1)
+        if plan:plan.dismissed_until=None
+    return save(db, setting, data.model_dump(exclude_none=True))
 
 @app.get('/api/models')
 def models():
@@ -173,8 +178,39 @@ def read_savings(db: DB):
 def save_savings(data: SavingsIn, db: DB):
     setting = get(db, Settings, 1)
     setting.savings_balance, setting.savings_month, setting.savings_floor = data.amount, data.month, data.floor
+    as_of=date.fromisoformat(data.month+'-01')
+    if as_of<=local_today():observe(db,data.amount,as_of)
     db.commit()
     return savings_settings(db)
+
+@app.get('/api/reserve-check')
+def read_reserve_check(db: DB):
+    return reserve_check(db)
+
+@app.put('/api/reserve-check/plan')
+def set_reserve_plan(data: ReservePlanIn, db: DB):
+    start=date.fromisoformat(data.month+'-01')
+    if start>local_today():raise HTTPException(422,'Start the reserve plan in the current month or earlier.')
+    schedules=schedule_snapshot(db)
+    if not schedules:raise HTTPException(422,'Configure at least one dated, distributed annual payable first.')
+    item=db.get(ReservePlan,1) or ReservePlan(id=1)
+    item.amount,item.start_date,item.schedules,item.dismissed_until=data.amount,start,schedules,None
+    db.add(item);db.commit()
+    return reserve_check(db)
+
+@app.post('/api/reserve-check/balances')
+def record_savings_balance(data: SavingsObservationIn, db: DB):
+    try:observe(db,data.amount,data.as_of)
+    except ValueError as exc:raise HTTPException(422,str(exc))
+    db.commit()
+    return reserve_check(db)
+
+@app.post('/api/reserve-check/dismiss')
+def dismiss_reserve_check(db: DB):
+    result=reserve_check(db)
+    item=get(db,ReservePlan,1)
+    item.dismissed_until=result['next_checkpoint'];db.commit()
+    return reserve_check(db)
 
 @app.post('/api/savings/projection')
 def preview_savings(data: SavingsProjectionIn, db: DB):

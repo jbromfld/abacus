@@ -1,5 +1,7 @@
 # Local transaction classification
 
+[Documentation index](../docs/README.md) · [Payee workflows](../docs/user-guide.md#payee-classification) · [Operations](../docs/operations.md)
+
 Abacus now uses a fast baseline: **reviewed payee variant + transaction type → category**, with normalized-group matching for new variants.
 There is no training job or LLM request for a known payee. Mapping a CSV applies
 remembered categories automatically. The review screen also offers **Apply
@@ -45,6 +47,51 @@ PDF extraction still uses the local model to propose transaction rows and types;
 category suggestions come from memory and manual review only. The optional Budget
 advisor is separate from statement classification.
 
+## Active merchant patterns and similarity
+
+[`payee_matching.json`](../backend/abacus/payee_matching.json) controls optional
+case-insensitive Python regex replacements, then similarity thresholds. Patterns
+run after Unicode/case/whitespace cleanup and before generic store/date/punctuation
+cleanup. The file is read on each classification pass; changing it does not rewrite
+saved descriptions, category labels, or CSV duplicate identities.
+
+Current named patterns remove Amazon order codes while keeping Amazon.com,
+Marketplace, and Prime separate. A2 PCI Parking, Panera Bread, PetSmart, and REI
+group store/location variants under their merchant names. ActBlue groups all
+recipient suffixes after `*` under ActBlue. This is deliberate merchant-level
+grouping, not a claim that every purchase at a merchant has the same category.
+Exact labels and ambiguous-group abstention still protect specific corrections.
+
+JSON replacements such as `"\\1"` retain capture group 1. A literal replacement
+makes a canonical name. For example, this groups a hypothetical merchant's suffixes:
+
+```json
+{
+  "pattern": "^example merchant\\b.*$",
+  "replacement": "example merchant"
+}
+```
+
+A regex requiring `\*` only matches an actual asterisk; it does not strip an
+ordinary `#store`/location suffix. Match the full varying portion rather than only
+an alphanumeric fragment of a punctuated suffix. Anchor specific merchant names,
+retain meaningful unrelated numbers, and add examples/nonmatches to
+[`test_classification.py`](../backend/tests/test_classification.py) before expanding rules.
+
+When no exact or normalized group exists, `similar_category` uses Python
+`SequenceMatcher` with `fuzzy_threshold=0.94` and `fuzzy_margin=0.05`. It requires
+names of at least 12 characters, the same first word, identical numeric components,
+and the same transaction type. It picks a category only when both score and gap
+from competing categories qualify. Setting the threshold to `1` disables similarity.
+A conflicting normalized group does not fall through to a fuzzy guess. Review rows
+mark these suggestions **Similar payee · check category**.
+
+Settings lists exact-description rules, not canonical merchant groups, so repeated
+merchant variants remain visible even when classification groups them. Forgetting
+or consolidating records is separate maintenance. Any manual consolidation should
+keep transaction types separate and preserve category conflicts; later imports
+still learn exact variants, so a one-time cleanup does not prevent list growth.
+
 ## Export reviewed examples
 
 ```sh
@@ -62,7 +109,8 @@ private financial data. Nothing is sent to a service.
 
 `backend/abacus/classification.py::predict_unknown(description, kind)` is an
 intentional abstaining stub: it returns `None`. It is not currently called by
-the import pipeline. There is **no trained model** or edit-distance/fuzzy matching. Normalized grouping is active.
+the import pipeline. There is **no trained classifier**. Normalized grouping and conservative Python
+string-similarity matching are active; neither requires a training job.
 
 Suggested next implementation:
 
@@ -82,12 +130,12 @@ Suggested next implementation:
    training-data fingerprint, and validation report. Load only artifacts you
    trained yourself. Invalidate/retrain when categories or normalization change.
 6. Implement `predict_unknown` to return an existing category ID or `None`.
-   Integrate after exact payee rules, leaving unknowns for manual review. Validate the
+   Integrate after existing deterministic memory/similarity rules, leaving unknowns for manual review. Validate the
    returned ID, mark the row's classification source, and retain manual review.
    Missing/incompatible artifacts must abstain without blocking imports.
 7. Add offline tests for held-out merchants, low-confidence abstention, changed
    categories, corrupt/missing artifacts, and strict precedence: review edits →
-   specific payee rules → unambiguous normalized groups → trained suggestions → manual labeling.
+   specific payee rules → unambiguous normalized groups → conservative similarity → trained suggestions → manual labeling.
 
 Training/prediction must stay local. Never treat a model proposal as a reviewed
 training label until the user explicitly saves its transaction.

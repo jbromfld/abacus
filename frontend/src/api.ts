@@ -1,7 +1,7 @@
 export type Category = {id:string;name:string};
 export type Account = Category & {stale_alert_enabled:boolean;csv_mapping:Record<string,string|null>|null;last_information_date:string|null;days_since_update:number|null;stale:boolean};
 export type PayeeRule = {id:string;payee:string;kind:string;category_id:string};
-export type Settings = {currency:string;model:string;advisor_enabled:boolean};
+export type Settings = {currency:string;model:string;advisor_enabled:boolean;reserve_alerts_enabled:boolean;reserve_checkpoint_day:number};
 export type Change = {id:string;month:string;amount:number;override:boolean};
 export type Recurring = {id:string;name:string;kind:'payable'|'receivable';frequency:'monthly'|'annual';distribute_annual:boolean;category_id:string|null;start_month:string;end_month:string|null;due_day:number|null;due_month:number|null;payment_tracking_start:string|null;ach_enabled:boolean;ach_day:number|null;ach_start_month:string|null;ach_account_id:string|null;changes:Change[]};
 export type Purchase = {id:string;name:string;amount:number;month:string;category_id:string;notes:string;included:boolean};
@@ -47,3 +47,9 @@ export function nonnegativeMinor(value:string,currency:string){const pattern=dig
 
 export type CategoryAverage={id:string;name:string;average:number|null;suggested_guide:number|null;monthly_guide:number|null;sample_count:number;partial_month_count:number};
 export type SpendingAverages={window_start:string;window_end:string;sample_count:number;partial_month_count:number;included_months:string[];excluded_months:string[];average:number|null;categories:CategoryAverage[];basis:string};
+
+export type ReserveCheck={today:string;enabled:boolean;checkpoint_day:number;eligible_bill_count:number;status:'no_bills'|'not_configured'|'needs_update'|'below_target'|'payment_risk'|'on_track'|'scheduled';dismissed:boolean;
+ plan:null|{amount:number;start_date:string;schedules:{name:string;start_month:string;end_month:string|null;due_day:number;due_month:number;changes:{month:string;amount:number;override:boolean}[]}[];schedule_changed:boolean;dismissed_until:string|null};
+ observations:{amount:number;as_of:string}[];latest?:{amount:number;as_of:string}|null;checkpoint?:string|null;next_checkpoint?:string;target?:number;target_as_of?:string;next_target?:number;fresh?:boolean;shortfall?:number|null;
+ upcoming?:{due_date:string;bills:{name:string;amount:number}[];amount:number;projected_before_payment:number|null;shortfall:number|null;assumes_future_allocations:boolean}[];
+ checkpoints?:{date:string;target:number;allocation:number;allocations:{name:string;amount:number}[];allocations_to_date:number;payments_to_date:number}[]};

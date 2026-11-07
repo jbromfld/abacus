@@ -37,6 +37,21 @@ Open **http://127.0.0.1:8017**. Use one server worker: import jobs run in a sing
 
 Start in **Settings**: select your currency before creating entries, add a named card account, and optionally choose an installed Ollama model for Budget advisor or PDF extraction. Starter categories are editable. No sample financial records are inserted.
 
+### Start automatically on macOS
+
+After completing Quick start, install the per-user login service:
+
+```sh
+uv run python scripts/macos_service.py install
+uv run python scripts/macos_service.py status
+```
+
+Abacus starts now and after a restart when you log in. It waits for PostgreSQL,
+runs one loopback worker, and restarts after process failure. Existing servers on
+the port are left alone until they stop. See [automatic startup and controls](docs/operations.md#automatic-startup-on-macos)
+for stop/start/restart/uninstall, logs, and updates. Temporal, Docker, and cron are
+not required for this local macOS setup.
+
 ### Development
 
 Start the Python server as above with `--reload`, then in another terminal:

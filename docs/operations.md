@@ -35,6 +35,70 @@ backend must be running to generate scheduled ACH actuals. There is no folder
 watcher, cron import integration, bank synchronization, or external notification
 service.
 
+## Automatic startup on macOS
+
+Use the user LaunchAgent included with Abacus. It starts after reboot **when you
+log into your macOS account**, rather than before login. It also restarts after a
+process failure. Existing Homebrew/PostgreSQL login services can start the database;
+Abacus waits for database connectivity/schema readiness instead of assuming startup
+order. Ollama remains an optional separately managed service. Temporal, Docker
+Compose, and a cron daemon are not needed for this setup.
+
+Complete installation, `.env`, migrations, and the frontend build first, then run
+as your normal user, without `sudo`:
+
+```sh
+uv run python scripts/macos_service.py install
+uv run python scripts/macos_service.py status
+```
+
+The installer writes `~/Library/LaunchAgents/local.abacus.plist` and loads it in the
+current GUI login session. It uses the workspace's absolute `.venv/bin/python` and
+`scripts/run_service.py`, not a shell startup file. There are no startup package
+installs, model downloads, automatic migrations, or credentials in the plist. The
+app reads its existing `.env`. An exported shell-only `DATABASE_URL` is not copied
+into the agent; put the intended connection in `.env` for unattended startup.
+
+The runner waits if PostgreSQL is unavailable, migrations are pending, the frontend
+is missing, or another server occupies its port. It never terminates that other
+server or starts a second application worker alongside it. If a manually started
+Abacus is already running, stop that terminal server when ready; the managed service
+will take over when the port becomes available. Run only the managed instance once
+it has taken over. HTTP access stays on `127.0.0.1`, port 8017 by default.
+
+| Command | Behavior |
+| --- | --- |
+| `uv run python scripts/macos_service.py install` | Install/reinstall for this workspace and enable login startup |
+| `uv run python scripts/macos_service.py install --port 8020` | Explicit alternate HTTP port; update Vite's proxy if needed |
+| `uv run python scripts/macos_service.py install --dry-run` | Print the generated plist without changing services/files |
+| `uv run python scripts/macos_service.py status` | Show registration, process state/PID, and log location |
+| `uv run python scripts/macos_service.py stop` | Stop and disable startup until `start` is used again |
+| `uv run python scripts/macos_service.py start` | Enable startup and start the installed service |
+| `uv run python scripts/macos_service.py restart` | Reload the installed service while retaining startup |
+| `uv run python scripts/macos_service.py uninstall` | Remove this login service; retain budget, workspace, and logs |
+
+Logs are private to your user under `~/Library/Logs/Abacus/stdout.log` and
+`stderr.log`. Routine HTTP access logging is disabled for this service; startup and
+error diagnostics remain. Read recent messages with:
+
+```sh
+tail -n 60 "$HOME/Library/Logs/Abacus/stderr.log"
+curl --fail http://127.0.0.1:8017/api/health
+```
+
+`status` shows the process, which may still be waiting for prerequisites; `/api/health`
+confirms the running HTTP service/database. A normal process restart is automatic;
+repeat failures are throttled. The service does not wake a sleeping Mac, open a
+browser, run before login, or launch external budget notifications. Keep a bookmark
+for the local dashboard.
+
+For upgrades, use `stop`, follow the [upgrade procedure](#upgrade), then `start`
+instead of starting a second terminal server. Do not restart while an important
+statement extraction is in progress; interrupted jobs remain recoverable. Before moving the workspace, uninstall the service and reinstall from the new
+location afterward. Reinstall if you recreate the virtual environment. A service
+owned by a different workspace must be uninstalled there first. Log files are
+retained on uninstall; manage their retention locally when the service is stopped.
+
 ## Configuration
 
 Copy [`.env.example`](../.env.example); do not commit your `.env`.
@@ -262,6 +326,7 @@ transactions, download models, send external notifications, or offer cloud fallb
 | --- | --- |
 | Database login fails | Check all five attributes, role access, server/port, and any overriding `DATABASE_URL`; `.env` wins over inherited `USER`. Do not print credentials. |
 | Missing column/table | Stop app, run `uv run alembic upgrade head` against the intended database, restart. |
+| Automatic startup not serving | Use the service `status` command and check logs for an occupied port, unavailable PostgreSQL, pending migrations, or missing frontend. Install in the logged-in GUI user session. |
 | `/` missing or old UI | Build `frontend/dist`, restart FastAPI, refresh browser. `/api/health` can still work without built assets. |
 | Vite API request fails | Run the backend on the proxy's configured port (8017 by default). |
 | API reports 403 on writes | Use the loopback app URL or supported Vite origin; do not expose through an arbitrary origin. |

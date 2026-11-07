@@ -286,7 +286,7 @@ controls in Purchase planner; the model does not invent arithmetic. The advisor 
 Python-calculated annual-payment and savings results as Purchase planner. Purchase/travel
 funding assumptions remain separate from this recurring-bill projection.
 
-New interfaces: `GET/PUT /api/savings`, `POST /api/savings/projection`, draft CRUD at
+Savings interfaces: `GET/PUT /api/savings`, `POST /api/savings/projection`, draft CRUD at
 `/api/bill-estimates`, and `POST /api/bill-estimates/{id}/include`. Money remains
 integer minor units. Saved savings and estimates lock the budget currency just
 like other financial records.

@@ -104,7 +104,9 @@ or final month, or configure dates/ACH. Moving the first month retains changes o
 their calendar dates and establishes a starting default where needed. Structural
 edits, including the distribution flag, can recalculate historical forecasts; use
 effective amount changes when earlier months must stay intact. Recorded actuals
-are preserved when a schedule changes or is deleted.
+are preserved when a schedule changes or is deleted. Set a final month to retire
+a bill while retaining its payment history; deleting the schedule removes its linked
+payment confirmations and ACH occurrence identities.
 
 ### Due dates and payment status
 
@@ -313,7 +315,8 @@ PDFs are supported; scanned PDFs require another export because OCR is unavailab
    transactions / retry**. The model proposes rows/types, not categories. Extraction
    runs in the background; reopening the import polls its status.
 
-Each file is limited to 15 MB, 100 PDF pages, and 5,000 rows. CSV accepts UTF-8
+Each file is limited to 15 MiB, 100 PDF pages, and 5,000 rows. Extracted PDF text
+is limited to 500,000 characters; PDFs with any scanned/empty page are rejected. CSV accepts UTF-8
 (including BOM), comma/semicolon/tab separators, and a first-five-row source preview.
 Combine separate debit and credit columns into one signed column before upload.
 The UI offers `YYYY-MM-DD`, `MM/DD/YYYY`, `DD/MM/YYYY`, `MM/DD/YY`, and `MM/DD` dates.
@@ -494,8 +497,9 @@ for retry and do not change financial records. See [timeout troubleshooting](ope
   disable PDF extraction or delete the model setting.
 - **Annual bill reserve alerts / Reserve checkpoint day:** control reserve reminders.
 - **Bank & card accounts:** add/rename/delete named accounts; names are not bank
-  connections. Referenced accounts/categories cannot be deleted until references
-  are resolved. Deleting a statement does not erase the card's CSV profile.
+  connections. Accounts/categories referenced by financial records may need those
+  references resolved before deletion. Deleting a category also removes its payee
+  rules. Deleting a statement does not erase the card's CSV profile.
 - **Alert after 30 days:** opt in per account. Exactly 30 days is current; more than
   30 is stale. An account with no evidence warns immediately. Saved dated transactions
   and committed statement coverage establish freshness; old cycles imported today

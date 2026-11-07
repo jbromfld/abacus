@@ -67,7 +67,7 @@ Accounts are named local records, not connected financial institutions.
 | GET | `/api/recurring` | Schedules with amount `changes` |
 | POST | `/api/recurring` | Create schedule plus initial `amount`; may catch up due configured ACH actuals |
 | PUT | `/api/recurring/{id}` | Edit schedule fields; amount history remains separately managed |
-| DELETE | `/api/recurring/{id}` | Remove schedule; recorded transactions remain |
+| DELETE | `/api/recurring/{id}` | Remove schedule and linked confirmations/occurrence identities; actual transactions remain |
 | PUT | `/api/recurring/{id}/amount` | Upsert `{month,amount,override}`; `override=false` is an effective default |
 | DELETE | `/api/recurring/{id}/amount/{change_id}` | Remove an override/default except the initial default |
 | POST | `/api/recurring/record-due` | Idempotently catch up due ACH actuals; writes actual transactions |

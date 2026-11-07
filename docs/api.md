@@ -1,0 +1,311 @@
+# API reference
+
+[Documentation index](README.md) · [User guide](user-guide.md) · [Operations](operations.md)
+
+Base URL: `http://127.0.0.1:8017/api`. The app serves interactive `/docs` and
+`/openapi.json` on the same origin. Those generated schemas provide exact field
+requirements, enum values, and validation responses for the running version.
+
+## Conventions
+
+- JSON requests/responses unless an upload is explicitly multipart. IDs are opaque strings.
+- Money is an integer in currency minor units: USD 200.00 is `20000`, JPY 200 is `200`.
+  Transaction/recurring/purchase amounts must be positive; refunds use a positive
+  amount with kind `refund`. Savings, floors, observations, and guides allow zero.
+- Months are `YYYY-MM`; dates are `YYYY-MM-DD`. Valid month and transaction-date years are 1900–9998.
+  End months/date ranges are inclusive. Annual paid periods use `YYYY` instead.
+- Repeat list parameters, e.g. `?end=2026-12&category_ids=ID1&category_ids=ID2`.
+- Most creates return 201. Deletes return `{"ok":true}`. List endpoints return arrays;
+  forecast, projection, averages, reserve, and breakdown endpoints return objects.
+- This is an unauthenticated loopback application, not an Internet-facing API.
+  Local host/origin restrictions apply. No API initiates payments or bank connections.
+
+Most `PUT` resource bodies follow their full input schema rather than arbitrary
+patch semantics. Send complete recurring/purchase/transaction records when editing.
+`PUT /settings` has defaults for currency/model/advisor, so include their current
+values when changing reserve preferences. Omitted/null reserve preferences preserve
+the existing values. Use dedicated PATCH endpoints where provided.
+
+## Health, settings, and local services
+
+| Method | Path | Purpose / inputs |
+| --- | --- | --- |
+| GET | `/api/health` | Check database query; returns `status` |
+| GET | `/api/settings` | Budget currency, selected model/advisor opt-in, savings fields, and reserve preferences |
+| PUT | `/api/settings` | `currency`, `model`, `advisor_enabled`, optional `reserve_alerts_enabled`, `reserve_checkpoint_day` (1–31) |
+| GET | `/api/models` | Installed local model names and connection error text |
+| GET | `/api/advisor/research-status` | Brave availability/status, without exposing the key |
+| POST | `/api/advisor/research-preview` | `{topic}` prepares public queries and a confirmation value; no outbound request |
+| POST | `/api/advisor/chat` | Read-only question with fresh budget context; described below |
+
+Changing currency is rejected once financial/planning data locks it. Enabling the
+advisor requires a selected installed model. Disabling the advisor does not require
+Ollama to be reachable.
+
+## Categories, accounts, and category guides
+
+| Method | Path | Purpose / inputs |
+| --- | --- | --- |
+| GET | `/api/categories` | Categories including nullable `monthly_guide` |
+| POST | `/api/categories` | Create with `name` |
+| PUT | `/api/categories/{id}` | Rename with `name` |
+| DELETE | `/api/categories/{id}` | Delete when references permit |
+| PATCH | `/api/categories/{id}/guide` | Set `monthly_guide` in minor units, or `null` to clear |
+| GET | `/api/spending/averages` | Required `end`; optional repeated `category_ids`; means, sample/partial counts, included/excluded months, guide suggestions |
+| GET | `/api/accounts` | Named bank/card accounts, saved `csv_mapping`, freshness dates/flags |
+| POST | `/api/accounts` | Create with `name`, optional `stale_alert_enabled` |
+| PUT | `/api/accounts/{id}` | Edit name/monitoring; omitted fields preserve current values |
+| PATCH | `/api/accounts/{id}/monitoring` | Set `stale_alert_enabled` |
+| DELETE | `/api/accounts/{id}` | Delete when references permit |
+
+Guides are informational. They do not change forecast or savings calculations.
+Accounts are named local records, not connected financial institutions.
+
+## Recurring schedules, ACH, and paid status
+
+| Method | Path | Purpose / inputs |
+| --- | --- | --- |
+| GET | `/api/recurring` | Schedules with amount `changes` |
+| POST | `/api/recurring` | Create schedule plus initial `amount`; may catch up due configured ACH actuals |
+| PUT | `/api/recurring/{id}` | Edit schedule fields; amount history remains separately managed |
+| DELETE | `/api/recurring/{id}` | Remove schedule and linked confirmations/occurrence identities; actual transactions remain |
+| PUT | `/api/recurring/{id}/amount` | Upsert `{month,amount,override}`; `override=false` is an effective default |
+| DELETE | `/api/recurring/{id}/amount/{change_id}` | Remove an override/default except the initial default |
+| POST | `/api/recurring/record-due` | Idempotently catch up due ACH actuals; writes actual transactions |
+| GET | `/api/recurring/dues` | Today/window, upcoming and overdue monthly occurrences, annual summaries, history |
+| PUT | `/api/recurring/{id}/payments/{period}` | Idempotent manual paid-status update: `{paid,paid_on}` |
+
+Schedule fields: `name`, `kind` (`payable`/`receivable`), `frequency`
+(`monthly`/`annual`), `category_id`, `start_month`, optional `end_month`,
+`distribute_annual`, `due_day`, `due_month`, `payment_tracking_start`,
+`ach_enabled`, `ach_day`, `ach_start_month`, and `ach_account_id`.
+
+Payables require a category. Annual amounts are full yearly totals. ACH is limited
+to monthly payables and requires the account/day/recording start. Contractual dates
+remain separate. Periods are `YYYY-MM` for monthly and `YYYY` for annual bills;
+occurrence membership/tracking is validated. Paid dates cannot be in the future.
+Paid-status updates leave actual transactions unchanged. Automatic ACH occurrences
+are derived from their generated actuals rather than manual confirmations.
+
+## Purchases and payment estimates
+
+| Method | Path | Purpose / inputs |
+| --- | --- | --- |
+| GET | `/api/purchases` | One-time purchase plans, drafts and included |
+| POST | `/api/purchases` | `name`, `amount`, `month`, `category_id`, optional `notes`, `included` |
+| PUT | `/api/purchases/{id}` | Update plan/inclusion with the purchase input schema |
+| DELETE | `/api/purchases/{id}` | Delete plan |
+| GET | `/api/bill-estimates` | Monthly payment drafts and conversion status |
+| POST | `/api/bill-estimates` | `name`, `amount`, `start_month`, optional `end_month`, required `category_id`, optional `due_day` |
+| PUT | `/api/bill-estimates/{id}` | Edit an unconverted payment draft |
+| DELETE | `/api/bill-estimates/{id}` | Delete estimate; a converted recurring bill is retained |
+| POST | `/api/bill-estimates/{id}/include` | Atomically convert once into a monthly recurring payable |
+
+An already converted estimate cannot be edited/reconverted. Use its recurring
+schedule for changes. Drafts never affect the baseline until explicitly included.
+
+## Forecasts, actuals, trends, and transactions
+
+| Method | Path | Purpose / inputs |
+| --- | --- | --- |
+| GET | `/api/forecast` | Required `month`; optional `preview=PURCHASE_ID` for that same month |
+| GET | `/api/trends` | Required `end`; optional repeated `category_ids`; rolling 12-month values |
+| GET | `/api/expenses/breakdown` | Required `start`, `end`; `basis=actual` (default) or `forecast` |
+| PUT | `/api/months/{month}` | Manual completeness marker `{complete:true/false}` |
+| GET | `/api/transactions` | Optional `month`, description substring `q`, and single `category_id` |
+| POST | `/api/transactions` | Create actual transaction with the fields below; learns reviewed category memory |
+| PUT | `/api/transactions/{id}` | Edit actual details using the transaction input schema; learns category memory |
+| DELETE | `/api/transactions/{id}` | Delete actual; does not erase learned payee memory |
+
+Transaction input: `date`, `description`, positive `amount`, `kind`, `account_id`,
+and `category_id` (required except for payments/transfers). Kinds are `purchase`,
+`refund`, `fee`, `payment`, `transfer`. Transactions are ordered newest date first.
+
+Forecast responses separate `income`, `expenses`, `remaining`, `deficit`, `lines`,
+`actual`, and `actual_deficit`. Actuals group by transaction date, not statement
+period. Missing trend values are `null`, not zero; complete zero months are zero.
+Breakdowns include charges/refunds/net, category aggregates, entries, and month
+completeness. Forecast breakdowns require full calendar-month boundaries.
+
+## Savings projections and reserve checks
+
+| Method | Path | Purpose / inputs |
+| --- | --- | --- |
+| GET | `/api/savings` | Opening snapshot `{amount,month,floor}`; unset amount is `null` |
+| PUT | `/api/savings` | Save `{amount,month,floor}`; nonfuture month also records its opening observation |
+| POST | `/api/savings/projection` | Read-only as-is or hypothetical 12-/24-month cash projection |
+| GET | `/api/reserve-check` | Preferences, fixed plan, latest/history observations, status, targets, upcoming risks/checkpoints |
+| PUT | `/api/reserve-check/plan` | Explicitly create/replace frozen target with `{amount,month}` and current annual schedules |
+| POST | `/api/reserve-check/balances` | Upsert dated opening observation `{amount,as_of}`; never resets the plan |
+| POST | `/api/reserve-check/dismiss` | Suppress notices until the next checkpoint |
+
+A projection takes `months` (12/24; default 24) plus `savings:{amount,month,floor}`
+or, without known savings, `start_month`. Optional scenario inputs are mutually
+exclusive:
+
+- `bill:{name,amount,start_month,end_month}` for a proposed monthly payment.
+- `estimate_id` for a saved payment estimate, accounting for prior conversion once.
+- `recurring_change:{recurring_id,action,start_month,end_month,amount}`; `action` is
+  `modify` (amount required) or `remove` (amount prohibited).
+
+Omit all scenarios for the unchanged current budget. Existing schedules/transactions
+are never mutated by projection. It returns separate forecast/cash expenses and
+monthly room, allocation adjustments, named annual payments, baseline/scenario
+savings, breaches, missing income, and status. Unknown savings remains `null`.
+
+Reserve responses distinguish `no_bills`, `not_configured`, `needs_update`,
+`below_target`, `payment_risk`, `scheduled`, and `on_track`. `enabled` and `dismissed`
+control presentation separately from the calculated status. Dates follow
+`APP_TIMEZONE`. Targets exclude optional surplus and are frozen until explicit plan
+replacement. An observation before the latest checkpoint is stale; a same-date
+observation replaces its amount. Future observations/baseline months are rejected.
+Observations represent opening balances before payments due that day. No reserve
+endpoint creates spending or paid confirmations.
+
+## Statement import lifecycle
+
+| Method | Path | Purpose / inputs |
+| --- | --- | --- |
+| GET | `/api/imports` | Summary list, newest upload first |
+| POST | `/api/imports` | Multipart fields `account_id`, `period`, and `file`; prepares CSV/text PDF |
+| GET | `/api/imports/{id}` | Job status, review rows, source preview/mapping, and commit summary |
+| POST | `/api/imports/{id}/mapping/default` | Apply remembered card mapping to an eligible unmapped CSV |
+| PUT | `/api/imports/{id}/mapping` | Parse rows and save per-card mapping; replaces review edits |
+| POST | `/api/imports/{id}/categorize` | Apply memory to empty categories without model categorization |
+| POST | `/api/imports/{id}/process` | Queue local row processing/PDF extraction; poll the job afterward |
+| PUT | `/api/imports/{id}/review` | Save/validate `{rows:[...]}` without committing actuals |
+| POST | `/api/imports/{id}/commit` | Atomically save valid selected rows; skip exact cross-import CSV overlaps |
+| POST | `/api/imports/{id}/undo` | Delete every linked actual transaction; retain import and memory |
+| DELETE | `/api/imports/{id}` | Delete eligible stopped/uncommitted/undone import and release file fingerprint |
+| GET | `/api/payee-rules` | Saved exact-description/type/category rules |
+| PUT | `/api/payee-rules/{id}` | Correct remembered `category_id` without rewriting transactions |
+| DELETE | `/api/payee-rules/{id}` | Forget memory rule; transactions remain |
+
+CSV mapping input: `date_column`, `description_column`, `amount_column`,
+`date_format` (default `%Y-%m-%d`), and `positive_is` (`purchase`, `refund`, or `null`
+for all-purchase default). Mapping applies memory without Ollama. The original CSV
+fields are the duplicate identity; editing row descriptions/categories does not
+change it. `PAYMENT` defaults precede categorization; zero rows start unchecked.
+
+Review rows use `date`, `description`, `amount`, `kind`, `category_id`, `selected`,
+and `source_index` to retain a prepared row's provenance. The server preserves source
+and validates errors/duplicate flags. Manually added rows have manual-review source.
+Resolve all selected-row errors before commit; invalid unchecked rows do not block
+valid ones. A commit with only already-imported rows may finish with zero additions.
+
+```text
+prepare → prepared or review (saved CSV mapping applied)
+map CSV → review
+process → processing → review or failed
+server restart during processing → interrupted
+review/manual correction → review
+commit → committed → undo → undone → delete
+stopped prepared/review/failed/interrupted jobs → delete
+```
+
+Poll `GET /api/imports/{id}` until processing finishes; the UI polls every 1.5 seconds.
+Retries use the same process endpoint. Processing, committed, and undone jobs cannot
+be edited/processed normally. Wait for processing to finish before deletion; undo
+committed jobs first. Exact repeat files are blocked per account while their import
+exists. Row overlaps are rechecked under an account lock at commit. Repeats within
+one file are flagged rather than automatically skipped. Batch upload is a frontend
+queue over these same per-file endpoints, not a separate bulk API.
+
+Limits: 15 MiB per upload, 100 PDF pages, 500,000 extracted PDF characters, and
+5,000 review rows. Scanned/nontext PDFs, unsupported encodings/formats, and invalid
+column headers are rejected with a validation explanation. Original file bytes are
+not retained; local review/provenance retention is explained in
+[Operations](operations.md#privacy-and-data).
+
+## Advisor request and context
+
+`POST /api/advisor/chat` requires `month` and nonempty `message` (up to 2,000
+characters). Optional fields:
+
+| Field | Meaning |
+| --- | --- |
+| `history` | Up to 12 user/assistant messages, with bounded content/total length |
+| `purchase_id` or `scenario:{name,amount,month}` | A saved or one-off purchase; mutually exclusive |
+| `monthly_bill` or `bill_estimate_id` | Structured monthly payment or saved estimate; exclusive with purchase scenarios |
+| `savings` | Explicit opening snapshot override for this request |
+| `use_web` | Enable optional Brave research; default false at the API |
+| `research_topic` | Required explicit public topic when using web research; chat/history never supply it |
+| `research_confirmation` | Confirmation from `/advisor/research-preview` for this exact topic and query plan; required before outbound search |
+| `planning:{available_savings,monthly_buffer}` | Optional separate trip-funding assumptions |
+
+The response is `{reply,context}`. Context includes monthly forecasts, recent
+actuals/completeness, drafts, category guide statistics, Python-calculated
+`forecast_comparison`, selected scenario, `savings_projection`, `planning_capacity`,
+and `web_research`. Monetary names ending `_minor` are integer minor units; **all
+money in savings_projection also uses minor units**, even without that suffix.
+
+The API waits for the completed reply while the local transport reads streamed
+model output. It does not stream partial advice to the browser or expose tool access
+to the model. It releases its database read transaction before model waiting. Timeout/
+research errors never save transactions or plans. The advisor must be opted in and
+have a selected model; no cloud fallback or model download occurs.
+
+## Examples
+
+Replace IDs and dates with your own values. The first two requests are read-only;
+the upload prepares a review but does not commit transactions.
+
+```sh
+curl 'http://127.0.0.1:8017/api/forecast?month=2026-12'
+
+curl -X POST 'http://127.0.0.1:8017/api/savings/projection' \
+  -H 'Content-Type: application/json' \
+  -d '{"months":12,"savings":{"amount":500000,"month":"2026-12","floor":0}}'
+
+curl -X POST 'http://127.0.0.1:8017/api/imports' \
+  -F 'account_id=YOUR_ACCOUNT_ID' -F 'period=2026-12' -F 'file=@statement.csv'
+```
+
+To preview a $200 monthly addition, add a `bill` to the projection body:
+
+```json
+{
+  "months": 24,
+  "savings": {"amount": 500000, "month": "2026-12", "floor": 0},
+  "bill": {"name": "Potential payment", "amount": 20000, "start_month": "2026-12"}
+}
+```
+
+## Errors and recovery
+
+| HTTP status | Typical meaning/action |
+| --- | --- |
+| 403 | Nonlocal host or disallowed write origin |
+| 404 | Record/estimate/schedule not found |
+| 409 | Duplicate file/name, referenced record, locked import state, already converted estimate, currency lock, or disabled advisor |
+| 413 | Upload exceeds size limit |
+| 422 | Invalid input, unsupported file/mapping, selected review errors, or unavailable/unselected model choice |
+| 503 | Optional local model/service unavailable or invalid response |
+| 504 | Advisor local model exceeded its timeout |
+
+Errors normally use JSON `detail`; validation errors can be a list rather than a
+string. Background processing failure appears in the import's `status`/`error`,
+not as a committed partial result. Read the response before retrying; already
+committed imports/conversions cannot be blindly committed a second time.
+
+## Bulk reads and provenance
+
+`GET /api/forecasts?start=YYYY-MM&months=12` returns 1–24 consecutive monthly
+forecasts with actual totals. The ending month must remain within 1900–9998.
+`GET /api/trends` uses fixed-count aggregate reads; it returns forecast and actual
+amounts separately. Expense breakdown accepts at most 120 inclusive calendar months,
+returning 422 for a longer range before loading financial data.
+
+`GET /api/transactions` returns compact display records; `provenance` contains only
+the generated ACH marker, if present. `GET /api/transactions/{id}` returns full
+review provenance, expanding shared PDF page references on demand. PDF page text
+is stored once per import/page after commit; review and source details retain it.
+
+`POST /api/imports/{id}/process` accepts optional `{replace_review:true}`. Existing
+PDF review rows require this explicit replacement consent (409 otherwise). Failure
+preserves saved review rows. Job generation tokens prevent an older worker from
+writing over a newer attempt. Processing releases its DB connection during model calls.
+
+The dues response no longer includes the unused, always-empty `missing_monthly`
+and `missing_monthly_count` fields. Undated budget allowances continue to be omitted
+from payment-tracking lists.

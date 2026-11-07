@@ -1,0 +1,10 @@
+{
+  "fuzzy_threshold": 0.94,
+  "fuzzy_margin": 0.05,
+  "patterns": [
+    {
+      "pattern": "\\b(amazon\\.com|amazon mktpl)\\s*\\*\\s*[a-z0-9]+\\b",
+      "replacement": "\\1"
+    }
+  ]
+}

@@ -340,7 +340,11 @@ def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
             409,
             "Advisor memory changed while answering. Start a new conversation and retry.",
         )
-    return {"reply": reply, "context": context}
+    return {
+        "reply": reply,
+        "reply_truncated": getattr(reply, "truncated", False),
+        "context": context,
+    }
 
 
 @app.get("/api/savings")

@@ -4,6 +4,26 @@ import remarkGfm from 'remark-gfm';
 type Source = { id: string; url: string };
 type Node = { type: string; value?: string; url?: string; children?: Node[] };
 
+// A few local models emit TeX despite requesting ordinary Markdown. Normalize
+// common prose notation only; never interpret it as HTML or execute math/code.
+export function readableProse(content: string) {
+  return content
+    .split(/(`{3,}[\s\S]*?`{3,}|`[^`\n]*`)/g)
+    .map((part, index) => {
+      if (index % 2) return part;
+      return part
+        .replace(/\u00a0|\u202f/g, ' ')
+        .replace(/\\\$/g, '$')
+        .replace(/\$?\\(?:text|mathrm|mathbf)\{([^{}]*)\}/g, '$1')
+        .replace(/\\approx/g, '≈')
+        .replace(/\\(?:times|cdot)/g, '×')
+        .replace(/\\(?:left|right)(?=[()[\]])/g, '')
+        .replace(/\\[([]([\s\S]*?)\\[)\]]/g, '$1')
+        .replace(/(\d)\$(?=\s|[),.;]|$)/g, '$1');
+    })
+    .join('');
+}
+
 export default function AdvisorMarkdown({
   content,
   sources = [],
@@ -26,6 +46,7 @@ export default function AdvisorMarkdown({
             visit(child);
             return [child];
           }
+          child.value = readableProse(child.value);
           const parts: Node[] = [];
           let start = 0;
           for (const match of child.value.matchAll(/\[(S\d+)\]/g)) {

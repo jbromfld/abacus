@@ -42,3 +42,25 @@ it('never fetches images or exposes unapproved financial URLs and ignores raw HT
   expect(screen.getByText('Safe text')).toBeInTheDocument();
   expect(screen.getByText('Search')).toBeInTheDocument();
 });
+
+it('renders local-model currency and common TeX prose legibly without altering literal code or ordinary prices', () => {
+  const { container } = render(
+    <AdvisorMarkdown
+      content={
+        String.raw`Action: Review **Whole Foods** ($\text{average} \approx $270.00$ per month) and Costco ($\text{average} \approx $44.51$ per month).
+
+Prices: $50 and $75. Escaped price: \$12.00.` + '\n\n`$\\text{average}$`'
+      }
+    />,
+  );
+  expect(container).toHaveTextContent(
+    'Whole Foods (average ≈ $270.00 per month)',
+  );
+  expect(container).toHaveTextContent('Costco (average ≈ $44.51 per month)');
+  expect(container).toHaveTextContent(
+    'Prices: $50 and $75. Escaped price: $12.00.',
+  );
+  expect(container.querySelector('code')).toHaveTextContent(
+    '$\\text{average}$',
+  );
+});

@@ -234,10 +234,11 @@ characters). Optional fields:
 | `research_confirmation` | Confirmation from `/advisor/research-preview` for this exact topic and query plan; required before outbound search |
 | `planning:{available_savings,monthly_buffer}` | Optional separate trip-funding assumptions |
 
-The response is `{reply,context}`. Context includes monthly forecasts, recent
+The response is `{reply,reply_truncated,context}`. `reply_truncated` is true when
+Ollama ends generation at its token limit; the UI marks that answer incomplete. Context includes monthly forecasts, recent
 actuals/completeness, drafts, category guide statistics, Python-calculated
 `forecast_comparison`, selected scenario, `savings_projection`, `planning_capacity`,
-`spending_history`, and `web_research`. Monetary names ending `_minor` are integer minor units; **all
+`spending_history`, `spending_comparison`, and `web_research`. Monetary names ending `_minor` are integer minor units; **all
 money in savings_projection also uses minor units**, even without that suffix.
 
 The API waits for the completed reply while the local transport reads streamed
@@ -364,3 +365,25 @@ payments/transfers are excluded. Partial months remain qualified evidence rather
 than complete actuals. All summary values are deterministic; payee selection is
 bounded and is not a claim that the full ledger was sent. `reply` may be Markdown.
 No new endpoint gives the model arbitrary transaction lookup or SQL access.
+
+
+### Recorded spending comparison
+
+`context.spending_comparison` compares the latest two finished calendar months,
+ending at the selected month or the latest finished month, whichever is earlier.
+It contains `previous_month`, `month`, completeness statuses, `totals`, `accounts`
+(named accounts only, no IDs), and `categories`. Rows contain `previous_minor`,
+`current_minor`, and `change_minor`: purchases and fees less refunds, by transaction
+date. Card payments and transfers are excluded. Missing months produce null values;
+explicitly complete zero months produce zero. Partial data is labeled.
+
+Its `budget_impact` rows subtract actual recorded spending from planned income for
+each comparison month. Unrecorded income or missing actuals yields unknown room.
+These are not verified income receipts, achieved savings, or a bank balance.
+`forecast_comparison` remains separate planning evidence for forecast shortfalls;
+a changed allowance never establishes changed actual spending. Future
+`savings_projection` continues to use budget assumptions, not a substitution of
+historical charges. History rows also include Python-calculated `average_minor`
+and `sample_count`, excluding missing months. The local-model payload receives
+formatted currency values for history and comparisons; the API retains integer
+minor units for UI calculations.

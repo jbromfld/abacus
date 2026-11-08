@@ -12,7 +12,12 @@ from psycopg import sql
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
-from .advisor_access import ADVISOR_TABLES, AdvisorAccessError, verify_advisor_access
+from .advisor_access import (
+    ADVISOR_COLUMNS,
+    ADVISOR_TABLES,
+    AdvisorAccessError,
+    verify_advisor_access,
+)
 
 
 class AdvisorSetupError(RuntimeError):
@@ -190,6 +195,14 @@ def provision_advisor(admin_url, role, password=None, *, rotate=False):
                 cursor.execute(
                     sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(identifier)
                 )
+                for table, columns in ADVISOR_COLUMNS.items():
+                    cursor.execute(
+                        sql.SQL("GRANT SELECT ({}) ON TABLE public.{} TO {}").format(
+                            sql.SQL(", ").join(map(sql.Identifier, columns)),
+                            sql.Identifier(table),
+                            identifier,
+                        )
+                    )
                 for table in ADVISOR_TABLES:
                     cursor.execute(
                         sql.SQL("GRANT SELECT ON TABLE public.{} TO {}").format(

@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from .advisor_history import spending_history
+from .advisor_history import spending_comparison, spending_history
 from .advisor_prompts import system_instructions
 from .budget import ActualWindow, ForecastInputs, forecast, shift_month
 from .category_planning import category_averages
@@ -180,6 +180,31 @@ def budget_context(db, request):
         if guide_end >= "1900-12"
         else []
     )
+    history = spending_history(db, request.month, today, categories)
+    comparison = spending_comparison(db, history)
+    if comparison:
+        comparison["budget_impact"] = []
+        for period, key in (
+            (comparison["previous_month"], "previous_minor"),
+            (comparison["month"], "current_minor"),
+        ):
+            planned = inputs.forecast(period)
+            income_recorded = any(
+                line["kind"] == "receivable" for line in planned["lines"]
+            )
+            spending = comparison["totals"][key]
+            comparison["budget_impact"].append(
+                {
+                    "month": period,
+                    "planned_income_minor": planned["income"]
+                    if income_recorded
+                    else None,
+                    "actual_spending_minor": spending,
+                    "room_after_recorded_spending_minor": planned["income"] - spending
+                    if income_recorded and spending is not None
+                    else None,
+                }
+            )
     return {
         "currency": currency,
         "minor_unit_digits": 0 if currency == "JPY" else 2,
@@ -197,7 +222,8 @@ def budget_context(db, request):
         },
         "monthly_forecasts": projections,
         "recent_actuals": recent,
-        "spending_history": spending_history(db, request.month, today, categories),
+        "spending_history": history,
+        "spending_comparison": comparison,
         "forecast_comparison": forecast_comparison(
             db, request.month, inputs=inputs, categories=categories
         ),
@@ -308,6 +334,14 @@ def model_snapshot(context):
             )
         )
 
+    def display_fields(row):
+        return {
+            key.removesuffix("_minor") + "_display"
+            if key.endswith("_minor")
+            else key: display_money(value) if key.endswith("_minor") else value
+            for key, value in row.items()
+        }
+
     # The UI keeps the complete evidence. Share window metadata once in the
     # local prompt to leave room for forecasts within Ollama's context window.
     if history := context.get("spending_history"):
@@ -327,11 +361,19 @@ def model_snapshot(context):
             **{
                 group: [
                     {
-                        **row,
+                        **{
+                            key: value
+                            for key, value in row.items()
+                            if key not in ("monthly_net_minor", "average_minor")
+                        },
+                        "monthly_net_display": [
+                            display_money(value) for value in row["monthly_net_minor"]
+                        ],
+                        "average_display": display_money(row["average_minor"]),
                         "comparisons": [
                             {
                                 "months": change["months"],
-                                "change_minor": change["change_minor"],
+                                "change_display": display_money(change["change_minor"]),
                             }
                             for change in row["comparisons"]
                         ],
@@ -341,6 +383,20 @@ def model_snapshot(context):
                 for group in ("categories", "payees")
             },
         }
+    if comparison := context.get("spending_comparison"):
+        model_context["spending_comparison"] = {
+            **comparison,
+            "totals": display_fields(comparison["totals"]),
+            "accounts": [display_fields(row) for row in comparison["accounts"]],
+            "categories": [display_fields(row) for row in comparison["categories"]],
+            "budget_impact": [
+                display_fields(row) for row in comparison.get("budget_impact", [])
+            ],
+        }
+    if "category_guides" in context:
+        model_context["category_guides"] = [
+            display_fields(row) for row in context["category_guides"]
+        ]
     capacity = context["planning_capacity"]
     if not capacity["assumptions_complete"] or (
         context.get("savings_projection") and context["savings_projection"]["bill"]

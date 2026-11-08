@@ -478,78 +478,80 @@ export default function AdvisorMemory({
           </p>
         </div>
       </div>
-      <p>
-        Approved intentions, preferences, and decisions stay local. Full
-        conversations are not archived. Completed and abandoned notes are
-        excluded from recall.
-      </p>
-      {error && (
-        <p className="red" role="alert">
-          {error}
+      <div className="memory-content">
+        <p>
+          Approved intentions, preferences, and decisions stay local. Full
+          conversations are not archived. Completed and abandoned notes are
+          excluded from recall.
         </p>
-      )}
-      {enabled && (
-        <>
-          <div className="button-group">
-            <button
-              className="secondary"
-              onClick={() => setEditing(emptyNote())}
-            >
-              Add note manually
-            </button>
-            <button
-              className="text-button"
-              onClick={() => setRefresh((n) => n + 1)}
-            >
-              Refresh memory
-            </button>
-          </div>
-          {!loading && !error && !notes.length && (
-            <p>
-              No approved notes yet. Use Remember this after an advisor
-              exchange, or add a note manually.
-            </p>
-          )}
-          {notes.map((note) => (
-            <article className="memory-note" key={note.id}>
-              <strong>{note.title}</strong>
-              <small>
-                {note.source_date} · {note.kind} · {note.status}
-              </small>
-              <p>{note.text}</p>
+        {error && (
+          <p className="red" role="alert">
+            {error}
+          </p>
+        )}
+        {enabled && (
+          <>
+            <div className="button-group">
+              <button
+                className="secondary"
+                onClick={() => setEditing(emptyNote())}
+              >
+                Add note manually
+              </button>
               <button
                 className="text-button"
-                onClick={() => void edit(note.id!)}
+                onClick={() => setRefresh((n) => n + 1)}
               >
-                Edit “{note.title}”
+                Refresh memory
               </button>
-            </article>
-          ))}
-          {next !== null && (
-            <button
-              className="secondary"
-              disabled={loading}
-              onClick={async () => {
-                setLoading(true);
-                try {
-                  const result = await api<{
-                    items: MemoryNote[];
-                    next_offset: number | null;
-                  }>(`/advisor/memory?offset=${next}`);
-                  setNotes([...notes, ...result.items]);
-                  setNext(result.next_offset);
-                } catch (e) {
-                  setError((e as Error).message);
-                } finally {
-                  setLoading(false);
-                }
-              }}
-            >
-              More notes
-            </button>
-          )}
-        </>
-      )}
+            </div>
+            {!loading && !error && !notes.length && (
+              <p>
+                No approved notes yet. Use Remember this after an advisor
+                exchange, or add a note manually.
+              </p>
+            )}
+            {notes.map((note) => (
+              <article className="memory-note" key={note.id}>
+                <strong>{note.title}</strong>
+                <small>
+                  {note.source_date} · {note.kind} · {note.status}
+                </small>
+                <p>{note.text}</p>
+                <button
+                  className="text-button"
+                  onClick={() => void edit(note.id!)}
+                >
+                  Edit “{note.title}”
+                </button>
+              </article>
+            ))}
+            {next !== null && (
+              <button
+                className="secondary"
+                disabled={loading}
+                onClick={async () => {
+                  setLoading(true);
+                  try {
+                    const result = await api<{
+                      items: MemoryNote[];
+                      next_offset: number | null;
+                    }>(`/advisor/memory?offset=${next}`);
+                    setNotes([...notes, ...result.items]);
+                    setNext(result.next_offset);
+                  } catch (e) {
+                    setError((e as Error).message);
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              >
+                More notes
+              </button>
+            )}
+          </>
+        )}
+      </div>
       {editing && enabled && (
         <NoteEditor
           initial={editing}

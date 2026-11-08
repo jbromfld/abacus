@@ -17,7 +17,7 @@ def test_standard_instructions_are_short_and_keep_accounting_and_privacy_rules()
             "spending_history": {"months": []},
         },
     )
-    assert len(value) < 3000
+    assert len(value) < 3800
     for text in (
         "read-only",
         "untrusted",
@@ -115,3 +115,38 @@ def test_purchase_amounts_are_formatted_in_python_without_mutating_snapshot(
     )
     assert compact["purchase_scenario"]["amount_minor"] == amount
     assert "display_summary" not in scenario
+
+
+def test_markdown_and_actual_spending_are_distinct_from_planning():
+    value = system_instructions(request(), {"spending_history": {"months": []}})
+    assert "never LaTeX" in value
+    assert "Forecast edits are never evidence of charges" in value
+    assert "quote these amounts exactly" in value
+
+
+@pytest.mark.parametrize(
+    "currency,digits,expected", [("USD", 2, "USD 270.00"), ("JPY", 0, "JPY 27,000")]
+)
+def test_history_means_use_python_currency_units_and_do_not_mutate_api_snapshot(
+    currency, digits, expected
+):
+    from abacus.advisor import model_snapshot
+
+    row = {
+        "category": "Groceries",
+        "monthly_net_minor": [27000, None],
+        "average_minor": 27000,
+        "sample_count": 1,
+        "comparisons": [],
+    }
+    context = {
+        "currency": currency,
+        "minor_unit_digits": digits,
+        "planning_capacity": {"assumptions_complete": False},
+        "spending_history": {"categories": [row], "payees": []},
+    }
+    result = model_snapshot(context)["spending_history"]["categories"][0]
+    assert result["average_display"] == expected
+    assert result["monthly_net_display"] == [expected, None]
+    assert "average_minor" not in result and "monthly_net_minor" not in result
+    assert row["average_minor"] == 27000

@@ -6,8 +6,9 @@ from datetime import date
 from sqlalchemy import case, func, select
 
 from .budget import ActualWindow, shift_month
+from .category_planning import average
 from .classification import normalize_payee
-from .models import Transaction
+from .models import Account, Transaction
 from .payee_matching import load_matching_config
 
 MAX_PAYEES = 20
@@ -70,6 +71,8 @@ def spending_history(db, selected_month, today, categories):
             {
                 "category": names[category_id],
                 "monthly_net_minor": values,
+                "average_minor": average([v for v in values if v is not None]),
+                "sample_count": sum(v is not None for v in values),
                 "comparisons": comparisons(values),
             }
         )
@@ -104,6 +107,8 @@ def spending_history(db, selected_month, today, categories):
                 "payee": payee,
                 "category": names.get(category_id, "Uncategorized"),
                 "monthly_net_minor": values,
+                "average_minor": average([v for v in values if v is not None]),
+                "sample_count": sum(v is not None for v in values),
                 "comparisons": comparisons(values),
             }
         )
@@ -132,4 +137,69 @@ def spending_history(db, selected_month, today, categories):
         "payee_limit": MAX_PAYEES,
         "additional_payees_omitted": max(0, len(payee_rows) - MAX_PAYEES),
         "payee_selection": "Largest recorded increases over the latest 2/3 months, then latest 3-month net spending. Payee normalization groups store numbers and reference variants; names are transaction labels, not verified merchant identities.",
+    }
+
+
+def spending_comparison(db, history):
+    """Last two finished months, never forecast changes or card repayments."""
+    months = history["months"][-2:]
+    if len(months) < 2:
+        return None
+    previous, current = (row["month"] for row in months)
+    statuses = {row["month"]: row["status"] for row in months}
+    signed = case(
+        (Transaction.kind == "refund", -Transaction.amount), else_=Transaction.amount
+    )
+    period = func.date_trunc("month", Transaction.date)
+    rows = db.execute(
+        select(period, Account.name, func.sum(signed))
+        .join(Account, Transaction.account_id == Account.id)
+        .where(
+            Transaction.date >= date.fromisoformat(previous + "-01"),
+            Transaction.date < date.fromisoformat(shift_month(current, 1) + "-01"),
+            Transaction.kind.in_(["purchase", "fee", "refund"]),
+        )
+        .group_by(period, Account.name)
+    )
+    totals = defaultdict(dict)
+    for month, name, amount in rows:
+        totals[name][month.strftime("%Y-%m")] = int(amount)
+
+    def change(name, values):
+        before = None if statuses[previous] == "missing" else values.get(previous, 0)
+        after = None if statuses[current] == "missing" else values.get(current, 0)
+        return {
+            "name": name,
+            "previous_minor": before,
+            "current_minor": after,
+            "change_minor": None if before is None or after is None else after - before,
+        }
+
+    accounts = [change(name, values) for name, values in totals.items()]
+    accounts.sort(
+        key=lambda row: (-abs(row["change_minor"] or 0), row["name"].casefold())
+    )
+    categories = [
+        change(
+            row["category"],
+            dict(zip((previous, current), row["monthly_net_minor"][-2:])),
+        )
+        for row in history["categories"]
+    ]
+    total = change(
+        "All recorded spending",
+        {
+            month: sum(values.get(month, 0) for values in totals.values())
+            for month in statuses
+        },
+    )
+    return {
+        "previous_month": previous,
+        "month": current,
+        "previous_status": statuses[previous],
+        "current_status": statuses[current],
+        "basis": "Recorded purchases and fees minus refunds, by transaction date. Payments and transfers excluded. Latest two finished months ending no later than the selected month; partial months may understate spending. Forecast edits are not spending changes. Account totals are not statement balances or card repayments.",
+        "totals": total,
+        "accounts": accounts,
+        "categories": categories,
     }

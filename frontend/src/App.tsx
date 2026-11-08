@@ -1664,335 +1664,352 @@ export default function App() {
                 )}
                 {view === 'Settings' && (
                   <div className="settings-grid">
-                    <section className="panel">
-                      <div className="section-head">
-                        <div>
-                          <h2>Budget & optional local tools</h2>
-                          <p>Your data stays in local PostgreSQL.</p>
-                        </div>
-                      </div>
-                      <form
-                        className="settings-form"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const data = new FormData(e.currentTarget);
-                          void act(() =>
-                            api('/settings', 'PUT', {
-                              currency: data.get('currency'),
-                              model: data.get('model'),
-                              advisor_enabled:
-                                data.get('advisor_enabled') === 'on',
-                              advisor_memory_enabled:
-                                data.get('advisor_memory_enabled') === 'on',
-                              reserve_alerts_enabled:
-                                data.get('reserve_alerts_enabled') === 'on',
-                              reserve_checkpoint_day: Number(
-                                data.get('reserve_checkpoint_day'),
-                              ),
-                            }),
-                          );
-                        }}
-                      >
-                        <label>
-                          Budget currency
-                          <select
-                            name="currency"
-                            defaultValue={currency}
-                            key={currency}
-                          >
-                            {[
-                              'USD',
-                              'EUR',
-                              'GBP',
-                              'CAD',
-                              'AUD',
-                              'JPY',
-                              'CHF',
-                            ].map((c) => (
-                              <option key={c}>{c}</option>
-                            ))}
-                          </select>
-                          <small>
-                            Currency is fixed once entries or imports exist.
-                          </small>
-                        </label>
-                        <label>
-                          Local model for advisor / PDF extraction
-                          <select
-                            name="model"
-                            defaultValue={settings.model}
-                            key={settings.model + models.models.join()}
-                          >
-                            <option value="">
-                              None · CSV and manual review only
-                            </option>
-                            {[
-                              ...new Set([
-                                ...models.models,
-                                ...(settings.model ? [settings.model] : []),
-                              ]),
-                            ].map((m) => (
-                              <option key={m}>{m}</option>
-                            ))}
-                          </select>
-                          <small>
-                            Choose an installed model for chat or optional PDF
-                            extraction. CSV categorization uses remembered
-                            payees only.
-                          </small>
-                        </label>
-                        <label className="checkbox">
-                          <input
-                            type="checkbox"
-                            name="advisor_enabled"
-                            defaultChecked={settings.advisor_enabled}
-                            key={String(settings.advisor_enabled)}
-                          />
-                          Enable Budget advisor in the main menu
-                        </label>
-                        <label className="checkbox">
-                          <input
-                            type="checkbox"
-                            name="advisor_memory_enabled"
-                            defaultChecked={
-                              settings.advisor_memory_enabled ?? false
-                            }
-                            key={
-                              'memory' + String(settings.advisor_memory_enabled)
-                            }
-                          />
-                          Enable optional local advisor memory (Memora)
-                        </label>
-                        <label className="checkbox">
-                          <input
-                            type="checkbox"
-                            name="reserve_alerts_enabled"
-                            defaultChecked={settings.reserve_alerts_enabled}
-                            key={
-                              'reserve' +
-                              String(settings.reserve_alerts_enabled)
-                            }
-                          />
-                          Annual bill reserve alerts
-                        </label>
-                        <label>
-                          Reserve checkpoint day
-                          <input
-                            name="reserve_checkpoint_day"
-                            aria-label="Reserve checkpoint day"
-                            type="number"
-                            min="1"
-                            max="31"
-                            required
-                            defaultValue={settings.reserve_checkpoint_day}
-                            key={'day' + settings.reserve_checkpoint_day}
-                          />
-                          <small>
-                            Previous month’s allocations should reach savings by
-                            this day. Short months use their last day. Alerts
-                            appear only inside the app.
-                          </small>
-                        </label>
-                        {models.error && (
-                          <p className="notice">{models.error}</p>
-                        )}
-                        <div className="button-group">
-                          <button>Save settings</button>
-                          <button
-                            type="button"
-                            className="secondary"
-                            onClick={() =>
-                              void act(async () =>
-                                setModels(await api('/models')),
-                              )
-                            }
-                          >
-                            Refresh models
-                          </button>
-                        </div>
-                      </form>
-                    </section>
-                    <AdvisorMemory
-                      enabled={settings.advisor_memory_enabled ?? false}
-                      revision={revision}
-                    />
-                    <section className="panel">
-                      <div className="section-head">
-                        <div>
-                          <h2>Bank & card accounts</h2>
-                          <p>
-                            Add a bank account for ACH debits or a card for
-                            statement imports. Check a card to show in-app
-                            alerts when information is over 30 days old.
-                          </p>
-                        </div>
-                        <button
-                          className="text-button"
-                          onClick={() => manageName('accounts')}
-                        >
-                          <Plus size={16} />
-                          Add
-                        </button>
-                      </div>
-                      {accounts.map((a) => (
-                        <div className="name-row" key={a.id}>
-                          <div className="grow">
-                            <strong>{a.name}</strong>
-                            <small>
-                              {a.last_information_date
-                                ? `Information through ${a.last_information_date}`
-                                : 'No saved information yet'}
-                            </small>
-                            {a.csv_mapping && (
-                              <small>CSV mapping remembered</small>
-                            )}
+                    <div className="settings-column">
+                      <section className="panel">
+                        <div className="section-head">
+                          <div>
+                            <h2>Budget & optional local tools</h2>
+                            <p>Your data stays in local PostgreSQL.</p>
                           </div>
-                          <label className="checkbox card-monitor">
+                        </div>
+                        <form
+                          className="settings-form"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const data = new FormData(e.currentTarget);
+                            void act(() =>
+                              api('/settings', 'PUT', {
+                                currency: data.get('currency'),
+                                model: data.get('model'),
+                                advisor_enabled:
+                                  data.get('advisor_enabled') === 'on',
+                                advisor_memory_enabled:
+                                  data.get('advisor_memory_enabled') === 'on',
+                                reserve_alerts_enabled:
+                                  data.get('reserve_alerts_enabled') === 'on',
+                                reserve_checkpoint_day: Number(
+                                  data.get('reserve_checkpoint_day'),
+                                ),
+                              }),
+                            );
+                          }}
+                        >
+                          <label>
+                            Budget currency
+                            <select
+                              name="currency"
+                              defaultValue={currency}
+                              key={currency}
+                            >
+                              {[
+                                'USD',
+                                'EUR',
+                                'GBP',
+                                'CAD',
+                                'AUD',
+                                'JPY',
+                                'CHF',
+                              ].map((c) => (
+                                <option key={c}>{c}</option>
+                              ))}
+                            </select>
+                            <small>
+                              Currency is fixed once entries or imports exist.
+                            </small>
+                          </label>
+                          <label>
+                            Local model for advisor / PDF extraction
+                            <select
+                              name="model"
+                              defaultValue={settings.model}
+                              key={settings.model + models.models.join()}
+                            >
+                              <option value="">
+                                None · CSV and manual review only
+                              </option>
+                              {[
+                                ...new Set([
+                                  ...models.models,
+                                  ...(settings.model ? [settings.model] : []),
+                                ]),
+                              ].map((m) => (
+                                <option key={m}>{m}</option>
+                              ))}
+                            </select>
+                            <small>
+                              Choose an installed model for chat or optional PDF
+                              extraction. CSV categorization uses remembered
+                              payees only.
+                            </small>
+                          </label>
+                          <label className="checkbox">
                             <input
                               type="checkbox"
-                              checked={a.stale_alert_enabled}
-                              disabled={monitoring !== null}
-                              onChange={(e) =>
-                                void monitorCard(a.id, e.target.checked)
-                              }
-                              aria-label={`Alert when ${a.name} information is over 30 days old`}
+                              name="advisor_enabled"
+                              defaultChecked={settings.advisor_enabled}
+                              key={String(settings.advisor_enabled)}
                             />
-                            Alert after 30 days
+                            Enable Budget advisor in the main menu
                           </label>
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              name="advisor_memory_enabled"
+                              defaultChecked={
+                                settings.advisor_memory_enabled ?? false
+                              }
+                              key={
+                                'memory' +
+                                String(settings.advisor_memory_enabled)
+                              }
+                            />
+                            Enable optional local advisor memory (Memora)
+                          </label>
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              name="reserve_alerts_enabled"
+                              defaultChecked={settings.reserve_alerts_enabled}
+                              key={
+                                'reserve' +
+                                String(settings.reserve_alerts_enabled)
+                              }
+                            />
+                            Annual bill reserve alerts
+                          </label>
+                          <label>
+                            Reserve checkpoint day
+                            <input
+                              name="reserve_checkpoint_day"
+                              aria-label="Reserve checkpoint day"
+                              type="number"
+                              min="1"
+                              max="31"
+                              required
+                              defaultValue={settings.reserve_checkpoint_day}
+                              key={'day' + settings.reserve_checkpoint_day}
+                            />
+                            <small>
+                              Previous month’s allocations should reach savings
+                              by this day. Short months use their last day.
+                              Alerts appear only inside the app.
+                            </small>
+                          </label>
+                          {models.error && (
+                            <p className="notice">{models.error}</p>
+                          )}
+                          <div className="button-group">
+                            <button>Save settings</button>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() =>
+                                void act(async () =>
+                                  setModels(await api('/models')),
+                                )
+                              }
+                            >
+                              Refresh models
+                            </button>
+                          </div>
+                        </form>
+                      </section>
+                      <AdvisorMemory
+                        enabled={settings.advisor_memory_enabled ?? false}
+                        revision={revision}
+                      />
+                    </div>
+                    <div className="settings-column">
+                      <section className="panel">
+                        <div className="section-head">
+                          <div>
+                            <h2>Bank & card accounts</h2>
+                            <p>
+                              Add a bank account for ACH debits or a card for
+                              statement imports. Check a card to show in-app
+                              alerts when information is over 30 days old.
+                            </p>
+                          </div>
                           <button
-                            className="icon"
-                            aria-label={`Edit ${a.name}`}
-                            onClick={() => manageName('accounts', a)}
+                            className="text-button"
+                            onClick={() => manageName('accounts')}
                           >
-                            <Pencil size={16} />
-                          </button>
-                          <button
-                            className="icon"
-                            aria-label={`Delete ${a.name}`}
-                            onClick={() => remove('/accounts/' + a.id, a.name)}
-                          >
-                            <Trash2 size={16} />
+                            <Plus size={16} />
+                            Add
                           </button>
                         </div>
-                      ))}
-                      {!accounts.length && (
-                        <p className="muted pad">
-                          Add a named card to start tracking actual spending.
-                        </p>
-                      )}
-                    </section>
-                    <section className="panel">
-                      <div className="section-head">
-                        <div>
-                          <h2>Categories</h2>
-                          <p>Make these feel like you.</p>
-                        </div>
-                        <button
-                          className="text-button"
-                          onClick={() => manageName('categories')}
-                        >
-                          <Plus size={16} />
-                          Add
-                        </button>
-                      </div>
-                      {categories.map((c, i) => (
-                        <div className="name-row" key={c.id}>
-                          <i
-                            className="color-dot"
-                            style={{ background: colors[i % colors.length] }}
-                          />
-                          <strong>{c.name}</strong>
-                          <button
-                            className="icon"
-                            aria-label={`Edit ${c.name}`}
-                            onClick={() => manageName('categories', c)}
-                          >
-                            <Pencil size={16} />
-                          </button>
-                          <button
-                            className="icon"
-                            aria-label={`Delete ${c.name}`}
-                            onClick={() =>
-                              remove('/categories/' + c.id, c.name)
-                            }
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      ))}
-                    </section>
-                    <section className="panel">
-                      <div className="section-head">
-                        <div>
-                          <h2>Remembered payees</h2>
-                          <p>
-                            Saved labels also match store-number and year/date
-                            variants. Conflicting categories stay for review.
-                          </p>
-                        </div>
-                      </div>
-                      {payeeRules.length ? (
-                        payeeRules.map((r) => (
-                          <div className="name-row" key={r.id}>
+                        {accounts.map((a) => (
+                          <div className="name-row" key={a.id}>
                             <div className="grow">
-                              <strong>{r.payee}</strong>
+                              <strong>{a.name}</strong>
                               <small>
-                                {r.kind} · {catName(r.category_id)}
+                                {a.last_information_date
+                                  ? `Information through ${a.last_information_date}`
+                                  : 'No saved information yet'}
                               </small>
+                              {a.csv_mapping && (
+                                <small>CSV mapping remembered</small>
+                              )}
                             </div>
+                            <label className="checkbox card-monitor">
+                              <input
+                                type="checkbox"
+                                checked={a.stale_alert_enabled}
+                                disabled={monitoring !== null}
+                                onChange={(e) =>
+                                  void monitorCard(a.id, e.target.checked)
+                                }
+                                aria-label={`Alert when ${a.name} information is over 30 days old`}
+                              />
+                              Alert after 30 days
+                            </label>
                             <button
                               className="icon"
-                              aria-label={`Edit remembered category for ${r.payee}`}
-                              onClick={() =>
-                                setEditor({
-                                  title: 'Edit remembered category',
-                                  description: r.payee + ' · ' + r.kind,
-                                  fields: [
-                                    {
-                                      name: 'category_id',
-                                      label: 'Category',
-                                      value: r.category_id,
-                                      options: categoryOptions,
-                                    },
-                                  ],
-                                  submit: async (d) => {
-                                    await api('/payee-rules/' + r.id, 'PUT', d);
-                                  },
-                                })
-                              }
+                              aria-label={`Edit ${a.name}`}
+                              onClick={() => manageName('accounts', a)}
                             >
                               <Pencil size={16} />
                             </button>
                             <button
                               className="icon"
-                              aria-label={`Forget ${r.payee}`}
+                              aria-label={`Delete ${a.name}`}
                               onClick={() =>
-                                remove(
-                                  '/payee-rules/' + r.id,
-                                  'this remembered payee rule',
-                                )
+                                remove('/accounts/' + a.id, a.name)
                               }
                             >
                               <Trash2 size={16} />
                             </button>
                           </div>
-                        ))
-                      ) : (
-                        <p className="muted pad">
-                          Save a categorized transaction or commit a reviewed
-                          import to remember its payee. Uncertain matches stay
-                          for manual review.
+                        ))}
+                        {!accounts.length && (
+                          <p className="muted pad">
+                            Add a named card to start tracking actual spending.
+                          </p>
+                        )}
+                      </section>
+                      <section className="panel">
+                        <div className="section-head">
+                          <div>
+                            <h2>Categories</h2>
+                            <p>Make these feel like you.</p>
+                          </div>
+                          <button
+                            className="text-button"
+                            onClick={() => manageName('categories')}
+                          >
+                            <Plus size={16} />
+                            Add
+                          </button>
+                        </div>
+                        {categories.map((c, i) => (
+                          <div className="name-row" key={c.id}>
+                            <i
+                              className="color-dot"
+                              style={{ background: colors[i % colors.length] }}
+                            />
+                            <strong>{c.name}</strong>
+                            <button
+                              className="icon"
+                              aria-label={`Edit ${c.name}`}
+                              onClick={() => manageName('categories', c)}
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              className="icon"
+                              aria-label={`Delete ${c.name}`}
+                              onClick={() =>
+                                remove('/categories/' + c.id, c.name)
+                              }
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </section>
+                      <details className="panel remembered-payees">
+                        <summary className="section-head">
+                          <div>
+                            <h2>
+                              Remembered payees{' '}
+                              <span className="settings-count">
+                                {payeeRules.length}
+                              </span>
+                            </h2>
+                            <p>
+                              Saved labels also match store-number and year/date
+                              variants. Conflicting categories stay for review.
+                            </p>
+                          </div>
+                          <ChevronRight size={18} aria-hidden="true" />
+                        </summary>
+                        {payeeRules.length ? (
+                          payeeRules.map((r) => (
+                            <div className="name-row" key={r.id}>
+                              <div className="grow">
+                                <strong>{r.payee}</strong>
+                                <small>
+                                  {r.kind} · {catName(r.category_id)}
+                                </small>
+                              </div>
+                              <button
+                                className="icon"
+                                aria-label={`Edit remembered category for ${r.payee}`}
+                                onClick={() =>
+                                  setEditor({
+                                    title: 'Edit remembered category',
+                                    description: r.payee + ' · ' + r.kind,
+                                    fields: [
+                                      {
+                                        name: 'category_id',
+                                        label: 'Category',
+                                        value: r.category_id,
+                                        options: categoryOptions,
+                                      },
+                                    ],
+                                    submit: async (d) => {
+                                      await api(
+                                        '/payee-rules/' + r.id,
+                                        'PUT',
+                                        d,
+                                      );
+                                    },
+                                  })
+                                }
+                              >
+                                <Pencil size={16} />
+                              </button>
+                              <button
+                                className="icon"
+                                aria-label={`Forget ${r.payee}`}
+                                onClick={() =>
+                                  remove(
+                                    '/payee-rules/' + r.id,
+                                    'this remembered payee rule',
+                                  )
+                                }
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="muted pad">
+                            Save a categorized transaction or commit a reviewed
+                            import to remember its payee. Uncertain matches stay
+                            for manual review.
+                          </p>
+                        )}
+                      </details>
+                      <div className="quiet-note">
+                        <Leaf size={22} />
+                        <h3>A private little workspace.</h3>
+                        <p>
+                          No bank connections, no cloud model fallback, and no
+                          notifications outside the app. Back up your PostgreSQL
+                          database to keep your budget safe.
                         </p>
-                      )}
-                    </section>
-                    <div className="quiet-note">
-                      <Leaf size={22} />
-                      <h3>A private little workspace.</h3>
-                      <p>
-                        No bank connections, no cloud model fallback, and no
-                        notifications outside the app. Back up your PostgreSQL
-                        database to keep your budget safe.
-                      </p>
+                      </div>
                     </div>
                   </div>
                 )}

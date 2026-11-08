@@ -461,8 +461,23 @@ upcoming drafts, a previous-month forecast comparison, and any
 selected purchase/payment/savings scenario. Python calculates balances and deltas.
 Expand **Budget context** and calculated result panels to inspect the numbers.
 
-Replies render Markdown headings, emphasis, lists, code, and tables. Source citations
-remain clickable; remote images and links not present in verified research sources
+Below the conversation, **What changed this month?** compares recorded charges
+and debits by account, with optional category details, for the latest two finished
+months ending no later than the selected month. Refunds reduce spending; card
+payments and transfers are excluded. Editing a card's forecast allowance does not
+change this comparison. Missing and incomplete months are labeled.
+**Calculated budget impact** subtracts those recorded expenses from planned income;
+it does not verify deposits or bank balances. **Future budget projection** is a
+separate estimate using saved forecast assumptions and annual payment timing.
+
+Replies render Markdown headings, emphasis, lists, code, and tables. Common TeX prose from local
+models is simplified for readability; code and source URLs are preserved.
+Historical currency amounts and averages are formatted in Python. Replies default
+to 1,536 generated tokens, configurable with `ADVISOR_MAX_TOKENS` in `.env`. If an
+answer reaches that limit, a visible warning identifies it as incomplete; ask a
+shorter follow-up or increase the configured limit and restart the service.
+
+Source citations remain clickable; remote images and links not present in verified research sources
 are disabled so model-generated URLs cannot transmit financial details.
 
 Ask **“What could I do to increase my savings?”** to discuss recorded category and
@@ -528,6 +543,10 @@ waiting; the model may finish its current computation. Errors restore the questi
 for retry and do not change financial records. See [timeout troubleshooting](operations.md#troubleshooting).
 
 ## Settings
+
+Settings cards stack independently on wider screens and use one column on smaller
+screens. **Remembered payees** starts collapsed; expand its heading to review,
+edit, or forget rules. The heading shows the number of saved rules.
 
 - **Budget currency:** choose before financial records lock it.
 - **Local model for advisor / PDF extraction:** list installed Ollama models with

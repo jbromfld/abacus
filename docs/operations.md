@@ -164,7 +164,10 @@ fallback to the writable login.
 
 The account has `CONNECT`, schema `USAGE`, and `SELECT` only on `settings`,
 `categories`, `recurring`, `amount_changes`, `purchases`, `transactions`,
-`month_status`, and `bill_estimates`. It cannot inherit or switch to other roles,
+`month_status`, and `bill_estimates`. For named account comparisons it also has
+column-level `SELECT` on `accounts.id` and `accounts.name` only; account import
+mappings and monitoring configuration remain inaccessible. It cannot inherit or
+switch to other roles,
 manage roles/databases, bypass RLS, or own application objects. Read-only,
 repeatable-read transactions remain enabled, but the account cannot write budget
 tables even if a transaction is explicitly made read/write. Default PostgreSQL
@@ -280,8 +283,15 @@ tokens, with prompt evaluation of 16.76 versus 10.41 seconds and total duration 
 and USD 200 shortfall. This is a single hardware/model-specific sample, not a
 latency guarantee. The common spending/purchase instructions decreased from
 7,266 characters to 2,792; specialized questions include additional relevant rules.
-The runtime retains its existing 8,192-token context, 512-token reply limit, and
-no-thinking request; the short benchmark uses a 128-token reply limit.
+The runtime uses an 8,192-token context and a no-thinking request. Replies default
+to 1,536 generated tokens (`ADVISOR_MAX_TOKENS`, configurable from 256 to 4,096 in
+`.env`). The advisor requests concise Markdown and plain currency amounts; Python
+formats historical amounts and means before supplying them to the local model.
+A token-limit stop returns the available text with an explicit incomplete-answer
+warning; transport interruption still fails the request. Structured memory drafts
+that reach the limit fail into editable manual entry rather than accepting partial
+JSON. Raising the token limit can increase response time; the existing
+`ADVISOR_TIMEOUT_SECONDS` still applies. The short benchmark uses 128 tokens.
 
 To add web research, obtain your own Brave Search API key, set it in `.env`, and
 refresh **Budget advisor → Travel research → Refresh connection**. Research becomes

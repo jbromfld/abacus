@@ -236,7 +236,7 @@ def test_private_history_reaches_only_local_model_and_never_brave(
     assert compact["comparison_windows"][0]["partial_month_count"] == 2
     assert compact["payees"][0]["comparisons"][0] == {
         "months": 2,
-        "change_minor": 11111,
+        "change_display": "USD 111.11",
     }
     assert (
         response.json()["context"]["spending_history"]["payees"][0]["comparisons"][0][
@@ -273,3 +273,126 @@ def test_search_adapter_receives_only_public_request_fields(client, db, monkeypa
     )
     assert response.status_code == 200, response.text
     assert "spending_history" in response.json()["context"]
+
+
+def test_actual_comparison_ignores_forecast_edits_and_excludes_repayments(
+    client, db, account_id, category_id, monkeypatch
+):
+    from abacus.advisor_history import spending_comparison
+    from abacus.models import Account
+
+    response = client.post(
+        "/api/recurring",
+        json={
+            "name": "Test card",
+            "kind": "payable",
+            "frequency": "monthly",
+            "amount": 15000,
+            "start_month": "2026-01",
+            "category_id": category_id,
+        },
+    )
+    assert response.status_code == 201
+    for day, amount, kind in [
+        ("2026-09-01", 10000, "purchase"),
+        ("2026-09-30", 20000, "purchase"),
+        ("2026-10-01", 65000, "purchase"),
+        ("2026-10-02", 2000, "fee"),
+        ("2026-10-03", 7000, "refund"),
+        ("2026-10-04", 990000, "payment"),
+        ("2026-10-05", 980000, "transfer"),
+        ("2026-11-01", 50000, "purchase"),
+    ]:
+        add(db, account_id, category_id, day, amount, kind=kind)
+    db.add_all(
+        [
+            MonthStatus(month="2026-09", complete=True),
+            MonthStatus(month="2026-10", complete=True),
+        ]
+    )
+    db.commit()
+    result = spending_comparison(db, history(db))
+    expected = {
+        "name": db.get(Account, account_id).name,
+        "previous_minor": 30000,
+        "current_minor": 60000,
+        "change_minor": 30000,
+    }
+    assert result["previous_month"] == "2026-09" and result["month"] == "2026-10"
+    assert result["accounts"] == [expected]
+    assert result["totals"]["change_minor"] == 30000
+    assert account_id not in json.dumps(result)
+    assert all(row["average_minor"] is not None for row in history(db)["payees"])
+    income = client.post(
+        "/api/recurring",
+        json={
+            "name": "Salary",
+            "kind": "receivable",
+            "frequency": "monthly",
+            "amount": 600000,
+            "start_month": "2026-01",
+        },
+    )
+    assert income.status_code == 201
+    setting = db.get(Settings, 1)
+    setting.advisor_enabled, setting.model = True, "local-test"
+    db.commit()
+    monkeypatch.setattr("abacus.advisor.local_today", lambda: date(2026, 11, 8))
+    captured = []
+    from abacus.local_model import ModelReply
+
+    monkeypatch.setattr(
+        "abacus.advisor.chat_with_model",
+        lambda model, messages: (
+            captured.extend(messages)
+            or ModelReply("An incomplete sentence", truncated=True)
+        ),
+    )
+    response = client.post(
+        "/api/advisor/chat", json={"month": "2026-11", "message": "What changed?"}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["reply_truncated"] is True
+    impact = response.json()["context"]["spending_comparison"]["budget_impact"]
+    assert impact == [
+        {
+            "month": "2026-09",
+            "planned_income_minor": 600000,
+            "actual_spending_minor": 30000,
+            "room_after_recorded_spending_minor": 570000,
+        },
+        {
+            "month": "2026-10",
+            "planned_income_minor": 600000,
+            "actual_spending_minor": 60000,
+            "room_after_recorded_spending_minor": 540000,
+        },
+    ]
+    prompt = json.loads(captured[0]["content"].split("BUDGET SNAPSHOT:\n", 1)[1])
+    assert (
+        prompt["spending_comparison"]["accounts"][0]["change_display"] == "USD 300.00"
+    )
+    assert (
+        prompt["spending_comparison"]["budget_impact"][1]["actual_spending_display"]
+        == "USD 600.00"
+    )
+
+
+def test_actual_comparison_missing_zero_and_year_boundary(db, account_id, category_id):
+    from abacus.advisor_history import spending_comparison
+
+    add(db, account_id, category_id, "2025-12-31", 27000)
+    db.commit()
+    categories = db.scalars(select(Category)).all()
+    value = spending_history(db, "2026-01", date(2026, 3, 8), categories)
+    comparison = spending_comparison(db, value)
+    assert comparison["previous_month"] == "2025-12"
+    assert comparison["totals"]["current_minor"] is None
+    assert comparison["totals"]["change_minor"] is None
+    db.add(MonthStatus(month="2026-01", complete=True))
+    db.commit()
+    value = spending_history(db, "2026-01", date(2026, 3, 8), categories)
+    comparison = spending_comparison(db, value)
+    assert comparison["totals"]["change_minor"] == -27000
+    assert value["payees"][0]["average_minor"] == 13500
+    assert value["payees"][0]["sample_count"] == 2

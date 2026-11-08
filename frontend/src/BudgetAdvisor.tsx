@@ -1,3 +1,5 @@
+import AdvisorComparison from './AdvisorComparison';
+import type { SpendingComparison } from './AdvisorComparison';
 import AdvisorMarkdown from './AdvisorMarkdown';
 import AdvisorHistory from './AdvisorHistory';
 import { RememberExchange } from './AdvisorMemory';
@@ -41,46 +43,17 @@ type Message = {
   role: 'user' | 'assistant';
   content: string;
   research?: Research;
+  truncated?: boolean;
   memory?: MemoryRecall;
 };
 type Context = {
   advisor_memory?: MemoryRecall;
+  spending_comparison?: SpendingComparison | null;
   spending_history?: AdvisorSpendingHistory;
   currency: string;
   selected_month: string;
   current_date: string;
   savings_projection?: SavingsProjection | null;
-  forecast_comparison: {
-    previous_month: string;
-    month: string;
-    previous: {
-      income_minor: number;
-      expenses_minor: number;
-      remaining_minor: number;
-      income_recorded: boolean;
-    };
-    current: {
-      income_minor: number;
-      expenses_minor: number;
-      remaining_minor: number;
-      income_recorded: boolean;
-    };
-    remaining_change_minor: number;
-    shortfall_minor: number;
-    changes: {
-      name: string;
-      kind: string;
-      category: string | null;
-      source: string;
-      frequency: string | null;
-      annual_distributed: boolean | null;
-      change: string;
-      previous_minor: number;
-      current_minor: number;
-      delta_minor: number;
-      remaining_impact_minor: number;
-    }[];
-  };
   web_research?: Research;
   planning_capacity: {
     available_savings_minor: number | null;
@@ -121,7 +94,7 @@ type Context = {
     would_exceed_forecast: boolean;
   };
 };
-type Reply = { reply: string; context: Context };
+type Reply = { reply: string; reply_truncated?: boolean; context: Context };
 
 export default function BudgetAdvisor({
   entry,
@@ -380,6 +353,7 @@ export default function BudgetAdvisor({
         {
           role: 'assistant',
           content: result.reply,
+          truncated: result.reply_truncated,
           research: result.context.web_research,
           memory: result.context.advisor_memory,
         },
@@ -397,220 +371,330 @@ export default function BudgetAdvisor({
   };
   return (
     <div className="advisor-layout">
-      <section className="panel advisor-chat">
-        <div className="section-head">
-          <div>
-            <h2>
-              <MessageCircle size={18} />
-              Budget advisor
-            </h2>
-            <p>Think through a purchase, or look ahead together.</p>
-          </div>
-          <button
-            className="text-button"
-            onClick={reset}
-            disabled={!messages.length && !busy}
-          >
-            <RotateCcw size={15} />
-            New conversation
-          </button>
-        </div>
-        <div
-          className="chat-messages"
-          role="log"
-          aria-live="polite"
-          aria-label="Budget conversation"
-        >
-          {!messages.length && !busy && (
-            <div className="advisor-welcome">
-              <div className="empty-icon">
-                <Leaf size={25} />
-              </div>
-              <h3>A little perspective before you decide.</h3>
-              <p>
-                Ask about your plans using your budget’s recorded income,
-                expenses, and estimates.
-              </p>
-              <div className="suggestions">
-                {[
-                  'What could I do to increase my savings?',
-                  'Can I make this purchase without exceeding my budget?',
-                  'Plan a Friday-Sunday trip to western New York in July, including lodging and meals.',
-                  'What kind of Puerto Vallarta weekend next fall would fit my budget?',
-                ].map((q) => (
-                  <button
-                    key={q}
-                    className="secondary"
-                    onClick={() => setQuestion(q)}
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
+      <div className="advisor-main">
+        <section className="panel advisor-chat">
+          <div className="section-head">
+            <div>
+              <h2>
+                <MessageCircle size={18} />
+                Budget advisor
+              </h2>
+              <p>Think through a purchase, or look ahead together.</p>
             </div>
-          )}
-          {messages.map((m, i) => (
-            <article key={i} className={'chat-message ' + m.role}>
-              <span>{m.role === 'user' ? 'You' : 'Budget advisor'}</span>
-              {m.role === 'assistant' ? (
-                <AdvisorMarkdown
-                  content={m.content}
-                  sources={m.research?.sources}
-                />
-              ) : (
-                <p>{m.content}</p>
-              )}
-              {m.memory && (
-                <>
-                  {m.memory.warnings.map((warning) => (
-                    <p className="notice" role="status" key={warning}>
-                      {warning}
-                    </p>
-                  ))}
-                  {m.memory.notes.length > 0 && (
-                    <details>
-                      <summary>Memory used for this answer</summary>
-                      {m.memory.notes.map((note, index) => (
-                        <div className="memory-note" key={note.id}>
-                          <strong>
-                            [M{index + 1}] {note.title}
-                          </strong>
-                          <small>
-                            {note.source_date} · {note.kind}
-                          </small>
-                          <p>{note.text}</p>
-                        </div>
-                      ))}
-                    </details>
-                  )}
-                </>
-              )}
-              {memoryEnabled &&
-                m.role === 'assistant' &&
-                messages[i - 1]?.role === 'user' && (
-                  <RememberExchange
-                    user={messages[i - 1].content}
-                    assistant={m.content}
-                  />
-                )}
-              {m.research && m.research.status !== 'disabled' && (
-                <div className="research-results">
-                  <small>Web research · {m.research.status}</small>
-                  {m.research.warnings.map((warning, j) => (
-                    <p className="research-warning" key={j}>
-                      {warning}
-                    </p>
-                  ))}
-                  {m.research.missing_details.length > 0 && (
-                    <details open>
-                      <summary>Details to confirm</summary>
-                      <ul>
-                        {m.research.missing_details.map((detail, j) => (
-                          <li key={j}>{detail}</li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
-                  {m.research.sources.map((source) => (
-                    <a
-                      className="source-link"
-                      key={source.id}
-                      href={source.url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <span>
-                        [{source.id}] {source.title}
-                      </span>
-                      <ExternalLink size={12} />
-                      <small>
-                        {new URL(source.url).hostname} · retrieved{' '}
-                        {new Date(source.retrieved_at).toLocaleDateString()}
-                      </small>
-                    </a>
-                  ))}
-                  {m.research.queries.length > 0 && (
-                    <details>
-                      <summary>Search terms sent to Brave</summary>
-                      {m.research.queries.map((q, j) => (
-                        <small key={j}>{q}</small>
-                      ))}
-                    </details>
-                  )}
-                </div>
-              )}
-            </article>
-          ))}
-          {busy && (
-            <div className="chat-thinking" role="status">
-              <LoaderCircle className="spin" size={16} />
-              <span>
-                {useWeb
-                  ? 'Researching sources and considering your budget…'
-                  : 'Thinking locally…'}{' '}
-                {elapsed}s
-                {elapsed >= 60 && (
-                  <small>
-                    Local models can take several minutes, especially while
-                    loading.
-                  </small>
-                )}
-              </span>
-              <button
-                className="text-button"
-                onClick={() => {
-                  pendingId.current++;
-                  request.current?.abort();
-                  setBusy(false);
-                  setMessages(messages.slice(0, -1));
-                  setQuestion(messages.at(-1)?.content ?? '');
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-          {error && (
-            <div className="notice danger" role="alert">
-              <AlertTriangle size={17} />
-              {error}
-            </div>
-          )}
-          <div ref={end} />
-        </div>
-        <form
-          className="chat-compose"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send();
-          }}
-        >
-          <label htmlFor="advisor-question" className="sr-only">
-            Ask about your budget
-          </label>
-          <textarea
-            id="advisor-question"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            maxLength={2000}
-            placeholder="Would this purchase fit my budget over the next few months?"
-            disabled={busy}
-            required
-          />
-          <div>
-            <small>
-              Local model · {model}
-              {useWeb ? ' · Brave web research' : ''}
-              <br />
-              Guidance based on forecasts. Your budget stays unchanged.
-            </small>
-            <button disabled={busy || !question.trim()}>
-              <Send size={15} />
-              Ask
+            <button
+              className="text-button"
+              onClick={reset}
+              disabled={!messages.length && !busy}
+            >
+              <RotateCcw size={15} />
+              New conversation
             </button>
           </div>
-        </form>
-      </section>
+          <div
+            className="chat-messages"
+            role="log"
+            aria-live="polite"
+            aria-label="Budget conversation"
+          >
+            {!messages.length && !busy && (
+              <div className="advisor-welcome">
+                <div className="empty-icon">
+                  <Leaf size={25} />
+                </div>
+                <h3>A little perspective before you decide.</h3>
+                <p>
+                  Ask about your plans using your budget’s recorded income,
+                  expenses, and estimates.
+                </p>
+                <div className="suggestions">
+                  {[
+                    'What could I do to increase my savings?',
+                    'Can I make this purchase without exceeding my budget?',
+                    'Plan a Friday-Sunday trip to western New York in July, including lodging and meals.',
+                    'What kind of Puerto Vallarta weekend next fall would fit my budget?',
+                  ].map((q) => (
+                    <button
+                      key={q}
+                      className="secondary"
+                      onClick={() => setQuestion(q)}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {messages.map((m, i) => (
+              <article key={i} className={'chat-message ' + m.role}>
+                <span>{m.role === 'user' ? 'You' : 'Budget advisor'}</span>
+                {m.role === 'assistant' ? (
+                  <AdvisorMarkdown
+                    content={m.content}
+                    sources={m.research?.sources}
+                  />
+                ) : (
+                  <p>{m.content}</p>
+                )}
+                {m.truncated && (
+                  <p className="notice" role="status">
+                    This answer reached the local model’s reply limit and is
+                    incomplete. Ask a shorter follow-up for the remaining
+                    details, or increase ADVISOR_MAX_TOKENS in local
+                    configuration.
+                  </p>
+                )}
+                {m.memory && (
+                  <>
+                    {m.memory.warnings.map((warning) => (
+                      <p className="notice" role="status" key={warning}>
+                        {warning}
+                      </p>
+                    ))}
+                    {m.memory.notes.length > 0 && (
+                      <details>
+                        <summary>Memory used for this answer</summary>
+                        {m.memory.notes.map((note, index) => (
+                          <div className="memory-note" key={note.id}>
+                            <strong>
+                              [M{index + 1}] {note.title}
+                            </strong>
+                            <small>
+                              {note.source_date} · {note.kind}
+                            </small>
+                            <p>{note.text}</p>
+                          </div>
+                        ))}
+                      </details>
+                    )}
+                  </>
+                )}
+                {memoryEnabled &&
+                  m.role === 'assistant' &&
+                  messages[i - 1]?.role === 'user' && (
+                    <RememberExchange
+                      user={messages[i - 1].content}
+                      assistant={m.content}
+                    />
+                  )}
+                {m.research && m.research.status !== 'disabled' && (
+                  <div className="research-results">
+                    <small>Web research · {m.research.status}</small>
+                    {m.research.warnings.map((warning, j) => (
+                      <p className="research-warning" key={j}>
+                        {warning}
+                      </p>
+                    ))}
+                    {m.research.missing_details.length > 0 && (
+                      <details open>
+                        <summary>Details to confirm</summary>
+                        <ul>
+                          {m.research.missing_details.map((detail, j) => (
+                            <li key={j}>{detail}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                    {m.research.sources.map((source) => (
+                      <a
+                        className="source-link"
+                        key={source.id}
+                        href={source.url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <span>
+                          [{source.id}] {source.title}
+                        </span>
+                        <ExternalLink size={12} />
+                        <small>
+                          {new URL(source.url).hostname} · retrieved{' '}
+                          {new Date(source.retrieved_at).toLocaleDateString()}
+                        </small>
+                      </a>
+                    ))}
+                    {m.research.queries.length > 0 && (
+                      <details>
+                        <summary>Search terms sent to Brave</summary>
+                        {m.research.queries.map((q, j) => (
+                          <small key={j}>{q}</small>
+                        ))}
+                      </details>
+                    )}
+                  </div>
+                )}
+              </article>
+            ))}
+            {busy && (
+              <div className="chat-thinking" role="status">
+                <LoaderCircle className="spin" size={16} />
+                <span>
+                  {useWeb
+                    ? 'Researching sources and considering your budget…'
+                    : 'Thinking locally…'}{' '}
+                  {elapsed}s
+                  {elapsed >= 60 && (
+                    <small>
+                      Local models can take several minutes, especially while
+                      loading.
+                    </small>
+                  )}
+                </span>
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    pendingId.current++;
+                    request.current?.abort();
+                    setBusy(false);
+                    setMessages(messages.slice(0, -1));
+                    setQuestion(messages.at(-1)?.content ?? '');
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {error && (
+              <div className="notice danger" role="alert">
+                <AlertTriangle size={17} />
+                {error}
+              </div>
+            )}
+            <div ref={end} />
+          </div>
+          <form
+            className="chat-compose"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void send();
+            }}
+          >
+            <label htmlFor="advisor-question" className="sr-only">
+              Ask about your budget
+            </label>
+            <textarea
+              id="advisor-question"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              maxLength={2000}
+              placeholder="Would this purchase fit my budget over the next few months?"
+              disabled={busy}
+              required
+            />
+            <div>
+              <small>
+                Local model · {model}
+                {useWeb ? ' · Brave web research' : ''}
+                <br />
+                Guidance based on forecasts. Your budget stays unchanged.
+              </small>
+              <button disabled={busy || !question.trim()}>
+                <Send size={15} />
+                Ask
+              </button>
+            </div>
+          </form>
+        </section>
+        {context?.spending_comparison && (
+          <AdvisorComparison
+            comparison={context.spending_comparison}
+            currency={currency}
+          />
+        )}
+        {context?.savings_projection && (
+          <section className="panel">
+            <div className="section-head">
+              <div>
+                <h2>Future budget projection</h2>
+                <p>
+                  {context.savings_projection.horizon_months} full months ·
+                  forecast projection · starting{' '}
+                  {monthLabel(context.savings_projection.start_month)}
+                </p>
+              </div>
+            </div>
+            <div className="advisor-context">
+              {context.savings_projection.savings_known ? (
+                <>
+                  <p>
+                    Starting savings:{' '}
+                    {fmt(context.savings_projection.starting_savings)}. Savings
+                    floor: {fmt(context.savings_projection.savings_floor)}.
+                  </p>
+                  <p>
+                    Projected ending savings:{' '}
+                    <strong>
+                      {fmt(context.savings_projection.ending_savings)}
+                    </strong>
+                    . Lowest savings:{' '}
+                    <strong>
+                      {fmt(context.savings_projection.lowest_savings)}
+                    </strong>
+                    .
+                  </p>
+                </>
+              ) : (
+                <p>
+                  Savings is not set; this compares monthly budget room only.
+                </p>
+              )}
+              {context.savings_projection.first_bill_month_remaining !==
+                null && (
+                <p>
+                  Monthly room after the payment:{' '}
+                  <strong>
+                    {fmt(context.savings_projection.first_bill_month_remaining)}
+                  </strong>{' '}
+                  in the first active month.
+                </p>
+              )}
+              {context.savings_projection.bill && (
+                <p>
+                  {context.savings_projection.bill.name}:{' '}
+                  {fmt(context.savings_projection.bill.amount)}/month from{' '}
+                  {monthLabel(context.savings_projection.bill.start_month)}.
+                  {context.savings_projection.bill.already_included
+                    ? ' Already included; not deducted twice.'
+                    : ''}
+                </p>
+              )}
+              {context.savings_projection.bill_inferred_from_question && (
+                <p>
+                  Assumes the new bill starts in the selected budget month. Use
+                  Purchase planner for a different start or end.
+                </p>
+              )}
+              {context.savings_projection.first_below_floor_month && (
+                <p className="red">
+                  Below savings floor in{' '}
+                  {monthLabel(
+                    context.savings_projection.first_below_floor_month,
+                  )}
+                  .
+                </p>
+              )}
+              {context.savings_projection.first_negative_month && (
+                <p className="red">
+                  Below zero in{' '}
+                  {monthLabel(context.savings_projection.first_negative_month)}.
+                </p>
+              )}
+              {!context.savings_projection.income_complete && (
+                <p className="red">
+                  Income is missing in part of the forecast; affordability is
+                  incomplete.
+                </p>
+              )}
+              <p>
+                Future estimates use your saved budget, not recorded spending.
+                Budget edits are planning changes, not actual charges. Dated
+                annual bills replace monthly allocations with their full payment
+                when due. This is a planning projection, not a live bank
+                balance.
+              </p>
+            </div>
+          </section>
+        )}
+      </div>
       <aside className="advisor-side">
         <section className="panel">
           <div className="section-head">
@@ -813,186 +897,6 @@ export default function BudgetAdvisor({
             )}
           </div>
         </section>
-        {context?.forecast_comparison && (
-          <section className="panel">
-            <div className="section-head">
-              <div>
-                <h2>What changed this month?</h2>
-                <p>
-                  {monthLabel(context.forecast_comparison.previous_month)} →{' '}
-                  {monthLabel(context.forecast_comparison.month)} · forecast
-                  only
-                </p>
-              </div>
-            </div>
-            <div className="advisor-context">
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Forecast</th>
-                      <th>Previous</th>
-                      <th>Selected</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(
-                      [
-                        ['income_minor', 'Income'],
-                        ['expenses_minor', 'Expenses'],
-                        ['remaining_minor', 'Remaining'],
-                      ] as const
-                    ).map(([key, label]) => (
-                      <tr key={key}>
-                        <th>{label}</th>
-                        <td>
-                          {fmt(context.forecast_comparison.previous[key])}
-                        </td>
-                        <td>{fmt(context.forecast_comparison.current[key])}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {!context.forecast_comparison.previous.income_recorded && (
-                <p className="red">
-                  Previous-month income is unrecorded; the comparison may be
-                  incomplete.
-                </p>
-              )}
-              {context.forecast_comparison.changes.length ? (
-                <div className="forecast-change-list">
-                  {context.forecast_comparison.changes.map((line, i) => (
-                    <div key={i}>
-                      <strong>{line.name}</strong>
-                      <small>
-                        {line.kind === 'receivable'
-                          ? 'Income'
-                          : (line.category ?? 'Expense')}{' '}
-                        ·{' '}
-                        {line.source === 'included_purchase'
-                          ? 'included purchase'
-                          : line.frequency === 'annual'
-                            ? line.annual_distributed
-                              ? 'annual allocation'
-                              : 'annual payment'
-                            : line.change.replaceAll('_', ' ')}
-                      </small>
-                      <p>
-                        {fmt(line.previous_minor)} → {fmt(line.current_minor)}{' '}
-                        <small>
-                          Effect on remaining budget:{' '}
-                          {line.remaining_impact_minor > 0 ? '+' : ''}
-                          {fmt(line.remaining_impact_minor)}
-                        </small>
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p>No forecast amounts changed from the previous month.</p>
-              )}
-              <p>
-                Actual spending and category guides are separate. Suggested
-                changes stay hypothetical until you update your budget.
-              </p>
-              <button className="text-button" onClick={onOpenPlanner}>
-                Preview changes in Purchase planner →
-              </button>
-            </div>
-          </section>
-        )}
-        {context?.savings_projection && (
-          <section className="panel">
-            <div className="section-head">
-              <div>
-                <h2>Calculated budget impact</h2>
-                <p>
-                  {context.savings_projection.horizon_months} full months ·
-                  starting {monthLabel(context.savings_projection.start_month)}
-                </p>
-              </div>
-            </div>
-            <div className="advisor-context">
-              {context.savings_projection.savings_known ? (
-                <>
-                  <p>
-                    Starting savings:{' '}
-                    {fmt(context.savings_projection.starting_savings)}. Savings
-                    floor: {fmt(context.savings_projection.savings_floor)}.
-                  </p>
-                  <p>
-                    Projected ending savings:{' '}
-                    <strong>
-                      {fmt(context.savings_projection.ending_savings)}
-                    </strong>
-                    . Lowest savings:{' '}
-                    <strong>
-                      {fmt(context.savings_projection.lowest_savings)}
-                    </strong>
-                    .
-                  </p>
-                </>
-              ) : (
-                <p>
-                  Savings is not set; this compares monthly budget room only.
-                </p>
-              )}
-              {context.savings_projection.first_bill_month_remaining !==
-                null && (
-                <p>
-                  Monthly room after the payment:{' '}
-                  <strong>
-                    {fmt(context.savings_projection.first_bill_month_remaining)}
-                  </strong>{' '}
-                  in the first active month.
-                </p>
-              )}
-              {context.savings_projection.bill && (
-                <p>
-                  {context.savings_projection.bill.name}:{' '}
-                  {fmt(context.savings_projection.bill.amount)}/month from{' '}
-                  {monthLabel(context.savings_projection.bill.start_month)}.
-                  {context.savings_projection.bill.already_included
-                    ? ' Already included; not deducted twice.'
-                    : ''}
-                </p>
-              )}
-              {context.savings_projection.bill_inferred_from_question && (
-                <p>
-                  Assumes the new bill starts in the selected budget month. Use
-                  Purchase planner for a different start or end.
-                </p>
-              )}
-              {context.savings_projection.first_below_floor_month && (
-                <p className="red">
-                  Below savings floor in{' '}
-                  {monthLabel(
-                    context.savings_projection.first_below_floor_month,
-                  )}
-                  .
-                </p>
-              )}
-              {context.savings_projection.first_negative_month && (
-                <p className="red">
-                  Below zero in{' '}
-                  {monthLabel(context.savings_projection.first_negative_month)}.
-                </p>
-              )}
-              {!context.savings_projection.income_complete && (
-                <p className="red">
-                  Income is missing in part of the forecast; affordability is
-                  incomplete.
-                </p>
-              )}
-              <p>
-                Dated annual bills replace monthly allocations with their full
-                payment when due. This is a planning projection, not a live bank
-                balance.
-              </p>
-            </div>
-          </section>
-        )}
         <section className="panel">
           <div className="section-head">
             <div>
@@ -1009,14 +913,14 @@ export default function BudgetAdvisor({
             </p>
             <p>
               Budget context and normalized payee summaries go only to your
-              local Ollama model, through a read-only database snapshot. Raw
-              statements, card/account IDs, and statement provenance are
-              excluded. Brave receives only the separately previewed and
-              approved public travel search terms; never this financial context,
-              chat history, model replies, or approved memories. Full chat stays
-              in this tab’s memory. If advisor memory is enabled, only notes you
-              explicitly approve and their displayed source excerpts persist in
-              local Memora.
+              local Ollama model, through a read-only database snapshot. Account
+              names stay local. Raw statements, card/account IDs, and statement
+              provenance are excluded. Brave receives only the separately
+              previewed and approved public travel search terms; never this
+              financial context, chat history, model replies, or approved
+              memories. Full chat stays in this tab’s memory. If advisor memory
+              is enabled, only notes you explicitly approve and their displayed
+              source excerpts persist in local Memora.
             </p>
             {context && (
               <details>

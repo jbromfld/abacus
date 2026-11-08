@@ -193,3 +193,66 @@ it('places actual comparisons and projected impact below chat and identifies a t
     screen.getByText(/Future estimates use your saved budget/),
   ).toBeInTheDocument();
 });
+
+it('keeps a timed-out first question visible across budget refreshes and retries without duplicating failed history', async () => {
+  const props = {
+    entry: null,
+    month: '2026-11',
+    currency: 'USD',
+    purchases: [],
+    model: 'local',
+    billPlan: null,
+    revision: 0,
+    onOpenPlanner: () => {},
+  };
+  const { rerender } = render(<BudgetAdvisor {...props} />);
+  fireEvent.change(screen.getByLabelText('Ask about your budget'), {
+    target: { value: 'Can I afford another monthly bill?' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Ask', exact: true }));
+  await screen.findByText('Synthetic reply unavailable');
+  expect(
+    screen.getByText('Can I afford another monthly bill?', {
+      selector: '.chat-message p',
+    }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText('A little perspective before you decide.'),
+  ).not.toBeInTheDocument();
+  rerender(<BudgetAdvisor {...props} revision={1} />);
+  expect(screen.getByLabelText('Ask about your budget')).toHaveValue(
+    'Can I afford another monthly bill?',
+  );
+  expect(
+    screen.getByText(/This question could not be completed/),
+  ).toBeInTheDocument();
+  const fallback = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation(async (path, ...args) =>
+    path === '/advisor/chat'
+      ? {
+          reply: 'A completed retry.',
+          context: {
+            monthly_forecasts: [],
+            recent_actuals: [],
+            draft_purchases: [],
+            planning_capacity: {
+              months: [],
+              buffer_shortfall_months: [],
+              available_savings_minor: null,
+              monthly_buffer_minor: null,
+            },
+          },
+        }
+      : fallback(path, ...args),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Ask', exact: true }));
+  await screen.findByText('A completed retry.');
+  const request = vi
+    .mocked(api)
+    .mock.calls.filter(([path]) => path === '/advisor/chat')
+    .at(-1);
+  expect(request?.[2]).toMatchObject({ history: [] });
+  expect(
+    screen.queryByText(/This question could not be completed/),
+  ).not.toBeInTheDocument();
+});

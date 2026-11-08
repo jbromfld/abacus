@@ -70,7 +70,12 @@ export function useWorkspace(month: string, revision: number) {
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
-    setResult({ month, forecast: null, loading: true, error: '' });
+    setResult((previous) => ({
+      month,
+      forecast: previous.month === month ? previous.forecast : null,
+      loading: true,
+      error: '',
+    }));
     api<Forecast>(
       `/forecast?month=${month}`,
       'GET',

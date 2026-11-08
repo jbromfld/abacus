@@ -1,6 +1,7 @@
 """Read-only local budget advice; monetary scenarios are calculated by Python."""
 
 import json
+import re
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -316,7 +317,7 @@ def planning_capacity(db, request, today, scenario, inputs=None):
     }
 
 
-def model_snapshot(context):
+def model_snapshot(context, question=""):
     """Compact local-only input; Python formats amounts prone to model conversion errors."""
     # The UI keeps the full snapshot. Unknown funding assumptions do not need
     # 24 repeated unknown balances in the model prompt.
@@ -347,8 +348,27 @@ def model_snapshot(context):
     if history := context.get("spending_history"):
         evidence = history["categories"] or history["payees"]
         windows = evidence[0]["comparisons"] if evidence else []
+        detailed = bool(
+            re.search(r"\b(12|twelve|year|history|trend)\b", question, re.I)
+        )
+        count = 12 if detailed else 3
+        all_months = history.get("months", [])
+        selected_payees = sorted(
+            history["payees"],
+            key=lambda row: not bool(row["payee"].casefold() in question.casefold()),
+        )[:8]
         model_context["spending_history"] = {
-            **history,
+            "months": all_months[-count:],
+            "average_window": {
+                "start_month": history.get("start_month"),
+                "end_month": history.get("end_month"),
+                "partial_month_count": sum(
+                    month["status"] == "partial" for month in all_months
+                ),
+            },
+            "additional_payees_omitted": history.get("additional_payees_omitted", 0)
+            + len(history["payees"])
+            - len(selected_payees),
             "comparison_windows": [
                 {
                     key: value
@@ -367,7 +387,8 @@ def model_snapshot(context):
                             if key not in ("monthly_net_minor", "average_minor")
                         },
                         "monthly_net_display": [
-                            display_money(value) for value in row["monthly_net_minor"]
+                            display_money(value)
+                            for value in row["monthly_net_minor"][-count:]
                         ],
                         "average_display": display_money(row["average_minor"]),
                         "comparisons": [
@@ -378,11 +399,14 @@ def model_snapshot(context):
                             for change in row["comparisons"]
                         ],
                     }
-                    for row in history[group]
+                    for row in (
+                        selected_payees if group == "payees" else history[group]
+                    )
                 ]
                 for group in ("categories", "payees")
             },
         }
+        model_context.pop("recent_actuals", None)
     if comparison := context.get("spending_comparison"):
         model_context["spending_comparison"] = {
             **comparison,
@@ -395,7 +419,9 @@ def model_snapshot(context):
         }
     if "category_guides" in context:
         model_context["category_guides"] = [
-            display_fields(row) for row in context["category_guides"]
+            display_fields(row)
+            for row in context["category_guides"]
+            if row["monthly_guide_minor"] is not None
         ]
     capacity = context["planning_capacity"]
     if not capacity["assumptions_complete"] or (
@@ -407,7 +433,7 @@ def model_snapshot(context):
     if context.get("savings_projection"):
         projection = context["savings_projection"]
         model_context["savings_projection"] = {
-            **projection,
+            **{key: value for key, value in projection.items() if key != "assumptions"},
             "months": [
                 {
                     key: row[key]
@@ -462,13 +488,22 @@ def answer_question(model, request, context):
     )
     research = gather_research(public_request, context["current_date"])
     context["web_research"] = research
-    model_context = model_snapshot(context)
+    model_context = model_snapshot(context, request.message)
     system = (
         system_instructions(request, model_context)
         + "\nBUDGET SNAPSHOT:\n"
         + json.dumps(model_context, ensure_ascii=False, separators=(",", ":"))
     )
-    history = [{"role": m.role, "content": m.content[:1000]} for m in request.history]
+    # Keep the newest exchanges; very long conversations must not crowd out
+    # the fresh budget snapshot or the answer in the local model's context.
+    history = []
+    remaining = 3000
+    for message in reversed(request.history):
+        content = message.content[: min(1000, remaining)]
+        if not content:
+            break
+        history.insert(0, {"role": message.role, "content": content})
+        remaining -= len(content)
     return chat_with_model(
         model,
         [

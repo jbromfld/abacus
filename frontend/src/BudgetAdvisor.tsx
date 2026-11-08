@@ -44,6 +44,7 @@ type Message = {
   content: string;
   research?: Research;
   truncated?: boolean;
+  failed?: boolean;
   memory?: MemoryRecall;
 };
 type Context = {
@@ -181,6 +182,7 @@ export default function BudgetAdvisor({
     };
   }, [revision]);
   const [context, setContext] = useState<Context | null>(null);
+  const [contextRevision, setContextRevision] = useState(revision);
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -306,7 +308,8 @@ export default function BudgetAdvisor({
       setError((e as Error).message);
       return;
     }
-    const history = messages
+    const conversation = messages.filter((message) => !message.failed);
+    const history = conversation
       .slice(-12)
       .map((m) => ({ role: m.role, content: m.content.slice(0, 2000) }));
     const controller = new AbortController();
@@ -314,7 +317,7 @@ export default function BudgetAdvisor({
     const id = ++pendingId.current;
     setBusy(true);
     setError('');
-    setMessages([...messages, { role: 'user', content: text }]);
+    setMessages([...conversation, { role: 'user', content: text }]);
     setQuestion('');
     try {
       const result = await api<Reply>(
@@ -359,10 +362,14 @@ export default function BudgetAdvisor({
         },
       ]);
       setContext(result.context);
+      setContextRevision(revision);
       memoryEpoch.current = result.context.advisor_memory?.epoch ?? null;
     } catch (e) {
       if (id !== pendingId.current) return;
-      setMessages(messages);
+      setMessages([
+        ...conversation,
+        { role: 'user', content: text, failed: true },
+      ]);
       setQuestion(text);
       if ((e as Error).name !== 'AbortError') setError((e as Error).message);
     } finally {
@@ -390,6 +397,12 @@ export default function BudgetAdvisor({
               New conversation
             </button>
           </div>
+          {context && contextRevision !== revision && (
+            <p className="notice" role="status">
+              Budget entries changed since this answer. Your conversation is
+              kept; ask a follow-up to use a fresh budget snapshot.
+            </p>
+          )}
           <div
             className="chat-messages"
             role="log"
@@ -441,6 +454,12 @@ export default function BudgetAdvisor({
                     incomplete. Ask a shorter follow-up for the remaining
                     details, or increase ADVISOR_MAX_TOKENS in local
                     configuration.
+                  </p>
+                )}
+                {m.failed && (
+                  <p className="muted">
+                    This question could not be completed. It is kept below so
+                    you can retry.
                   </p>
                 )}
                 {m.memory && (

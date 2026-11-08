@@ -819,6 +819,11 @@ export default function App() {
                 )}
               </div>
             )}
+            {loading && forecast && (
+              <p className="notice" role="status">
+                Updating budget…
+              </p>
+            )}
             {loading && !forecast ? (
               <div className="empty">
                 <LoaderCircle className="spin" />

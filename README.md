@@ -84,3 +84,4 @@ isolated PostgreSQL test setup, frontend behavior tests, lint, formatting, schem
 checks, and production build. The GitHub Actions workflow runs those checks on
 pull requests. See [the review fixes](docs/review-fixes.md) for migration 0012 and
 this change’s regression coverage.
+

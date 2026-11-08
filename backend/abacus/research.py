@@ -9,9 +9,18 @@ from hashlib import sha256
 from urllib.parse import urlsplit
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .config import local_config
+
+
+class PublicResearchRequest(BaseModel):
+    """Only explicitly approved public fields cross into the search adapter."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    use_web: bool = False
+    research_topic: str = ""
+    research_confirmation: str = ""
 
 
 class ResearchPlan(BaseModel):
@@ -180,7 +189,7 @@ def search_query(query):
         ]
 
 
-def gather_research(request, current_date):
+def gather_research(request: PublicResearchRequest, current_date):
     result = {
         "status": "disabled",
         "provider": research_status()["provider"],

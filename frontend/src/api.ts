@@ -417,3 +417,34 @@ export type ReserveCheck = {
     payments_to_date: number;
   }[];
 };
+
+export type AdvisorSpendingComparison = {
+  months: number;
+  from_month: string;
+  to_month: string;
+  first_month_minor: number | null;
+  last_month_minor: number | null;
+  change_minor: number | null;
+  partial_month_count: number;
+  missing_month_count: number;
+};
+export type AdvisorSpendingHistory = {
+  start_month: string;
+  end_month: string;
+  months: { month: string; status: string }[];
+  basis: string;
+  categories: {
+    category: string;
+    monthly_net_minor: (number | null)[];
+    comparisons: AdvisorSpendingComparison[];
+  }[];
+  payees: {
+    payee: string;
+    category: string;
+    monthly_net_minor: (number | null)[];
+    comparisons: AdvisorSpendingComparison[];
+  }[];
+  payee_limit: number;
+  additional_payees_omitted: number;
+  payee_selection: string;
+};

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import database_url
@@ -14,4 +14,11 @@ class Base(DeclarativeBase):
 
 def session():
     with Session() as db:
+        yield db
+
+
+def read_only_session():
+    """Database-enforced, consistent local advisor snapshot; no write privileges in this transaction."""
+    with Session() as db:
+        db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
         yield db

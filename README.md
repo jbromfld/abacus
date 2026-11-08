@@ -51,6 +51,18 @@ the port are left alone until they stop. See [automatic startup and controls](do
 for stop/start/restart/uninstall, logs, and updates. Temporal, Docker, and cron are
 not required for this local macOS setup.
 
+### Update and restart
+
+For an installed macOS login service, apply the current workspace changes with:
+
+```sh
+python3 scripts/update.py
+```
+
+This stops Abacus, syncs locked dependencies, migrates, rebuilds, and starts it.
+Use `--dry-run` to preview commands. A failed update stops before later steps.
+See [upgrade and recovery details](docs/operations.md#upgrade).
+
 ### Development
 
 Start the Python server as above with `--reload`, then in another terminal:

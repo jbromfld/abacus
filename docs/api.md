@@ -236,12 +236,15 @@ characters). Optional fields:
 The response is `{reply,context}`. Context includes monthly forecasts, recent
 actuals/completeness, drafts, category guide statistics, Python-calculated
 `forecast_comparison`, selected scenario, `savings_projection`, `planning_capacity`,
-and `web_research`. Monetary names ending `_minor` are integer minor units; **all
+`spending_history`, and `web_research`. Monetary names ending `_minor` are integer minor units; **all
 money in savings_projection also uses minor units**, even without that suffix.
 
 The API waits for the completed reply while the local transport reads streamed
 model output. It does not stream partial advice to the browser or expose tool access
-to the model. It releases its database read transaction before model waiting. Timeout/
+to the model. Snapshot reads run in a PostgreSQL-enforced read-only, repeatable-read
+transaction, released before model/search waiting. Search is passed only a strict
+public request with `use_web`, `research_topic`, and `research_confirmation`; no
+financial snapshot, private message/history, or model output enters that adapter. Timeout/
 research errors never save transactions or plans. The advisor must be opted in and
 have a selected model; no cloud fallback or model download occurs.
 
@@ -309,3 +312,23 @@ writing over a newer attempt. Processing releases its DB connection during model
 The dues response no longer includes the unused, always-empty `missing_monthly`
 and `missing_monthly_count` fields. Undated budget allowances continue to be omitted
 from payment-tracking lists.
+
+### Local advisor spending history
+
+`context.spending_history` contains up to 12 finished calendar months, ending at
+`min(selected_month, previous_current_month)` in `APP_TIMEZONE`. It includes:
+
+- `start_month`, `end_month`, `months:[{month,status}]`, and a description of the basis.
+- `categories:[{category,monthly_net_minor,comparisons}]`.
+- `payees:[{payee,category,monthly_net_minor,comparisons}]` with normalized labels,
+  `payee_limit` (20), `additional_payees_omitted`, and `payee_selection`.
+- Each comparison identifies `months` (2 or 3), `from_month`, `to_month`,
+  `first_month_minor`, `last_month_minor`, `change_minor`, `partial_month_count`,
+  and `missing_month_count`. Arrays align with the shared `months` list.
+
+`change_minor` is the last month minus the first, and is null when any month in
+that window is missing. Refunds are negative spending; purchases and fees count;
+payments/transfers are excluded. Partial months remain qualified evidence rather
+than complete actuals. All summary values are deterministic; payee selection is
+bounded and is not a claim that the full ledger was sent. `reply` may be Markdown.
+No new endpoint gives the model arbitrary transaction lookup or SQL access.

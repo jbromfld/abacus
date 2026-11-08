@@ -448,10 +448,38 @@ select saved planning context, or discuss an add-payment preview from Purchase
 planner. Create/edit estimates in Purchase planner; chat itself is read-only.
 
 Each turn reads a fresh snapshot: forecasts for the selected month and following
-11 months (23 with web research), three months of category actuals/completeness,
-category guides, upcoming drafts, a previous-month forecast comparison, and any
+11 months (23 with web research), three months of recent category actuals, up to
+12 finished calendar months of category/payee spending history, category guides,
+upcoming drafts, a previous-month forecast comparison, and any
 selected purchase/payment/savings scenario. Python calculates balances and deltas.
 Expand **Budget context** and calculated result panels to inspect the numbers.
+
+Replies render Markdown headings, emphasis, lists, code, and tables. Source citations
+remain clickable; remote images and links not present in verified research sources
+are disabled so model-generated URLs cannot transmit financial details.
+
+Ask **“What could I do to increase my savings?”** to discuss recorded category and
+payee changes. Python computes the first-to-last difference over the latest two
+and three finished months. For example, restaurant spending of $150 then $200 is
+a recorded $50 increase. Refunds reduce spending; card payments
+and transfers do not count. Current/future months are excluded; missing months
+produce unknown changes, and incomplete months are flagged. History ends at the
+selected month or the latest finished month, whichever is earlier.
+
+**Budget context → View the snapshot used for the last answer → Local transaction
+history used for this answer** shows category amounts, data completeness, and
+calculated differences. Up to 20 normalized payees are included, prioritizing
+recent increases and then recent spending; omitted-payee counts are visible.
+These are transaction labels grouped by existing normalization rules, not verified
+merchant identities. Suggestions do not change the budget or actual transactions.
+
+The snapshot runs in a PostgreSQL-enforced **read-only, repeatable-read transaction**,
+which is released before the model responds. No separate database login or grant
+is required. The model receives a bounded local snapshot, not SQL or tool access.
+**No personal financial context is sent to Brave**: search receives only the
+separately entered, previewed, approved public travel topic. Database amounts,
+payees, transaction history, private chat/history, and model responses never feed
+search construction. The financial snapshot goes only to loopback Ollama.
 
 From a deficit alert, **Reconcile with Budget advisor** prepares a question comparing
 months, turns web research off for that handoff, and clears unrelated scenario

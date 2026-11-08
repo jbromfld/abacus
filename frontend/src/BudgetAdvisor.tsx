@@ -1,3 +1,5 @@
+import AdvisorMarkdown from './AdvisorMarkdown';
+import AdvisorHistory from './AdvisorHistory';
 import { useEffect, useRef, useState } from 'react';
 import {
   MessageCircle,
@@ -16,6 +18,7 @@ import type {
   SavingsInputs,
   SavingsProjection,
   BillEstimate,
+  AdvisorSpendingHistory,
 } from './api';
 
 type Research = {
@@ -38,6 +41,7 @@ type Message = {
   research?: Research;
 };
 type Context = {
+  spending_history?: AdvisorSpendingHistory;
   currency: string;
   selected_month: string;
   current_date: string;
@@ -399,6 +403,7 @@ export default function BudgetAdvisor({
               </p>
               <div className="suggestions">
                 {[
+                  'What could I do to increase my savings?',
                   'Can I make this purchase without exceeding my budget?',
                   'Plan a Friday–Sunday trip to western New York in July 2027, including lodging and meals.',
                   'What kind of Puerto Vallarta weekend next fall would fit my budget?',
@@ -417,25 +422,14 @@ export default function BudgetAdvisor({
           {messages.map((m, i) => (
             <article key={i} className={'chat-message ' + m.role}>
               <span>{m.role === 'user' ? 'You' : 'Budget advisor'}</span>
-              <p>
-                {m.content.split(/(\[S\d+\])/g).map((part, j) => {
-                  const source = m.research?.sources.find(
-                    (source) => '[' + source.id + ']' === part,
-                  );
-                  return source ? (
-                    <a
-                      key={j}
-                      href={source.url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {part}
-                    </a>
-                  ) : (
-                    part
-                  );
-                })}
-              </p>
+              {m.role === 'assistant' ? (
+                <AdvisorMarkdown
+                  content={m.content}
+                  sources={m.research?.sources}
+                />
+              ) : (
+                <p>{m.content}</p>
+              )}
               {m.research && m.research.status !== 'disabled' && (
                 <div className="research-results">
                   <small>Web research · {m.research.status}</small>
@@ -946,14 +940,17 @@ export default function BudgetAdvisor({
           <div className="advisor-context">
             <p>
               {monthLabel(month)} and the following {useWeb ? 23 : 11} months of
-              forecasts; three months of category spending; upcoming draft
+              forecasts; up to 12 past months of category and normalized payee
+              spending, with calculated 2- and 3-month changes; upcoming draft
               purchases; and your selected scenario.
             </p>
             <p>
-              No bank balances, raw statements, card identifiers, or individual
-              transaction descriptions are sent to the model. Travel search
-              terms are sent to Brave when enabled. Chat stays in this tab’s
-              memory.
+              Budget context and normalized payee summaries go only to your
+              local Ollama model, through a read-only database snapshot. Raw
+              statements, card/account IDs, and statement provenance are
+              excluded. Brave receives only the separately previewed and
+              approved public travel search terms; never this financial context,
+              chat history, or model replies. Chat stays in this tab’s memory.
             </p>
             {context && (
               <details>
@@ -1063,6 +1060,12 @@ export default function BudgetAdvisor({
                       ))}
                     </div>
                   ))}
+                  {context.spending_history && (
+                    <AdvisorHistory
+                      history={context.spending_history}
+                      currency={currency}
+                    />
+                  )}
                   <h3>Draft estimates excluded from forecast</h3>
                   {context.draft_purchases.length ? (
                     context.draft_purchases.map((p, i) => (
@@ -1080,8 +1083,9 @@ export default function BudgetAdvisor({
                     </p>
                   )}
                   <p>
-                    Each month stands on its own. Savings and bank balances are
-                    unknown.
+                    Each forecast month stands on its own. Savings projections
+                    use your manually entered assumptions, not a verified bank
+                    balance.
                   </p>
                 </div>
               </details>

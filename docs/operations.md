@@ -200,12 +200,43 @@ occur. Model/research failures are visible and do not mutate financial records.
 
 ## Upgrade
 
+For the installed macOS login service, run this after updating the source:
+
+```sh
+python3 scripts/update.py
+```
+
+The updater uses its own workspace as the working directory, stops the service,
+syncs Python dependencies with `uv sync --locked`, applies Alembic migrations,
+installs frontend dependencies with `npm ci`, builds the production UI, and starts
+the service again. Run it as your normal logged-in user. It checks that `uv`,
+`npm`, local setup files, and the installed login service exist before stopping.
+The service helper verifies workspace ownership before unloading anything.
+
+Preview the exact commands without changing the service or database:
+
+```sh
+python3 scripts/update.py --dry-run
+```
+
+Invoke the updater with `python3`, rather than `uv run`, so dependency syncing does
+not happen before the service stops. Its `uv run --no-sync` commands use the
+existing environment before the explicit locked sync, and the synced environment
+afterward. Any failed step stops the update; a migration/install/build failure
+leaves Abacus stopped with login startup disabled. Fix the reported error and
+rerun the updater. If stop/start itself fails, inspect service status. Startup
+success means the LaunchAgent was requested to start; normal readiness checks
+still apply. The updater does not pull Git changes, create backups, or roll back
+migrations. Keep your normal database backup before upgrading.
+
+For a manually launched server, use these individual steps:
+
 Stop the running server before an upgrade. Preserve a database backup and a copy
 of the app version/configuration used with it. After updating the source:
 
 ```sh
-uv sync
-uv run alembic upgrade head
+uv sync --locked
+uv run --no-sync alembic upgrade head
 npm ci --prefix frontend
 npm run check --prefix frontend
 npm run build --prefix frontend
@@ -323,8 +354,8 @@ public deployment design. Keep the database and app private.
 | Extracted CSV/PDF review input | Retained locally for review/retry until commit |
 | Reviewed rows and source provenance | Retained with imports/transactions; may contain sensitive text |
 | PDF extraction | Extracted statement text to the configured loopback Ollama model |
-| Advisor budget context | Local model receives aggregates, schedule/purchase/category names, assumptions, and chat; no raw statements or individual transaction descriptions |
-| Optional web research | Public travel queries to Brave; visible search terms/results |
+| Advisor budget context | Loopback model receives aggregates, normalized payee/category history, schedule/purchase names, assumptions, and chat; no raw statements, provenance, account/card IDs, or individual transaction identities |
+| Optional web research | Only separately approved public travel queries to Brave; no financial snapshot, payees, balances, transaction history, private chat, or model output |
 | Chat and upload queue UI | Current tab memory; saved import jobs remain in PostgreSQL |
 | Merchant patterns / optional export | Local repository config / explicitly selected export file |
 
@@ -333,6 +364,12 @@ an eligible import removes its review data/fingerprint. Payee memory survives un
 and import deletion. Recorded payment status, ACH actual generation, and manual
 reserve observations are separate mechanisms. Abacus does not initiate banking
 transactions, download models, send external notifications, or offer cloud fallback.
+
+Advisor snapshots use a PostgreSQL read-only, repeatable-read transaction on the
+existing database connection and release it before model/search waiting. The model
+has no database handle, SQL tools, or write endpoint. This needs no new role or
+migration. Markdown rendering disables raw HTML, remote images, and unverified
+links. Local context and generated replies cannot initiate further searches.
 
 ## Troubleshooting
 

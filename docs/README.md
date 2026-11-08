@@ -32,6 +32,7 @@ extraction and Budget advisor; Brave adds optional public web research.
 | Remembered payees, merchant patterns, and similarity thresholds | [Payee classification](user-guide.md#payee-classification) |
 | Manual reserve checks and fixed annual funding targets | [Annual bill reserve checks](user-guide.md#annual-bill-reserve-checks) |
 | Optional local chat, deficit reconciliation, and travel research | [Budget advisor](user-guide.md#budget-advisor) |
+| Approved cross-conversation intentions, preferences, and decisions | [Optional advisor memory](advisor-memory.md) |
 | Currency, accounts, categories, optional models, and alerts | [Settings](user-guide.md#settings) |
 | Alert conditions and controls | [Alerts](user-guide.md#alerts) |
 | Responsive navigation, keyboard access, and chart tables | [Navigation and accessibility](user-guide.md#navigation-and-accessibility) |

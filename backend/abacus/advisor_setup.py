@@ -210,6 +210,10 @@ def provision_advisor(admin_url, role, password=None, *, rotate=False):
 
 
 def persist_credentials(path, role, password):
+    persist_local_values(path, {"ADVISOR_USER": role, "ADVISOR_PASS": password})
+
+
+def persist_local_values(path, values):
     """Atomic owner-only dotenv replacement, preserving unrelated lines/comments."""
     path = Path(path)
     if not path.is_file() or path.is_symlink():
@@ -227,8 +231,8 @@ def persist_credentials(path, role, password):
         ) as output:
             temporary = Path(output.name)
             output.write(path.read_text())
-        set_key(temporary, "ADVISOR_USER", role, quote_mode="always")
-        set_key(temporary, "ADVISOR_PASS", password, quote_mode="always")
+        for key, value in values.items():
+            set_key(temporary, key, value, quote_mode="always")
         temporary.chmod(0o600)
         os.replace(temporary, path)
     finally:

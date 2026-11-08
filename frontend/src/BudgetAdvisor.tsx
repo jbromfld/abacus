@@ -1,5 +1,7 @@
 import AdvisorMarkdown from './AdvisorMarkdown';
 import AdvisorHistory from './AdvisorHistory';
+import { RememberExchange } from './AdvisorMemory';
+import type { MemoryRecall } from './AdvisorMemory';
 import { useEffect, useRef, useState } from 'react';
 import {
   MessageCircle,
@@ -39,8 +41,10 @@ type Message = {
   role: 'user' | 'assistant';
   content: string;
   research?: Research;
+  memory?: MemoryRecall;
 };
 type Context = {
+  advisor_memory?: MemoryRecall;
   spending_history?: AdvisorSpendingHistory;
   currency: string;
   selected_month: string;
@@ -128,9 +132,11 @@ export default function BudgetAdvisor({
   billPlan,
   revision,
   onOpenPlanner,
+  memoryEnabled = false,
 }: {
   entry: { question: string; key: number } | null;
   onOpenPlanner: () => void;
+  memoryEnabled?: boolean;
   month: string;
   currency: string;
   purchases: Purchase[];
@@ -218,6 +224,7 @@ export default function BudgetAdvisor({
   const request = useRef<AbortController | null>(null);
   const end = useRef<HTMLDivElement>(null);
   const pendingId = useRef(0);
+  const memoryEpoch = useRef<string | null>(null);
   useEffect(() => {
     void refreshWeb();
   }, []);
@@ -228,7 +235,27 @@ export default function BudgetAdvisor({
     setContext(null);
     setError('');
     setBusy(false);
+    memoryEpoch.current = null;
   };
+  useEffect(() => {
+    const changed = () => {
+      reset();
+      setQuestion('');
+    };
+    window.addEventListener('abacus-memory-changed', changed);
+    const channel =
+      typeof BroadcastChannel !== 'undefined'
+        ? new BroadcastChannel('abacus-memory')
+        : null;
+    if (channel) channel.onmessage = changed;
+    return () => {
+      window.removeEventListener('abacus-memory-changed', changed);
+      channel?.close();
+    };
+  }, []);
+  useEffect(() => {
+    reset();
+  }, [memoryEnabled]);
   useEffect(() => {
     reset();
     setQuestion('');
@@ -324,6 +351,7 @@ export default function BudgetAdvisor({
           month,
           message: text,
           history,
+          memory_epoch: memoryEpoch.current,
           use_web: useWeb,
           research_topic: researchTopic,
           research_confirmation: useWeb
@@ -353,9 +381,11 @@ export default function BudgetAdvisor({
           role: 'assistant',
           content: result.reply,
           research: result.context.web_research,
+          memory: result.context.advisor_memory,
         },
       ]);
       setContext(result.context);
+      memoryEpoch.current = result.context.advisor_memory?.epoch ?? null;
     } catch (e) {
       if (id !== pendingId.current) return;
       setMessages(messages);
@@ -430,6 +460,39 @@ export default function BudgetAdvisor({
               ) : (
                 <p>{m.content}</p>
               )}
+              {m.memory && (
+                <>
+                  {m.memory.warnings.map((warning) => (
+                    <p className="notice" role="status" key={warning}>
+                      {warning}
+                    </p>
+                  ))}
+                  {m.memory.notes.length > 0 && (
+                    <details>
+                      <summary>Memory used for this answer</summary>
+                      {m.memory.notes.map((note, index) => (
+                        <div className="memory-note" key={note.id}>
+                          <strong>
+                            [M{index + 1}] {note.title}
+                          </strong>
+                          <small>
+                            {note.source_date} · {note.kind}
+                          </small>
+                          <p>{note.text}</p>
+                        </div>
+                      ))}
+                    </details>
+                  )}
+                </>
+              )}
+              {memoryEnabled &&
+                m.role === 'assistant' &&
+                messages[i - 1]?.role === 'user' && (
+                  <RememberExchange
+                    user={messages[i - 1].content}
+                    assistant={m.content}
+                  />
+                )}
               {m.research && m.research.status !== 'disabled' && (
                 <div className="research-results">
                   <small>Web research · {m.research.status}</small>
@@ -950,7 +1013,10 @@ export default function BudgetAdvisor({
               statements, card/account IDs, and statement provenance are
               excluded. Brave receives only the separately previewed and
               approved public travel search terms; never this financial context,
-              chat history, or model replies. Chat stays in this tab’s memory.
+              chat history, model replies, or approved memories. Full chat stays
+              in this tab’s memory. If advisor memory is enabled, only notes you
+              explicitly approve and their displayed source excerpts persist in
+              local Memora.
             </p>
             {context && (
               <details>

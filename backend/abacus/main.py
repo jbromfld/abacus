@@ -26,6 +26,12 @@ from sqlalchemy.orm import load_only
 
 from .ach import record_due
 from .advisor import answer_question, budget_context
+from .advisor_memory import (
+    close_memory,
+    invalidate_memory,
+    memory_epoch,
+    recalled_memory,
+)
 from .budget import (
     ActualWindow,
     ForecastInputs,
@@ -49,6 +55,7 @@ from .dues import (
 from .expenses import expense_breakdown, month_end, month_key
 from .imports import csv_rows, executor, prepare_file, process_import, validate_rows
 from .local_model import available_models
+from .memory_api import router as memory_router
 from .models import (
     Account,
     AmountChange,
@@ -119,6 +126,7 @@ async def lifespan(app):
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
+        await asyncio.to_thread(close_memory)
 
 
 def record_due_in_session():
@@ -138,6 +146,7 @@ async def ach_scheduler():
 
 
 app = FastAPI(title="Abacus", lifespan=lifespan)
+app.include_router(memory_router)
 DB = Annotated[DBSession, Depends(session)]
 ReadOnlyDB = Annotated[DBSession, Depends(read_only_session)]
 
@@ -248,7 +257,15 @@ def update_settings(data: SettingsIn, db: DB):
         plan = db.get(ReservePlan, 1)
         if plan:
             plan.dismissed_until = None
-    return save(db, setting, data.model_dump(exclude_none=True))
+    memory_changed = (
+        data.advisor_memory_enabled is not None
+        and data.advisor_memory_enabled != setting.advisor_memory_enabled
+    )
+    result = save(db, setting, data.model_dump(exclude_none=True))
+    if memory_changed:
+        invalidate_memory()
+        close_memory()
+    return result
 
 
 @app.get("/api/models")
@@ -284,6 +301,12 @@ def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
         raise HTTPException(409, "Enable Budget advisor in Settings to use local chat.")
     if not setting.model:
         raise HTTPException(422, "Choose an installed local model in Settings.")
+    memory_enabled = setting.advisor_memory_enabled
+    epoch = memory_epoch()
+    if memory_enabled and data.history and data.memory_epoch != epoch:
+        raise HTTPException(
+            409, "Advisor memory changed. Start a new conversation before continuing."
+        )
     if data.purchase_id:
         get(db, Purchase, data.purchase_id)
     if data.bill_estimate_id:
@@ -295,6 +318,7 @@ def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
     model = setting.model
     # Release the read transaction before waiting for the optional local model.
     db.rollback()
+    context["advisor_memory"] = recalled_memory(memory_enabled, data)
     try:
         reply = answer_question(model, data, context)
     except Exception as exc:
@@ -310,6 +334,11 @@ def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
         raise HTTPException(
             503,
             "Cannot get a reply from local Ollama. Check that it is running and the selected model is installed. Your budget is unchanged.",
+        )
+    if memory_epoch() != epoch:
+        raise HTTPException(
+            409,
+            "Advisor memory changed while answering. Start a new conversation and retry.",
         )
     return {"reply": reply, "context": context}
 

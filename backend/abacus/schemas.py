@@ -137,6 +137,7 @@ class SettingsIn(BaseModel):
     currency: Literal["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF"] = "USD"
     model: str = Field(default="", max_length=200)
     advisor_enabled: bool = False
+    advisor_memory_enabled: bool | None = None
     reserve_alerts_enabled: bool | None = None
     reserve_checkpoint_day: int | None = Field(default=None, ge=1, le=31)
 
@@ -271,6 +272,7 @@ class AdvisorIn(BaseModel):
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
     ]
     history: list[AdvisorMessage] = Field(default_factory=list, max_length=12)
+    memory_epoch: str | None = Field(default=None, max_length=36)
     purchase_id: str | None = Field(default=None, max_length=36)
     scenario: PurchaseScenario | None = None
     savings: SavingsIn | None = None

@@ -442,6 +442,13 @@ transactions or payment confirmations. A reserve target is not an extra expense.
 
 ## Budget advisor
 
+Optional **Memora** recalls approved intentions, preferences, and decisions in
+later conversations. It defaults off. Choose **Remember this**, review the local
+draft and source excerpt, then **Save memory**. Settings provides editing, revision
+history, completion/abandonment, and confirmed forgetting. Goals are statements,
+not achieved savings, and never change budget calculations. See the complete
+[advisor memory guide](advisor-memory.md) for setup, controls, and privacy.
+
 Choose an installed local model in Settings, enable **Budget advisor in the main
 menu**, and save. No models download automatically. Ask a general budget question,
 select saved planning context, or discuss an add-payment preview from Purchase

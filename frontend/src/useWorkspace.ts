@@ -14,6 +14,7 @@ export function useWorkspace(month: string, revision: number) {
     currency: 'USD',
     model: '',
     advisor_enabled: false,
+    advisor_memory_enabled: false,
     reserve_alerts_enabled: true,
     reserve_checkpoint_day: 1,
   });

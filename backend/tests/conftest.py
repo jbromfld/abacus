@@ -78,6 +78,7 @@ def clean_database(monkeypatch, tmp_path, advisor_credentials):
             db.execute(delete(model))
         setting = db.get(Settings, 1)
         setting.model, setting.currency, setting.advisor_enabled = "", "USD", False
+        setting.advisor_memory_enabled = False
         setting.reserve_alerts_enabled, setting.reserve_checkpoint_day = True, 1
         setting.savings_balance, setting.savings_month, setting.savings_floor = (
             None,

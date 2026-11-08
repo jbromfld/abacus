@@ -44,6 +44,7 @@ import type {
 } from './api';
 import './style.css';
 const BudgetAdvisor = lazy(() => import('./BudgetAdvisor'));
+const AdvisorMemory = lazy(() => import('./AdvisorMemory'));
 const ExpenseBreakdown = lazy(() => import('./ExpenseBreakdown'));
 const BatchUploadDialog = lazy(() => import('./BatchUploadDialog'));
 import { importStage } from './batchStatus';
@@ -1681,6 +1682,8 @@ export default function App() {
                               model: data.get('model'),
                               advisor_enabled:
                                 data.get('advisor_enabled') === 'on',
+                              advisor_memory_enabled:
+                                data.get('advisor_memory_enabled') === 'on',
                               reserve_alerts_enabled:
                                 data.get('reserve_alerts_enabled') === 'on',
                               reserve_checkpoint_day: Number(
@@ -1750,6 +1753,19 @@ export default function App() {
                         <label className="checkbox">
                           <input
                             type="checkbox"
+                            name="advisor_memory_enabled"
+                            defaultChecked={
+                              settings.advisor_memory_enabled ?? false
+                            }
+                            key={
+                              'memory' + String(settings.advisor_memory_enabled)
+                            }
+                          />
+                          Enable optional local advisor memory (Memora)
+                        </label>
+                        <label className="checkbox">
+                          <input
+                            type="checkbox"
                             name="reserve_alerts_enabled"
                             defaultChecked={settings.reserve_alerts_enabled}
                             key={
@@ -1796,6 +1812,10 @@ export default function App() {
                         </div>
                       </form>
                     </section>
+                    <AdvisorMemory
+                      enabled={settings.advisor_memory_enabled ?? false}
+                      revision={revision}
+                    />
                     <section className="panel">
                       <div className="section-head">
                         <div>
@@ -1990,6 +2010,7 @@ export default function App() {
                     currency={currency}
                     purchases={purchases}
                     model={settings.model}
+                    memoryEnabled={settings.advisor_memory_enabled ?? false}
                   />
                 </div>
               )}

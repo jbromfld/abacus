@@ -16,6 +16,7 @@ export type Settings = {
   currency: string;
   model: string;
   advisor_enabled: boolean;
+  advisor_memory_enabled?: boolean;
   reserve_alerts_enabled: boolean;
   reserve_checkpoint_day: number;
 };

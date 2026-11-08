@@ -225,6 +225,7 @@ characters). Optional fields:
 | Field | Meaning |
 | --- | --- |
 | `history` | Up to 12 user/assistant messages, with bounded content/total length |
+| `memory_epoch` | Echo `context.advisor_memory.epoch` for follow-ups with memory enabled; stale history returns 409 |
 | `purchase_id` or `scenario:{name,amount,month}` | A saved or one-off purchase; mutually exclusive |
 | `monthly_bill` or `bill_estimate_id` | Structured monthly payment or saved estimate; exclusive with purchase scenarios |
 | `savings` | Explicit opening snapshot override for this request |
@@ -249,6 +250,35 @@ public request with `use_web`, `research_topic`, and `research_confirmation`; no
 financial snapshot, private message/history, or model output enters that adapter. Timeout/
 research errors never save transactions or plans. The advisor must be opted in and
 have a selected model; no cloud fallback or model download occurs.
+
+## Optional advisor memory API
+
+Settings accepts optional `advisor_memory_enabled` (default false; omission
+preserves the preference). These operations use separate Memora storage.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/api/advisor/memory/status` | Safe status/message and generation `epoch` |
+| POST | `/api/advisor/memory/draft` | `{user_message,assistant_message?}` → editable `{note,warning}`; never saves |
+| GET | `/api/advisor/memory?offset=0` | Up to 25 `{items,next_offset}` across all statuses |
+| POST | `/api/advisor/memory/similar` | `{query}` → up to three active matches; no merging |
+| POST | `/api/advisor/memory` | `{note,create_key:UUID}` → approved note, HTTP 201; identical retries are idempotent |
+| GET | `/api/advisor/memory/{id}` | Note with revision history |
+| PUT | `/api/advisor/memory/{id}` | `{note,expected_revision}` → new revision; conflicts return 409 |
+| DELETE | `/api/advisor/memory/{id}?expected_revision=N` | Purges note/history/embedding; returns `{forgotten,epoch}` |
+
+Note fields: `title` (1–100), `text` (1–400), `kind`
+(`intention|preference|decision`), ISO `source_date`, `source_excerpt` (up to 1,000),
+`cues` (up to eight nonempty strings of at most 50), and `status`
+(`active|completed|abandoned`, default active). Extra fields are rejected.
+Draft failure returns blank editable fields and a safe warning.
+
+Chat context adds `advisor_memory:{status,warnings,notes,epoch}`. Model context
+contains at most three active notes within 1,500 serialized characters, excluding
+source excerpts. Unavailability warns without failing chat. Management returns
+503 when unavailable, 409 when disabled/conflicted, and 422 for invalid fields.
+Updates/forgetting invalidate pending answers and stale follow-up epochs (409).
+See [memory operations and privacy](advisor-memory.md).
 
 ## Examples
 

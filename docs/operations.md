@@ -1,5 +1,8 @@
 # Setup and operations
 
+For the separate optional Memora MCP service, see
+[advisor memory setup, permissions, recovery, and backups](advisor-memory.md).
+
 [Documentation index](README.md) · [User guide](user-guide.md) · [API](api.md)
 
 ## Install and run

@@ -9,6 +9,7 @@ A local personal budget app: recurring income and bills, purchase estimates, act
 - [Setup, configuration, upgrades, backups, and troubleshooting](docs/operations.md)
 - [Complete API reference](docs/api.md)
 - [Classification memory and future training](training/README.md)
+- [Optional local advisor memory with Memora](docs/advisor-memory.md)
 
 Use the user guide for daily workflows and Operations for maintenance. Feature details live in those guides to keep one source of truth.
 

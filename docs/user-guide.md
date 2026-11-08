@@ -473,9 +473,12 @@ recent increases and then recent spending; omitted-payee counts are visible.
 These are transaction labels grouped by existing normalization rules, not verified
 merchant identities. Suggestions do not change the budget or actual transactions.
 
-The snapshot runs in a PostgreSQL-enforced **read-only, repeatable-read transaction**,
-which is released before the model responds. No separate database login or grant
-is required. The model receives a bounded local snapshot, not SQL or tool access.
+The snapshot uses a **dedicated SELECT-only PostgreSQL login** and a **read-only,
+repeatable-read transaction**, released before the model responds. Setup and the
+updater maintain its explicit permission allowlist; see [advisor account setup](operations.md#dedicated-advisor-database-login).
+Missing credentials or grants disable advisor requests only, without falling back
+to the writable login. The model receives a bounded local snapshot, not credentials,
+SQL, or tool access.
 **No personal financial context is sent to Brave**: search receives only the
 separately entered, previewed, approved public travel topic. Database amounts,
 payees, transaction history, private chat/history, and model responses never feed

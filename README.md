@@ -23,6 +23,7 @@ cp .env.example .env
 # If the database does not exist yet, create it with your local login:
 createdb --host=127.0.0.1 --port=5432 --username=YOUR_DB_USER --password
 uv run alembic upgrade head
+uv run --no-sync python scripts/setup_advisor.py
 cd frontend
 npm ci
 npm run build
@@ -59,7 +60,8 @@ For an installed macOS login service, apply the current workspace changes with:
 python3 scripts/update.py
 ```
 
-This stops Abacus, syncs locked dependencies, migrates, rebuilds, and starts it.
+This stops Abacus, syncs locked dependencies, migrates, maintains advisor permissions,
+rebuilds, and starts it.
 Use `--dry-run` to preview commands. A failed update stops before later steps.
 See [upgrade and recovery details](docs/operations.md#upgrade).
 

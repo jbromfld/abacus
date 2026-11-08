@@ -27,7 +27,7 @@ def test_update_runs_in_workspace_in_order_and_syncs_only_after_stopping(
     assert updater.STEPS[1][1] == ("uv", "sync", "--locked")
 
 
-@pytest.mark.parametrize("failed_step", range(6))
+@pytest.mark.parametrize("failed_step", range(7))
 def test_update_stops_at_failure_without_running_later_steps(
     monkeypatch, capsys, failed_step
 ):
@@ -45,7 +45,7 @@ def test_update_stops_at_failure_without_running_later_steps(
     assert calls == [command for _, command in updater.STEPS[: failed_step + 1]]
     error = capsys.readouterr().err
     assert updater.STEPS[failed_step][0] in error
-    if 0 < failed_step < 5:
+    if 0 < failed_step < len(updater.STEPS) - 1:
         assert "remains stopped" in error
 
 

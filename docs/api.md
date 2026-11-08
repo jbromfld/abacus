@@ -241,8 +241,10 @@ money in savings_projection also uses minor units**, even without that suffix.
 
 The API waits for the completed reply while the local transport reads streamed
 model output. It does not stream partial advice to the browser or expose tool access
-to the model. Snapshot reads run in a PostgreSQL-enforced read-only, repeatable-read
-transaction, released before model/search waiting. Search is passed only a strict
+to the model. Snapshot reads use a dedicated SELECT-only database login plus a
+PostgreSQL-enforced read-only, repeatable-read transaction, released before model/search
+waiting. Missing credentials, failed authentication, or unsafe/missing privileges
+return advisor-only 503 responses with setup instructions; no writable fallback is used. Search is passed only a strict
 public request with `use_web`, `research_topic`, and `research_confirmation`; no
 financial snapshot, private message/history, or model output enters that adapter. Timeout/
 research errors never save transactions or plans. The advisor must be opted in and

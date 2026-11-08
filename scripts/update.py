@@ -16,6 +16,10 @@ STEPS = (
     ),
     ("Sync locked Python dependencies", ("uv", "sync", "--locked")),
     ("Upgrade database", ("uv", "run", "--no-sync", "alembic", "upgrade", "head")),
+    (
+        "Configure advisor permissions",
+        ("uv", "run", "--no-sync", "python", "scripts/setup_advisor.py"),
+    ),
     ("Install locked frontend dependencies", ("npm", "ci", "--prefix", "frontend")),
     ("Build frontend", ("npm", "run", "build", "--prefix", "frontend")),
     (

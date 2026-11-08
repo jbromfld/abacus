@@ -1,4 +1,5 @@
 import os
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import delete, update
@@ -28,11 +29,33 @@ from abacus.models import (
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(scope="session")
+def advisor_credentials():
+    from abacus.advisor_setup import provision_advisor
+    from abacus.db import dispose_advisor_engine
+    from psycopg import sql
+
+    if not engine.url.database or not engine.url.database.startswith("abacus_test"):
+        pytest.fail("Disposable advisor roles require an abacus_test database.")
+    role = "abacus_test_advisor_" + uuid4().hex[:12]
+    password = provision_advisor(engine.url, role)
+    try:
+        yield role, password
+    finally:
+        dispose_advisor_engine()
+        with engine.begin() as connection:
+            with connection.connection.driver_connection.cursor() as cursor:
+                cursor.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+                cursor.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
 @pytest.fixture(autouse=True)
-def clean_database(monkeypatch, tmp_path):
+def clean_database(monkeypatch, tmp_path, advisor_credentials):
     from abacus import config
 
     monkeypatch.setattr(config, "ENV_FILE", tmp_path / "isolated.env")
+    monkeypatch.setenv("ADVISOR_USER", advisor_credentials[0])
+    monkeypatch.setenv("ADVISOR_PASS", advisor_credentials[1])
     if not engine.url.database or not engine.url.database.startswith("abacus_test"):
         pytest.fail(
             "TEST_DATABASE_URL database must start with abacus_test; tests delete its app data."

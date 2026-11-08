@@ -299,7 +299,7 @@ occur. Model/research failures are visible and do not mutate financial records.
 For the installed macOS login service, run this after updating the source:
 
 ```sh
-python3 scripts/restart.py
+python3 scripts/update.py
 ```
 
 The updater uses its own workspace as the working directory, stops the service,
@@ -312,7 +312,7 @@ The service helper verifies workspace ownership before unloading anything.
 Preview the exact commands without changing the service or database:
 
 ```sh
-python3 scripts/restart.py --dry-run
+python3 scripts/update.py --dry-run
 ```
 
 Invoke the updater with `python3`, rather than `uv run`, so dependency syncing does

@@ -242,6 +242,44 @@ hardware or a particular model. Advisor requests use bounded replies/no-thinking
 options where supported. PDF extraction has its own transport settings; the advisor
 timeout attribute is not a general import timeout setting.
 
+### Local advisor prompt performance
+
+Advisor instructions use a short shared core, with reconciliation, spending,
+savings-projection, and travel sections included when relevant. Travel follow-ups
+also consider prior user messages and the selected scenario, using local matching
+rather than an extra model call. These sections only guide the response; the
+dedicated PostgreSQL account and transaction enforce read-only access. Brave still
+receives only the separately approved public topic.
+
+The UI retains the full snapshot. The local-model view shares history window
+metadata once, removes repeated unknown funding balances, and includes
+Python-formatted purchase/projection balances to reduce currency-conversion errors.
+Financial calculations and API totals remain integer minor units.
+
+Benchmark an installed local model with synthetic data, without querying budget
+records, invoking Brave, downloading a model, or changing Ollama settings:
+
+```sh
+uv run --no-sync python scripts/benchmark_advisor.py --model YOUR_INSTALLED_MODEL
+```
+
+Optionally pass `--baseline-instructions /path/to/older-instructions.txt` to compare
+an earlier instruction string against the current one with the same synthetic
+payload. The script warms model loading separately, uses distinct harmless prompt
+markers to limit full-prefix cache bias, and prints input/output token counts,
+prompt/generation/loading/total durations, completion reason, and synthetic replies.
+Inspect the amounts and conclusions as well as latency; fewer tokens alone do
+not establish response quality. Metrics are returned by [Ollama's chat API](https://docs.ollama.com/api/chat).
+
+One local `gemma4:e4b` before/after smoke comparison used 2,357 versus 1,545 input
+tokens, with prompt evaluation of 16.76 versus 10.41 seconds and total duration of
+22.98 versus 15.83 seconds. Both replies identified the synthetic USD 500 purchase
+and USD 200 shortfall. This is a single hardware/model-specific sample, not a
+latency guarantee. The common spending/purchase instructions decreased from
+7,266 characters to 2,792; specialized questions include additional relevant rules.
+The runtime retains its existing 8,192-token context, 512-token reply limit, and
+no-thinking request; the short benchmark uses a 128-token reply limit.
+
 To add web research, obtain your own Brave Search API key, set it in `.env`, and
 refresh **Budget advisor → Travel research → Refresh connection**. Research becomes
 available but stays off by default. Enter an explicit public topic, choose
@@ -261,7 +299,7 @@ occur. Model/research failures are visible and do not mutate financial records.
 For the installed macOS login service, run this after updating the source:
 
 ```sh
-python3 scripts/update.py
+python3 scripts/restart.py
 ```
 
 The updater uses its own workspace as the working directory, stops the service,
@@ -274,7 +312,7 @@ The service helper verifies workspace ownership before unloading anything.
 Preview the exact commands without changing the service or database:
 
 ```sh
-python3 scripts/update.py --dry-run
+python3 scripts/restart.py --dry-run
 ```
 
 Invoke the updater with `python3`, rather than `uv run`, so dependency syncing does

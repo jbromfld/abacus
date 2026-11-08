@@ -57,7 +57,7 @@ not required for this local macOS setup.
 For an installed macOS login service, apply the current workspace changes with:
 
 ```sh
-python3 scripts/update.py
+python3 scripts/restart.py
 ```
 
 This stops Abacus, syncs locked dependencies, migrates, maintains advisor permissions,

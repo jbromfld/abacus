@@ -405,7 +405,7 @@ export default function BudgetAdvisor({
                 {[
                   'What could I do to increase my savings?',
                   'Can I make this purchase without exceeding my budget?',
-                  'Plan a Friday–Sunday trip to western New York in July 2027, including lodging and meals.',
+                  'Plan a Friday-Sunday trip to western New York in July, including lodging and meals.',
                   'What kind of Puerto Vallarta weekend next fall would fit my budget?',
                 ].map((q) => (
                   <button

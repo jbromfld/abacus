@@ -62,7 +62,7 @@ procedure before using this version: stop the app, migrate, rebuild, restart, an
 refresh the browser. For the installed login service:
 
 ```sh
-python3 scripts/update.py
+python3 scripts/restart.py
 ```
 
 ## Suggested squash message

@@ -3045,3 +3045,77 @@ dialog:has(.batch-table) {
   background: #894734;
   border-color: #894734;
 }
+
+/* Local advisor Markdown stays readable without fetching remote content. */
+.advisor-markdown {
+  font-size: 13px;
+  line-height: 1.8;
+  min-width: 0;
+}
+.chat-message .advisor-markdown p {
+  white-space: normal;
+  margin: 0.65em 0;
+}
+.advisor-markdown h1,
+.advisor-markdown h2,
+.advisor-markdown h3,
+.advisor-markdown h4,
+.advisor-markdown h5,
+.advisor-markdown h6 {
+  font-size: 1.1em;
+  line-height: 1.4;
+  margin: 1em 0 0.5em;
+  color: #376c55;
+}
+.advisor-markdown ul,
+.advisor-markdown ol {
+  padding-left: 1.6em;
+}
+.advisor-markdown li {
+  margin: 0.35em 0;
+}
+.advisor-markdown blockquote {
+  margin: 0.7em 0;
+  padding-left: 1em;
+  border-left: 3px solid #b4c7ac;
+  color: #596953;
+}
+.advisor-markdown pre {
+  overflow-x: auto;
+  white-space: pre-wrap;
+  padding: 10px;
+  background: #e7eddf;
+  border-radius: 6px;
+}
+.advisor-markdown code {
+  font-size: 0.92em;
+}
+.advisor-markdown table {
+  font-size: 12px;
+}
+.advisor-markdown .table-scroll,
+.advisor-history .table-scroll {
+  max-width: 100%;
+}
+.advisor-history {
+  margin-top: 14px;
+}
+.advisor-history table {
+  font-size: 11px;
+}
+.advisor-history caption {
+  text-align: left;
+  line-height: 1.6;
+  padding: 10px 0;
+}
+.advisor-layout > *,
+.advisor-side > *,
+.advisor-context,
+.advisor-history {
+  min-width: 0;
+}
+@media (max-width: 1000px) {
+  .advisor-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -38,7 +38,7 @@ from .card_alerts import account_information
 from .category_planning import category_averages
 from .classification import apply_payee_rules, learn_labels
 from .csv_profiles import apply_saved_mapping
-from .db import Session, session
+from .db import Session, read_only_session, session
 from .dues import (
     automatic_occurrence,
     due_settings,
@@ -139,6 +139,7 @@ async def ach_scheduler():
 
 app = FastAPI(title="Abacus", lifespan=lifespan)
 DB = Annotated[DBSession, Depends(session)]
+ReadOnlyDB = Annotated[DBSession, Depends(read_only_session)]
 
 
 @app.middleware("http")
@@ -277,7 +278,7 @@ def preview_research(data: ResearchPreviewIn):
 
 
 @app.post("/api/advisor/chat")
-def advisor_chat(data: AdvisorIn, db: DB):
+def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
     setting = get(db, Settings, 1)
     if not setting.advisor_enabled:
         raise HTTPException(409, "Enable Budget advisor in Settings to use local chat.")

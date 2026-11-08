@@ -62,12 +62,7 @@ procedure before using this version: stop the app, migrate, rebuild, restart, an
 refresh the browser. For the installed login service:
 
 ```sh
-uv run python scripts/macos_service.py stop
-uv sync --locked
-uv run alembic upgrade head
-npm ci --prefix frontend
-npm run build --prefix frontend
-uv run python scripts/macos_service.py start
+python3 scripts/update.py
 ```
 
 ## Suggested squash message

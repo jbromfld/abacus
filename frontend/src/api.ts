@@ -85,6 +85,12 @@ export type Forecast = {
     category_id: string | null;
   }[];
 };
+export type SavingsAwareForecast = Forecast & {
+  savings_balance: number | null;
+  remaining_with_savings: number;
+  savings_adjusted_deficit: boolean;
+};
+
 export type Trend = {
   month: string;
   forecast: number;

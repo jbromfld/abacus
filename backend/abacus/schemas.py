@@ -29,6 +29,11 @@ Kind = Literal["purchase", "refund", "fee", "payment", "transfer"]
 BillDate = Annotated[date, Field(ge=date(1900, 1, 1), le=date(9998, 12, 31))]
 
 
+class AlertDismissalIn(BaseModel):
+    month: Month
+    kind: Literal["forecast_deficit", "actual_deficit"]
+
+
 class CategoryIn(BaseModel):
     name: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)

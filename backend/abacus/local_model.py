@@ -85,7 +85,7 @@ def chat_with_model(model, messages, schema=None):
     except (TypeError, ValueError):
         raise ValueError("ADVISOR_TIMEOUT_SECONDS must be between 30 and 1800 seconds.")
     try:
-        max_tokens = int(local_config().get("ADVISOR_MAX_TOKENS", "1536"))
+        max_tokens = int(local_config().get("ADVISOR_MAX_TOKENS", "768"))
         if not 256 <= max_tokens <= 4096:
             raise ValueError()
     except (TypeError, ValueError):

@@ -385,5 +385,32 @@ a changed allowance never establishes changed actual spending. Future
 `savings_projection` continues to use budget assumptions, not a substitution of
 historical charges. History rows also include Python-calculated `average_minor`
 and `sample_count`, excluding missing months. The local-model payload receives
-formatted currency values for history and comparisons; the API retains integer
+formatted currency values for all monetary paths, including forecast changes,
+annual payments, and savings. Model-only forecast/projection tables share column
+labels to reduce prompt size; the API retains integer
 minor units for UI calculations.
+
+
+`GET /api/spending/comparison` is a deterministic Overview read, available without
+Budget advisor enabled. It returns `{today,comparison}` for the latest two finished
+months in `APP_TIMEZONE`, including account/category deltas and completeness. It
+never invokes Ollama or web research and does not depend on the selected forecast
+month. Refunds reduce spending; payments/transfers are excluded.
+
+`GET /api/forecasts?...&include_savings=true` adds `savings_balance` (nullable),
+`remaining_with_savings`, and `savings_adjusted_deficit` to each forecast. The last
+field tests `remaining + (savings_balance or 0) < 0` independently per month, with
+no carry-forward or changes to the original `remaining`/`deficit` fields. The
+parameter defaults false to preserve the standard forecast-window response.
+
+
+### Permanent budget-alert acknowledgements
+
+`GET /api/alerts/dismissals` returns `{month,kind,dismissed_at}` records.
+`POST /api/alerts/dismissals` accepts a validated month and `kind` of
+`forecast_deficit` or `actual_deficit`. The composite month/type key makes repeated
+requests idempotent and preserves the original dismissal timestamp.
+`DELETE /api/alerts/dismissals` restores all notices and returns `{restored:count}`.
+Dismissals do not expire or depend on amounts and never modify financial records.
+They control Overview notices only; reserve reminders retain their existing
+checkpoint-based dismissal. The advisor login receives no access to this table.

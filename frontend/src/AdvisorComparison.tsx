@@ -25,9 +25,11 @@ type SpendingChange = {
 export default function AdvisorComparison({
   comparison,
   currency,
+  periodDescription = 'Latest two finished months through the selected month.',
 }: {
   comparison: SpendingComparison;
   currency: string;
+  periodDescription?: string;
 }) {
   const fmt = (value: number | null) =>
     value === null ? 'Unknown' : money(value, currency);
@@ -73,9 +75,8 @@ export default function AdvisorComparison({
         </div>
         <div className="advisor-context">
           <p>
-            Latest two finished months through the selected month. Purchases and
-            fees minus refunds, grouped by transaction date. Card payments and
-            transfers are excluded.
+            {periodDescription} Purchases and fees minus refunds, grouped by
+            transaction date. Card payments and transfers are excluded.
           </p>
           {(comparison.previous_status !== 'complete' ||
             comparison.current_status !== 'complete') && (

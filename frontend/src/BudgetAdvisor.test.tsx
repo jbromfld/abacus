@@ -209,7 +209,7 @@ it('keeps a timed-out first question visible across budget refreshes and retries
   fireEvent.change(screen.getByLabelText('Ask about your budget'), {
     target: { value: 'Can I afford another monthly bill?' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Ask', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Ask' }));
   await screen.findByText('Synthetic reply unavailable');
   expect(
     screen.getByText('Can I afford another monthly bill?', {
@@ -245,7 +245,7 @@ it('keeps a timed-out first question visible across budget refreshes and retries
         }
       : fallback(path, ...args),
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Ask', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Ask' }));
   await screen.findByText('A completed retry.');
   const request = vi
     .mocked(api)

@@ -229,7 +229,9 @@ def test_private_history_reaches_only_local_model_and_never_brave(
         assert private not in outbound
     assert [item["params"]["q"] for item in captured_search] == plan.queries
     local = json.dumps(captured_model).casefold()
-    assert "private payee canary" in local and "7654321" in local and "11111" in local
+    assert (
+        "private payee canary" in local and "7654321" in local and "usd 111.11" in local
+    )
     assert "do_not_send_statement_provenance" not in local and account_id not in local
     prompt = json.loads(captured_model[0]["content"].split("BUDGET SNAPSHOT:\n", 1)[1])
     compact = prompt["spending_history"]
@@ -396,3 +398,30 @@ def test_actual_comparison_missing_zero_and_year_boundary(db, account_id, catego
     assert comparison["totals"]["change_minor"] == -27000
     assert value["payees"][0]["average_minor"] == 13500
     assert value["payees"][0]["sample_count"] == 2
+
+
+def test_overview_comparison_is_model_independent_and_uses_latest_finished_months(
+    client, db, account_id, category_id, monkeypatch
+):
+    monkeypatch.setattr("abacus.main.local_today", lambda: date(2026, 11, 8))
+
+    def no_model(*args, **kwargs):
+        pytest.fail("Overview comparison invoked an advisor or search")
+
+    monkeypatch.setattr("abacus.advisor.chat_with_model", no_model)
+    monkeypatch.setattr("abacus.advisor.gather_research", no_model)
+    add(db, account_id, category_id, "2026-09-30", 30000)
+    add(db, account_id, category_id, "2026-10-01", 65000)
+    add(db, account_id, category_id, "2026-10-02", 5000, kind="refund")
+    add(db, account_id, category_id, "2026-10-03", 100000, kind="payment")
+    add(db, account_id, category_id, "2026-11-01", 990000)
+    db.commit()
+    response = client.get("/api/spending/comparison")
+    assert response.status_code == 200
+    value = response.json()
+    assert value["today"] == "2026-11-08"
+    assert value["comparison"]["previous_month"] == "2026-09"
+    assert value["comparison"]["month"] == "2026-10"
+    assert value["comparison"]["totals"]["change_minor"] == 30000
+    assert "budget_impact" not in value["comparison"]
+    assert db.get(Settings, 1).advisor_enabled is False

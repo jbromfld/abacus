@@ -55,6 +55,20 @@ class Settings(Base):
     )
 
 
+class AlertDismissal(Base):
+    __tablename__ = "alert_dismissals"
+    month: Mapped[str] = mapped_column(String(7), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(24), primary_key=True)
+    dismissed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('forecast_deficit','actual_deficit')", name="alert_dismissal_kind"
+        ),
+    )
+
+
 class ReservePlan(Base):
     __tablename__ = "reserve_plans"
     id: Mapped[int] = mapped_column(primary_key=True, default=1)

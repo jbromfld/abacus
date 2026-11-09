@@ -12,6 +12,7 @@ from abacus.db import Session, engine
 from abacus.main import app
 from abacus.models import (
     Account,
+    AlertDismissal,
     AmountChange,
     BillEstimate,
     Category,
@@ -62,6 +63,7 @@ def clean_database(monkeypatch, tmp_path, advisor_credentials):
         )
     with Session() as db:
         for model in [
+            AlertDismissal,
             ImportPage,
             ReservePlan,
             SavingsObservation,

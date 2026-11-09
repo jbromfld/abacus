@@ -8,7 +8,7 @@ from sqlalchemy import case, func, select
 from .budget import ActualWindow, shift_month
 from .category_planning import average
 from .classification import normalize_payee
-from .models import Account, Transaction
+from .models import Account, Category, Transaction
 from .payee_matching import load_matching_config
 
 MAX_PAYEES = 20
@@ -203,3 +203,29 @@ def spending_comparison(db, history):
         "accounts": accounts,
         "categories": categories,
     }
+
+
+def latest_spending_comparison(db, today):
+    """Overview needs two aggregate months, without loading merchant descriptions."""
+    end = shift_month(today.strftime("%Y-%m"), -1)
+    start = shift_month(end, -1)
+    actuals = ActualWindow(db, start, end)
+    months = [start, end]
+    statuses = {month: actuals.actual(month)["status"] for month in months}
+    categories = db.scalars(select(Category).order_by(Category.name)).all()
+    history = {
+        "months": [{"month": month, "status": statuses[month]} for month in months],
+        "categories": [
+            {
+                "category": category.name,
+                "monthly_net_minor": [
+                    None
+                    if statuses[month] == "missing"
+                    else actuals.totals.get(month, {}).get(category.id, 0)
+                    for month in months
+                ],
+            }
+            for category in categories
+        ],
+    }
+    return spending_comparison(db, history)

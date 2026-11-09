@@ -2202,42 +2202,7 @@ dialog:has(.batch-table) {
   font-size: 10px;
   margin-top: 6px;
 }
-.spending-navigation {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 24px;
-}
-.spending-view {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-align: left;
-  min-width: 220px;
-  padding: 13px 18px;
-  border: 1px solid #dce4d5;
-  background: #fff;
-  color: #75826b;
-  border-radius: 11px;
-}
-.spending-view:hover {
-  background: #f3f7ed;
-}
-.spending-view.selected {
-  background: #edf4e7;
-  border-color: #a8bd99;
-  color: #436c4f;
-}
-.spending-view span {
-  font-size: 13px;
-  font-weight: 600;
-}
-.spending-view small {
-  display: block;
-  font-size: 10px;
-  font-weight: 400;
-  margin-top: 5px;
-  color: #829175;
-}
+
 .breakdown-month-nav,
 .history-controls {
   display: flex;
@@ -2274,28 +2239,6 @@ dialog:has(.batch-table) {
   margin-bottom: 2px;
 }
 @media (max-width: 600px) {
-  .spending-navigation {
-    gap: 8px;
-    margin-bottom: 18px;
-  }
-  .spending-view {
-    min-width: 0;
-    flex: 1;
-    padding: 12px 10px;
-    gap: 8px;
-    align-items: flex-start;
-  }
-  .spending-view span {
-    font-size: 12px;
-  }
-  .spending-view small {
-    font-size: 9px;
-    line-height: 1.5;
-  }
-  .spending-view > svg {
-    width: 16px;
-    flex-shrink: 0;
-  }
   .breakdown-month-nav,
   .history-controls {
     padding: 0 20px 18px;
@@ -2940,14 +2883,17 @@ dialog:has(.batch-table) {
     padding: 0;
   }
 }
-.forecast-deficit {
+.forecast-deficit,
+.actual-deficit {
   flex-wrap: wrap;
 }
-.forecast-deficit > span {
+.forecast-deficit > span,
+.actual-deficit > span {
   flex: 1;
   min-width: 180px;
 }
-.forecast-deficit .text-button {
+.forecast-deficit .text-button,
+.actual-deficit .text-button {
   color: #8c4937;
   text-align: left;
   white-space: normal;
@@ -3194,4 +3140,31 @@ dialog:has(.batch-table) {
 }
 .memory-content .memory-note p {
   margin: 8px 0;
+}
+
+.overview-tools .advisor-context table {
+  font-size: 11px;
+}
+.overview-tools .advisor-context th {
+  padding: 10px 4px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.overview-tools .advisor-context td {
+  padding: 10px 4px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.bill-unpaid-filter {
+  flex-direction: row;
+  align-items: center;
+  padding: 0 25px 18px;
+}
+.bill-unpaid-filter input {
+  flex-shrink: 0;
+}
+
+.spending-sections {
+  margin: 0 0 24px;
 }

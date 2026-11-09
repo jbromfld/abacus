@@ -430,21 +430,37 @@ def model_snapshot(context, question=""):
         model_context["planning_capacity"] = {
             key: value for key, value in capacity.items() if key != "months"
         }
+    if isinstance(context.get("monthly_forecasts"), list):
+        model_context["monthly_forecasts"] = {
+            "columns": ["month", "income", "expenses", "remaining", "income_entries"],
+            "rows": [
+                [
+                    row["month"],
+                    display_money(row["income_minor"]),
+                    display_money(row["expenses_minor"]),
+                    display_money(row["remaining_minor"]),
+                    row["income_entries"],
+                ]
+                for row in context["monthly_forecasts"]
+            ],
+        }
     if context.get("savings_projection"):
         projection = context["savings_projection"]
         model_context["savings_projection"] = {
             **{key: value for key, value in projection.items() if key != "assumptions"},
+            "month_columns": ["month", "budget_remaining", "savings"],
             "months": [
-                {
-                    key: row[key]
-                    for key in (
-                        "month",
-                        "budget_remaining_after_bill",
-                        "scenario_savings",
-                        "annual_payments",
-                    )
-                }
+                [
+                    row["month"],
+                    display_money(row["budget_remaining_after_bill"]),
+                    display_money(row["scenario_savings"]),
+                ]
                 for row in projection["months"]
+            ],
+            "annual_payments": [
+                {"month": row["month"], "payments": row["annual_payments"]}
+                for row in projection["months"]
+                if row["annual_payments"]
             ],
         }
 
@@ -476,7 +492,48 @@ def model_snapshot(context, question=""):
                 )
             },
         }
-    return model_context
+    # No raw minor-unit amounts cross the model boundary, even in nested
+    # annual payments, forecast deltas, scenarios, or savings projections.
+    money_keys = {
+        "amount",
+        "starting_savings",
+        "savings_floor",
+        "ending_savings",
+        "baseline_ending_savings",
+        "total_new_bill_cost",
+        "total_budget_change",
+        "lowest_savings",
+        "first_bill_month_remaining",
+        "budget_remaining_after_bill",
+        "scenario_savings",
+    }
+
+    def formatted_tree(value):
+        if isinstance(value, list):
+            return [formatted_tree(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        result = {}
+        summary = value.get("display_summary", {})
+        for key, item in value.items():
+            if key == "minor_unit_digits":
+                continue
+            if key == "display_summary":
+                result[key] = {
+                    name.removesuffix("_minor"): amount for name, amount in item.items()
+                }
+                continue
+            is_money = key.endswith("_minor") or key in money_keys
+            if is_money and (item is None or type(item) is int):
+                if key not in summary:
+                    result[key.removesuffix("_minor") + "_display"] = display_money(
+                        item
+                    )
+            else:
+                result[key] = formatted_tree(item)
+        return result
+
+    return formatted_tree(model_context)
 
 
 def answer_question(model, request, context):
@@ -497,7 +554,7 @@ def answer_question(model, request, context):
     # Keep the newest exchanges; very long conversations must not crowd out
     # the fresh budget snapshot or the answer in the local model's context.
     history = []
-    remaining = 3000
+    remaining = max(0, min(3000, 20000 - len(system) - len(request.message)))
     for message in reversed(request.history):
         content = message.content[: min(1000, remaining)]
         if not content:

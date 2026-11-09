@@ -19,6 +19,7 @@ import {
   Trash2,
   LoaderCircle,
   MessageCircle,
+  RotateCcw,
 } from 'lucide-react';
 import {
   api,
@@ -42,6 +43,7 @@ import type {
   ImportJob,
   ImportUpdate,
 } from './api';
+import { useAlertDismissals } from './useAlertDismissals';
 import './style.css';
 const BudgetAdvisor = lazy(() => import('./BudgetAdvisor'));
 const AdvisorMemory = lazy(() => import('./AdvisorMemory'));
@@ -57,6 +59,7 @@ const HistoricalSpending = lazy(() => import('./HistoricalSpending'));
 const ImportReview = lazy(() => import('./ImportReview'));
 import FormEditor from './FormEditor';
 import type { Field, Editor } from './FormEditor';
+import OverviewComparison from './OverviewComparison';
 import YearSummary from './YearSummary';
 import { useWorkspace } from './useWorkspace';
 import type { AdvisorBillPlan } from './api';
@@ -95,6 +98,7 @@ function Empty({
 
 export default function App() {
   const [view, setView] = useState('Overview');
+  const budgetAlerts = useAlertDismissals();
   const [advisorVisited, setAdvisorVisited] = useState(false);
   useEffect(() => {
     if (view === 'Budget advisor') setAdvisorVisited(true);
@@ -106,9 +110,9 @@ export default function App() {
   const [advisorBillPlan, setAdvisorBillPlan] =
     useState<AdvisorBillPlan | null>(null);
   const [month, setMonth] = useState(monthNow());
-  const [spendingMode, setSpendingMode] = useState<'current' | 'historical'>(
-    'current',
-  );
+  const [spendingMode, setSpendingMode] = useState<
+    'breakdown' | 'entries' | 'transactions' | 'historical'
+  >('breakdown');
   const [historyEnd, setHistoryEnd] = useState(() =>
     actualMonthFor(monthNow()),
   );
@@ -154,14 +158,14 @@ export default function App() {
   const drillMonth = (value: string) => {
     setCurrentActual(true);
     setMonth(value);
-    setSpendingMode('current');
+    setSpendingMode('breakdown');
     setScrollToBreakdown(true);
   };
   useEffect(() => {
     if (
       scrollToBreakdown &&
       view === 'Spending' &&
-      spendingMode === 'current'
+      spendingMode === 'breakdown'
     ) {
       document
         .getElementById('expense-breakdown')
@@ -188,8 +192,6 @@ export default function App() {
     let active = true;
     const controller = new AbortController();
     setActualLoading(true);
-    setActualReport(null);
-    setTransactions([]);
     Promise.all([
       api<Forecast>(
         `/forecast?month=${actualMonth}`,
@@ -281,11 +283,6 @@ export default function App() {
       setMonitoring(null);
     }
   };
-  useEffect(() => {
-    if (!recurring.some((r) => r.ach_enabled)) return;
-    const timer = setInterval(refresh, 60000);
-    return () => clearInterval(timer);
-  }, [recurring.some((r) => r.ach_enabled)]);
   const staleCards = accounts.filter((card) => card.stale);
   const categoryOptions = [
     { value: '', label: 'Choose category' },
@@ -610,16 +607,15 @@ export default function App() {
     setImportJob(j);
   };
   const actualData = actualReport?.month === actualMonth ? actualReport : null;
-  const actualBusy =
-    actualLoading || !!(actualReport && actualReport.month !== actualMonth);
+  const actualBusy = actualLoading && !actualData;
   const filteredTransactions = (actualData ? transactions : []).filter((t) =>
     t.description.toLowerCase().includes(query.toLowerCase()),
   );
   const nav = [
     { name: 'Overview', icon: LayoutDashboard },
+    { name: 'Spending', icon: ChartNoAxesCombined },
     { name: 'Recurring accounts', icon: Repeat2 },
     { name: 'Purchase planner', icon: ShoppingBag },
-    { name: 'Spending', icon: ChartNoAxesCombined },
     { name: 'Statement imports', icon: Upload },
     ...(settings.advisor_enabled
       ? [{ name: 'Budget advisor', icon: MessageCircle }]
@@ -795,6 +791,11 @@ export default function App() {
                 ))}
               </section>
             )}
+            {budgetAlerts.error && (
+              <p className="notice danger" role="alert">
+                {budgetAlerts.error}
+              </p>
+            )}
             {(error || loadError) && (
               <div className="notice danger" role="alert">
                 <AlertTriangle size={18} />
@@ -896,7 +897,7 @@ export default function App() {
                         <button
                           className="text-button stat-drill"
                           onClick={() => {
-                            setSpendingMode('current');
+                            setSpendingMode('breakdown');
                             setView('Spending');
                           }}
                         >
@@ -904,56 +905,97 @@ export default function App() {
                         </button>
                       </div>
                     </div>
-                    {forecast.deficit && (
-                      <div
-                        role="alert"
-                        className="notice danger forecast-deficit"
-                      >
-                        <AlertTriangle size={18} />
-                        <span>
-                          Forecast expenses exceed income by{' '}
-                          {fmt(-forecast.remaining)}.
-                        </span>
-                        {settings.advisor_enabled ? (
+                    {budgetAlerts.ready &&
+                      forecast.deficit &&
+                      !budgetAlerts.isDismissed('forecast_deficit', month) && (
+                        <div
+                          role="alert"
+                          className="notice danger forecast-deficit"
+                        >
+                          <AlertTriangle size={18} />
+                          <span>
+                            Forecast expenses exceed income by{' '}
+                            {fmt(-forecast.remaining)}.
+                          </span>
+                          {settings.advisor_enabled ? (
+                            <button
+                              className="text-button"
+                              onClick={() => {
+                                setAdvisorEntry({
+                                  key: Date.now(),
+                                  question: `Help me reconcile the ${monthLabel(month)} forecast deficit of ${fmt(-forecast.remaining)}. Compare it with ${monthLabel(shiftMonth(month, -1))}, explain what changed in income and expenses, and suggest realistic spending reductions to close the gap. Distinguish credit-card bills already owed from future flexible spending.`,
+                                });
+                                setView('Budget advisor');
+                              }}
+                            >
+                              Reconcile with Budget advisor →
+                            </button>
+                          ) : (
+                            <button
+                              className="text-button"
+                              onClick={() => setView('Settings')}
+                            >
+                              Set up Budget advisor →
+                            </button>
+                          )}
+                          <button
+                            className="text-button"
+                            disabled={budgetAlerts.busy}
+                            aria-label={`Dismiss forecast deficit alert for ${monthLabel(month)}`}
+                            onClick={() =>
+                              void budgetAlerts.dismiss(
+                                'forecast_deficit',
+                                month,
+                              )
+                            }
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      )}
+                    {budgetAlerts.ready &&
+                      actualData?.actual_deficit &&
+                      !budgetAlerts.isDismissed(
+                        'actual_deficit',
+                        actualMonth,
+                      ) && (
+                        <div
+                          role="alert"
+                          className="notice danger actual-deficit"
+                        >
+                          <AlertTriangle size={18} />
+                          <span>
+                            Recorded spending for {monthLabel(actualMonth)}{' '}
+                            exceeds that month’s forecast income by{' '}
+                            {fmt(
+                              actualData.actual.expenses - actualData.income,
+                            )}
+                            .
+                          </span>
                           <button
                             className="text-button"
                             onClick={() => {
-                              setAdvisorEntry({
-                                key: Date.now(),
-                                question: `Help me reconcile the ${monthLabel(month)} forecast deficit of ${fmt(-forecast.remaining)}. Compare it with ${monthLabel(shiftMonth(month, -1))}, explain what changed in income and expenses, and suggest realistic spending reductions to close the gap. Distinguish credit-card bills already owed from future flexible spending.`,
-                              });
-                              setView('Budget advisor');
+                              setSpendingMode('transactions');
+                              setView('Spending');
                             }}
                           >
-                            Reconcile with Budget advisor →
+                            Review spending <ArrowRight size={15} />
                           </button>
-                        ) : (
                           <button
                             className="text-button"
-                            onClick={() => setView('Settings')}
+                            disabled={budgetAlerts.busy}
+                            aria-label={`Dismiss recorded spending alert for ${monthLabel(actualMonth)}`}
+                            onClick={() =>
+                              void budgetAlerts.dismiss(
+                                'actual_deficit',
+                                actualMonth,
+                              )
+                            }
                           >
-                            Set up Budget advisor →
+                            Dismiss
                           </button>
-                        )}
-                      </div>
-                    )}
-                    {actualData?.actual_deficit && (
-                      <div role="alert" className="notice danger">
-                        <AlertTriangle size={18} />
-                        Recorded spending for {monthLabel(actualMonth)} exceeds
-                        that month’s forecast income by{' '}
-                        {fmt(actualData.actual.expenses - actualData.income)}.
-                        <button
-                          className="text-button"
-                          onClick={() => {
-                            setSpendingMode('current');
-                            setView('Spending');
-                          }}
-                        >
-                          Review spending <ArrowRight size={15} />
-                        </button>
-                      </div>
-                    )}
+                        </div>
+                      )}
                     <div className="overview-grid">
                       <UpcomingBills
                         currency={currency}
@@ -971,48 +1013,10 @@ export default function App() {
                         onChanged={refresh}
                       />
                       <div className="overview-tools">
-                        <section className="panel gentle">
-                          <div className="section-head">
-                            <div>
-                              <span className="pill">
-                                A LITTLE LOOKING AHEAD
-                              </span>
-                              <h2>Something on your mind?</h2>
-                              <p>Give your next purchase a little space.</p>
-                            </div>
-                            <ShoppingBag size={24} />
-                          </div>
-                          {purchases
-                            .filter((p) => !p.included)
-                            .slice(0, 3)
-                            .map((p) => (
-                              <div className="mini-purchase" key={p.id}>
-                                <div>
-                                  <strong>{p.name}</strong>
-                                  <small>{monthLabel(p.month, true)}</small>
-                                </div>
-                                <span>{fmt(p.amount)}</span>
-                              </div>
-                            ))}
-                          <p className="gentle-copy">
-                            Save an estimate, see how it fits, and decide when
-                            you’re ready.
-                          </p>
-                          <button
-                            className="secondary"
-                            onClick={() => setView('Purchase planner')}
-                          >
-                            <Plus size={16} />
-                            Open purchase planner
-                          </button>
-                          <div className="note">
-                            <Leaf size={17} />
-                            <span>
-                              Drafts stay out of your budget until you include
-                              them.
-                            </span>
-                          </div>
-                        </section>
+                        <OverviewComparison
+                          currency={currency}
+                          revision={revision}
+                        />
                       </div>
                     </div>
                     <section className="panel year-panel">
@@ -1366,39 +1370,32 @@ export default function App() {
                 {view === 'Spending' && (
                   <>
                     <div
-                      className="spending-navigation"
+                      className="planning-mode spending-sections"
                       role="group"
-                      aria-label="Spending view"
+                      aria-label="Spending section"
                     >
-                      <button
-                        className={
-                          'spending-view ' +
-                          (spendingMode === 'current' ? 'selected' : '')
-                        }
-                        aria-pressed={spendingMode === 'current'}
-                        onClick={() => setSpendingMode('current')}
-                      >
-                        <LayoutDashboard size={17} />
-                        <span>
-                          Current<small>Monthly breakdown & transactions</small>
-                        </span>
-                      </button>
-                      <button
-                        className={
-                          'spending-view ' +
-                          (spendingMode === 'historical' ? 'selected' : '')
-                        }
-                        aria-pressed={spendingMode === 'historical'}
-                        onClick={() => setSpendingMode('historical')}
-                      >
-                        <ChartNoAxesCombined size={17} />
-                        <span>
-                          Historical<small>Trends over 12 months</small>
-                        </span>
-                      </button>
+                      {(
+                        [
+                          ['breakdown', 'Expense breakdown'],
+                          ['entries', 'All expense entries'],
+                          ['transactions', 'Transactions'],
+                          ['historical', 'Historical trends'],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <button
+                          key={value}
+                          className={
+                            'chip ' + (spendingMode === value ? 'selected' : '')
+                          }
+                          aria-pressed={spendingMode === value}
+                          onClick={() => setSpendingMode(value)}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
-                    {spendingMode === 'current' && (
-                      <>
+                    {spendingMode !== 'historical' && (
+                      <div hidden={spendingMode === 'transactions'}>
                         <ExpenseBreakdown
                           month={month}
                           actualMonth={actualMonth}
@@ -1413,162 +1410,193 @@ export default function App() {
                           }
                           currency={currency}
                           revision={revision}
+                          view={
+                            spendingMode === 'entries' ? 'entries' : 'breakdown'
+                          }
+                          active={
+                            spendingMode === 'breakdown' ||
+                            spendingMode === 'entries'
+                          }
+                          onShowEntries={() => setSpendingMode('entries')}
                         />
-                        <section className="panel">
-                          <div className="section-head">
-                            <div>
-                              <h2>Transactions</h2>
-                              <p>
-                                {monthLabel(actualMonth)} ·{' '}
-                                {actualBusy
-                                  ? 'loading…'
-                                  : (actualData?.actual.status ??
-                                    'unavailable')}
-                              </p>
-                            </div>
-                            <div className="button-group">
-                              <button onClick={() => openTransaction()}>
-                                <Plus size={16} />
-                                Add transaction
-                              </button>
-                            </div>
-                          </div>
-                          <div className="transaction-toolbar">
-                            <input
-                              aria-label="Search transactions"
-                              placeholder="Search descriptions…"
-                              value={query}
-                              onChange={(e) => setQuery(e.target.value)}
-                            />
-                            <label className="checkbox">
-                              <input
-                                type="checkbox"
-                                checked={currentActual}
-                                onChange={(e) =>
-                                  setCurrentActual(e.target.checked)
-                                }
-                              />
-                              Current month
-                            </label>
-                            <label className="checkbox">
-                              <input
-                                type="checkbox"
-                                checked={
-                                  actualData?.actual.marked_complete ?? false
-                                }
-                                disabled={actualBusy || !actualData}
-                                onChange={(e) =>
-                                  void act(() =>
-                                    api('/months/' + actualMonth, 'PUT', {
-                                      complete: e.target.checked,
-                                    }),
-                                  )
-                                }
-                              />
-                              Actuals complete for this month
-                            </label>
-                          </div>
-                          {!accounts.length && (
-                            <div className="notice">
-                              Add a card account in Settings before recording or
-                              importing transactions.
-                              <button
-                                className="text-button"
-                                onClick={() => setView('Settings')}
-                              >
-                                Open Settings <ArrowRight size={15} />
-                              </button>
-                            </div>
-                          )}
-                          {actualBusy ? (
-                            <p className="muted pad" role="status">
-                              Loading transactions…
+                      </div>
+                    )}
+                    {spendingMode === 'transactions' && (
+                      <section className="panel">
+                        <div className="section-head">
+                          <div>
+                            <h2>Transactions</h2>
+                            <p>
+                              {monthLabel(actualMonth)} ·{' '}
+                              {actualBusy
+                                ? 'loading…'
+                                : (actualData?.actual.status ?? 'unavailable')}
                             </p>
-                          ) : filteredTransactions.length ? (
-                            <div className="table-scroll">
-                              <table>
-                                <thead>
-                                  <tr>
-                                    <th>Date</th>
-                                    <th>Description</th>
-                                    <th>Category</th>
-                                    <th>Type</th>
-                                    <th>Amount</th>
-                                    <th>
-                                      <span className="sr-only">Actions</span>
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {filteredTransactions.map((t) => (
-                                    <tr key={t.id}>
-                                      <td>{t.date}</td>
-                                      <td>
-                                        <strong>{t.description}</strong>
-                                        <small>
-                                          {
-                                            accounts.find(
-                                              (a) => a.id === t.account_id,
-                                            )?.name
-                                          }
+                          </div>
+                          <div className="button-group">
+                            <button
+                              className="secondary"
+                              aria-label="Refresh spending data"
+                              disabled={loading || actualLoading}
+                              onClick={refresh}
+                            >
+                              <RotateCcw
+                                size={16}
+                                className={actualLoading ? 'spin' : ''}
+                              />
+                              {actualLoading ? 'Refreshing…' : 'Refresh'}
+                            </button>
+                            <button onClick={() => openTransaction()}>
+                              <Plus size={16} />
+                              Add transaction
+                            </button>
+                          </div>
+                        </div>
+                        <div className="transaction-toolbar">
+                          <input
+                            aria-label="Search transactions"
+                            placeholder="Search descriptions…"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                          />
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              checked={currentActual}
+                              onChange={(e) =>
+                                setCurrentActual(e.target.checked)
+                              }
+                            />
+                            Current month
+                          </label>
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              checked={currentActual}
+                              onChange={(e) =>
+                                setCurrentActual(e.target.checked)
+                              }
+                            />
+                            Current month
+                          </label>
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              checked={
+                                actualData?.actual.marked_complete ?? false
+                              }
+                              disabled={actualBusy || !actualData}
+                              onChange={(e) =>
+                                void act(() =>
+                                  api('/months/' + actualMonth, 'PUT', {
+                                    complete: e.target.checked,
+                                  }),
+                                )
+                              }
+                            />
+                            Actuals complete for this month
+                          </label>
+                        </div>
+                        {!accounts.length && (
+                          <div className="notice">
+                            Add a card account in Settings before recording or
+                            importing transactions.
+                            <button
+                              className="text-button"
+                              onClick={() => setView('Settings')}
+                            >
+                              Open Settings <ArrowRight size={15} />
+                            </button>
+                          </div>
+                        )}
+                        {actualBusy ? (
+                          <p className="muted pad" role="status">
+                            Loading transactions…
+                          </p>
+                        ) : filteredTransactions.length ? (
+                          <div className="table-scroll">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Date</th>
+                                  <th>Description</th>
+                                  <th>Category</th>
+                                  <th>Type</th>
+                                  <th>Amount</th>
+                                  <th>
+                                    <span className="sr-only">Actions</span>
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {filteredTransactions.map((t) => (
+                                  <tr key={t.id}>
+                                    <td>{t.date}</td>
+                                    <td>
+                                      <strong>{t.description}</strong>
+                                      <small>
+                                        {
+                                          accounts.find(
+                                            (a) => a.id === t.account_id,
+                                          )?.name
+                                        }
+                                      </small>
+                                      {t.provenance?.type ===
+                                        'scheduled_ach' && (
+                                        <small className="ach-label">
+                                          Scheduled ACH · confirm with bank
                                         </small>
-                                        {t.provenance?.type ===
-                                          'scheduled_ach' && (
-                                          <small className="ach-label">
-                                            Scheduled ACH · confirm with bank
-                                          </small>
-                                        )}
-                                      </td>
-                                      <td>
-                                        {t.category_id
-                                          ? catName(t.category_id)
-                                          : '—'}
-                                      </td>
-                                      <td>
-                                        <span className="pill">{t.kind}</span>
-                                      </td>
-                                      <td
-                                        className={
-                                          t.kind === 'refund' ? 'green' : ''
+                                      )}
+                                    </td>
+                                    <td>
+                                      {t.category_id
+                                        ? catName(t.category_id)
+                                        : '—'}
+                                    </td>
+                                    <td>
+                                      <span className="pill">{t.kind}</span>
+                                    </td>
+                                    <td
+                                      className={
+                                        t.kind === 'refund' ? 'green' : ''
+                                      }
+                                    >
+                                      {t.kind === 'refund' ? '−' : ''}
+                                      {fmt(t.amount)}
+                                    </td>
+                                    <td className="nowrap">
+                                      <button
+                                        className="icon"
+                                        aria-label={`Edit ${t.description}`}
+                                        onClick={() => openTransaction(t)}
+                                      >
+                                        <Pencil size={15} />
+                                      </button>
+                                      <button
+                                        className="icon"
+                                        aria-label={`Delete ${t.description}`}
+                                        onClick={() =>
+                                          remove(
+                                            '/transactions/' + t.id,
+                                            t.description,
+                                          )
                                         }
                                       >
-                                        {t.kind === 'refund' ? '−' : ''}
-                                        {fmt(t.amount)}
-                                      </td>
-                                      <td className="nowrap">
-                                        <button
-                                          className="icon"
-                                          aria-label={`Edit ${t.description}`}
-                                          onClick={() => openTransaction(t)}
-                                        >
-                                          <Pencil size={15} />
-                                        </button>
-                                        <button
-                                          className="icon"
-                                          aria-label={`Delete ${t.description}`}
-                                          onClick={() =>
-                                            remove(
-                                              '/transactions/' + t.id,
-                                              t.description,
-                                            )
-                                          }
-                                        >
-                                          <Trash2 size={15} />
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : (
-                            <Empty title="No transactions to show">
-                              Import a statement or add a transaction. Payments
-                              and transfers won’t count as spending.
-                            </Empty>
-                          )}
-                        </section>
-                      </>
+                                        <Trash2 size={15} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <Empty title="No transactions to show">
+                            Import a statement or add a transaction. Payments
+                            and transfers won’t count as spending.
+                          </Empty>
+                        )}
+                      </section>
                     )}
                     {spendingMode === 'historical' && (
                       <Suspense
@@ -1823,6 +1851,28 @@ export default function App() {
                         enabled={settings.advisor_memory_enabled ?? false}
                         revision={revision}
                       />
+                      {budgetAlerts.count > 0 && (
+                        <section className="panel">
+                          <div className="section-head">
+                            <div>
+                              <h2>Dismissed budget alerts</h2>
+                              <p>
+                                {budgetAlerts.count} reviewed alerts stay hidden
+                                by month and type, even if amounts change.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="pad">
+                            <button
+                              className="secondary"
+                              disabled={budgetAlerts.busy}
+                              onClick={() => void budgetAlerts.restore()}
+                            >
+                              Restore dismissed alerts
+                            </button>
+                          </div>
+                        </section>
+                      )}
                     </div>
                     <div className="settings-column">
                       <section className="panel">

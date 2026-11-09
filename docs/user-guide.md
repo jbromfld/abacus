@@ -45,8 +45,8 @@ is no conversion between currencies.
 
 ## Navigation and accessibility
 
-The menu contains **Overview**, **Recurring accounts**, **Purchase planner**,
-**Spending**, **Statement imports**, and **Settings**. **Budget advisor** appears
+The menu contains **Overview**, **Spending**, **Recurring accounts**,
+**Purchase planner**, **Statement imports**, and **Settings**. **Budget advisor** appears
 when enabled. On phones, navigation moves above the page and Settings remains in
 the header; short desktop layouts keep navigation reachable by scrolling its menu.
 
@@ -72,9 +72,31 @@ have separate notices. **Reconcile with Budget advisor** prepares a selected-mon
 versus previous-month question; press **Ask** to send it. If the advisor is disabled,
 the notice links to Settings instead.
 
-Due-date panels show monthly and annual bills. The purchase shortcut opens Purchase
-planner. **The bigger picture** shows the selected year's income and expense bars;
-choose a bar or table month to change the selected forecast month. Reserve checks
+Each forecast-deficit and recorded-spending notice has **Dismiss**. Dismissal is
+saved in local PostgreSQL for that month and alert type, survives reloads/restarts,
+and remains in effect if the amount later changes. It does not dismiss other
+months/types, change spending or forecasts, or hide the budget totals/charts.
+Use **Settings → Dismissed budget alerts → Restore dismissed alerts** to show
+all dismissed budget notices again. Failed saves leave the notice visible.
+
+Due-date panels show monthly and annual bills. Toggle **Unpaid only** in Upcoming
+monthly bills to hide paid monthly occurrences, including recorded ACH payments.
+Future unpaid ACH bills remain visible. The filter starts off and does not change
+annual expenses, payment history, or payment status.
+ The right-hand **What changed this
+month?** card compares recorded spending in the latest two finished months,
+independently of the selected forecast month. It refreshes after changes and when
+you return to the app, without using a model or requiring the advisor to be enabled.
+Purchase planning is available from the main menu.
+
+**The bigger picture** shows the selected year's income and expense bars. Deficit
+markers appear only when that month's forecast remaining plus your current
+manually entered savings is negative. Zero is covered. Each month is checked
+independently against the same current balance; this is not a running savings
+projection. Unset savings is treated as zero for markers. The table shows both
+monthly remaining and remaining plus current savings; income/expense bars and
+ordinary forecast-deficit alerts stay based on the original monthly forecast.
+Choose a bar or table month to change the selected forecast month. Reserve checks
 appear when enabled/configured; monitored card warnings appear across views.
 
 ## Recurring accounts
@@ -238,11 +260,19 @@ you have chosen a total; an advisor's proposed price range is not a saved purcha
 
 ### Current spending and manual transactions
 
-**Current** follows the actual-spending period. Initially this is the month before
-the selected budget month; **Current month** switches to that selected month. The
+Spending has planner-style navigation for **Expense breakdown**, **All expense
+entries**, **Transactions**, and **Historical trends**. Only the selected section
+is shown. Breakdown and entries share the date range, source, and selected
+category; switching to Transactions preserves those choices.
+
+**Expense breakdown** and **Transactions** follow the actual-spending period.
+Initially this is the month before the selected budget month; **Current month** switches to that selected month. The
 checkbox is shared with Overview. Previous/next controls step through complete
-months. Transaction search matches descriptions; rows can be added, edited, deleted,
-and assigned a named account and category.
+months. In the breakdown month field, type **YYYY-MM** and press Enter or leave
+the field to apply it. Incomplete or out-of-range months do not change the period;
+Escape restores the current selection. Custom From/Through ranges remain available.
+Transaction search matches descriptions; rows can be added, edited, deleted, and
+assigned a named account and category.
 
 Enter positive amounts for every transaction type:
 
@@ -256,8 +286,10 @@ Enter positive amounts for every transaction type:
 
 **Expense breakdown** supports inclusive **From**/**Through** dates, category totals,
 charges/refunds/net, a bar chart, and individual records with account names. Choose
-a category bar/button/table row to drill down; **All categories** resets it. Details
-initially show 50 entries; **Show more** reveals additional batches.
+a category bar/button/table row to open **All expense entries** for that category;
+**All categories** resets the filter. The entries section initially shows 50
+records; **Show more** reveals additional batches. **Transactions** separately
+provides search, manual entry/editing, and monthly completeness controls.
 
 Switch the breakdown to **Planned expenses** for recurring payables plus included
 purchases across complete calendar months. Forecast and actual ranges remain
@@ -266,11 +298,11 @@ a chart that only accepts positive slices.
 
 ### Historical spending and category guides
 
-**Historical** places **Spending, over time** at the top. Its independent ending
+**Historical trends** places **Spending, over time** at the top. Its independent ending
 month selects a rolling 12-month window. **Latest 12 months** returns to the window
 ending last month. Filter one or more categories, toggle forecast overlays, and
-expand the matching data table. Choosing a chart/table month opens its Current
-breakdown. Historical category filters do not change Current's description search.
+expand the matching data table. Choosing a chart/table month opens its Expense
+breakdown. Historical category filters do not change Transactions' description search.
 
 The numeric mean uses eligible past months in that window. Current/future and
 missing months are excluded. Past months with recorded activity count even if
@@ -286,6 +318,14 @@ Guides never add forecast expenses or reduce remaining budget/savings. They let
 pets, dining, or travel have useful references when costs are covered by card bills.
 
 ### Completeness
+
+Spending does not reload the workspace on a 60-second timer. Use **Transactions →
+Refresh** to fetch current spending when you choose; saves and imports still update
+the data. Same-period transaction and breakdown data stays visible while refreshing,
+preserving search, focused controls, and scroll position. Selecting another period
+hides the previous period's records until its request completes. Automatic ACH
+recording continues on the backend every minute; due-date and freshness cards keep
+their own local updates without resetting the transaction list.
 
 In Transactions, mark the actual month complete only after all records are entered.
 An unmarked month with no records is **missing**. Recorded months are **partial**
@@ -472,8 +512,10 @@ separate estimate using saved forecast assumptions and annual payment timing.
 
 Replies render Markdown headings, emphasis, lists, code, and tables. Common TeX prose from local
 models is simplified for readability; code and source URLs are preserved.
-Historical currency amounts and averages are formatted in Python. Replies default
-to 1,536 generated tokens, configurable with `ADVISOR_MAX_TOKENS` in `.env`. If an
+All money sent to the model is formatted in Python, including card-bill changes,
+annual payments, and savings projections. Raw minor-unit amounts remain in the API
+snapshot for the interface, but are excluded from the model payload. Replies default
+to 768 generated tokens, configurable with `ADVISOR_MAX_TOKENS` in `.env`. If an
 answer reaches that limit, a visible warning identifies it as incomplete; ask a
 shorter follow-up or increase the configured limit and restart the service.
 
@@ -490,7 +532,11 @@ selected month or the latest finished month, whichever is earlier.
 
 **Budget context → View the snapshot used for the last answer → Local transaction
 history used for this answer** shows category amounts, data completeness, and
-calculated differences. Up to 20 normalized payees are included, prioritizing
+calculated differences. The visible snapshot includes up to 20 normalized payees;
+ordinary model replies receive up to eight, with explicitly mentioned labels
+prioritized. Ordinary replies receive three recent monthly values plus averages
+computed over the full window; year/history questions include all monthly values.
+The snapshot prioritizes
 recent increases and then recent spending; omitted-payee counts are visible.
 These are transaction labels grouped by existing normalization rules, not verified
 merchant identities. Suggestions do not change the budget or actual transactions.
@@ -540,7 +586,11 @@ estimate. Contributions are not reserved in the budget or guaranteed available c
 Chat stays in tab memory and survives menu navigation. New conversation, reload,
 context month/model changes, or disabling the advisor clear it. Cancel stops UI
 waiting; the model may finish its current computation. Errors restore the question
-for retry and do not change financial records. See [timeout troubleshooting](operations.md#troubleshooting).
+for retry and do not change financial records. A failed first question stays in
+the conversation instead of returning to the welcome screen; retrying excludes the
+failed attempt from model history. Saving budget entries refreshes the same month
+in the background. A notice marks earlier answers as based on an older snapshot;
+your next question reads fresh data. See [timeout troubleshooting](operations.md#troubleshooting).
 
 ## Settings
 

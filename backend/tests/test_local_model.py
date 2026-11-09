@@ -37,7 +37,7 @@ def test_chat_transport_is_loopback_only_and_has_no_tools(monkeypatch):
     assert captured["body"]["think"] is False
     assert captured["body"]["messages"] == messages
     assert "tools" not in captured["body"]
-    assert captured["body"]["options"]["num_predict"] == 1536
+    assert captured["body"]["options"]["num_predict"] == 768
     assert captured["body"]["options"]["num_ctx"] == 8192
 
 

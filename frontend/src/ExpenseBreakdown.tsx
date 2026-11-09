@@ -82,6 +82,9 @@ export default function ExpenseBreakdown({
   onMonthChange,
   currency,
   revision,
+  view = 'breakdown',
+  active = true,
+  onShowEntries,
 }: {
   month: string;
   actualMonth: string;
@@ -90,6 +93,9 @@ export default function ExpenseBreakdown({
   onMonthChange: (month: string, basis: 'actual' | 'forecast') => void;
   currency: string;
   revision: number;
+  view?: 'breakdown' | 'entries';
+  active?: boolean;
+  onShowEntries?: () => void;
 }) {
   const [basis, setBasis] = useState<'actual' | 'forecast'>('actual');
   const rangeMonth = basis === 'actual' ? actualMonth : month;
@@ -100,6 +106,8 @@ export default function ExpenseBreakdown({
   const [error, setError] = useState('');
   const [focus, setFocus] = useState<string | null | undefined>(undefined);
   const [limit, setLimit] = useState(50);
+  const [monthDraft, setMonthDraft] = useState(actualMonth);
+  const [monthError, setMonthError] = useState('');
   useEffect(() => {
     setStart(rangeMonth + '-01');
     setEnd(lastDay(rangeMonth));
@@ -110,10 +118,10 @@ export default function ExpenseBreakdown({
     setLimit(50);
   }, [start, end, basis]);
   useEffect(() => {
-    let active = true;
+    if (!active) return;
+    let current = true;
     const controller = new AbortController();
     setError('');
-    setData(null);
     if (!start || !end || start > end) {
       setLoading(false);
       setError(
@@ -130,20 +138,22 @@ export default function ExpenseBreakdown({
       controller.signal,
     )
       .then((value) => {
-        if (active) setData(value);
+        if (current) setData(value);
       })
       .catch((e) => {
-        if (active && (e as Error).name !== 'AbortError')
+        if (current && (e as Error).name !== 'AbortError')
           setError((e as Error).message);
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (current) setLoading(false);
       });
     return () => {
-      active = false;
+      current = false;
       controller.abort();
     };
-  }, [start, end, basis, revision]);
+  }, [start, end, basis, revision, active]);
+  const currentData =
+    !!data && data.start === start && data.end === end && data.basis === basis;
   const fmt = (n: number) => money(n, currency);
   const selected = data?.categories.find((c) => c.category_id === focus);
   const entries =
@@ -154,6 +164,7 @@ export default function ExpenseBreakdown({
   const selectCategory = (id: string | null) => {
     setFocus(id);
     setLimit(50);
+    onShowEntries?.();
   };
   const changeBasis = (value: 'actual' | 'forecast') => {
     if (value === 'forecast') {
@@ -164,16 +175,45 @@ export default function ExpenseBreakdown({
   };
   const navigationMonth = start.slice(0, 7) || rangeMonth;
   const goMonth = (value: string) => {
+    setMonthDraft(value);
+    setMonthError('');
     setStart(value + '-01');
     setEnd(lastDay(value));
     setFocus(undefined);
     onMonthChange(value, basis);
   };
+  useEffect(() => {
+    setMonthDraft(navigationMonth);
+    setMonthError('');
+  }, [navigationMonth]);
+  const validMonth = (value: string) =>
+    /^\d{4}-(0[1-9]|1[0-2])$/.test(value) &&
+    value >= '1900-01' &&
+    value <= '9998-12';
+  const applyMonth = () => {
+    if (!validMonth(monthDraft)) {
+      setMonthError(
+        'Enter a month from 1900-01 through 9998-12 using YYYY-MM.',
+      );
+      return;
+    }
+    setMonthError('');
+    if (monthDraft !== navigationMonth) goMonth(monthDraft);
+  };
+  const stepMonth = (offset: number) => {
+    const next = shiftMonth(
+      validMonth(monthDraft) ? monthDraft : navigationMonth,
+      offset,
+    );
+    if (validMonth(next)) goMonth(next);
+  };
   return (
     <section className="panel expense-breakdown" id="expense-breakdown">
       <div className="section-head">
         <div>
-          <h2>Expense breakdown</h2>
+          <h2>
+            {view === 'entries' ? 'All expense entries' : 'Expense breakdown'}
+          </h2>
           <p>
             {basis === 'actual'
               ? start && end
@@ -220,31 +260,62 @@ export default function ExpenseBreakdown({
             className="icon"
             aria-label="Previous breakdown month"
             disabled={navigationMonth <= '1900-01'}
-            onClick={() => goMonth(shiftMonth(navigationMonth, -1))}
+            onClick={() => stepMonth(-1)}
           >
             <Minus size={17} />
           </button>
           <label>
             <span className="sr-only">Breakdown month</span>
             <input
-              type="month"
-              min="1900-01"
-              max="9998-12"
-              value={navigationMonth}
-              onChange={(e) => e.target.value && goMonth(e.target.value)}
+              type="text"
+              aria-label="Breakdown month"
+              placeholder="YYYY-MM"
+              maxLength={7}
+              autoComplete="off"
+              spellCheck={false}
+              value={monthDraft}
+              aria-invalid={!!monthError}
+              aria-describedby={
+                monthError
+                  ? 'breakdown-month-format breakdown-month-error'
+                  : 'breakdown-month-format'
+              }
+              onChange={(e) => setMonthDraft(e.target.value)}
+              onBlur={applyMonth}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  applyMonth();
+                }
+                if (e.key === 'Escape') {
+                  setMonthDraft(navigationMonth);
+                  setMonthError('');
+                }
+              }}
             />
+            <small id="breakdown-month-format">
+              YYYY-MM · Enter or leave the field to apply
+            </small>
           </label>
           <button
             className="icon"
             aria-label="Next breakdown month"
             disabled={navigationMonth >= '9998-12'}
-            onClick={() => goMonth(shiftMonth(navigationMonth, 1))}
+            onClick={() => stepMonth(1)}
           >
             <Plus size={17} />
           </button>
         </div>
-        <span>Step through full months, or choose a custom range below.</span>
+        <span>
+          Type a month, use ± to step through full months, or choose a custom
+          range below.
+        </span>
       </div>
+      {monthError && (
+        <p className="notice danger" id="breakdown-month-error" role="alert">
+          {monthError}
+        </p>
+      )}
       <div className="breakdown-controls">
         <CalendarRange size={18} />
         <label>
@@ -297,269 +368,279 @@ export default function ExpenseBreakdown({
           {error}
         </p>
       )}
-      {loading && (
+      {loading && !currentData && (
         <div className="breakdown-loading" role="status">
           <LoaderCircle size={18} className="spin" />
           Loading expense details…
         </div>
       )}
-      {data &&
-        data.start === start &&
-        data.end === end &&
-        data.basis === basis &&
-        !loading && (
-          <>
-            <div className="breakdown-totals">
-              <div>
-                <span>
-                  {basis === 'actual' ? 'Purchases & fees' : 'Planned expenses'}
-                </span>
-                <strong>{fmt(data.charges)}</strong>
-              </div>
-              <div>
-                <span>Refunds</span>
-                <strong className="green">{fmt(data.refunds)}</strong>
-              </div>
-              <div>
-                <span>Net expenses</span>
-                <strong>{fmt(data.net)}</strong>
-              </div>
-              <div>
-                <span>
-                  {basis === 'actual' ? 'Transactions' : 'Planned entries'}
-                </span>
-                <strong>{data.entry_count}</strong>
-              </div>
+      {active && data && currentData && (
+        <>
+          <div className="breakdown-totals">
+            <div>
+              <span>
+                {basis === 'actual' ? 'Purchases & fees' : 'Planned expenses'}
+              </span>
+              <strong>{fmt(data.charges)}</strong>
             </div>
-            {basis === 'actual' &&
-              data.months.some((m) => m.status !== 'complete') && (
-                <p className="breakdown-note">
-                  Recorded spending only.{' '}
-                  {data.months
-                    .filter((m) => m.status !== 'complete')
-                    .map((m) => `${monthLabel(m.month, true)}: ${m.status}`)
-                    .join(' · ')}
-                  .
-                </p>
-              )}
-            {!data.categories.length ? (
-              <div className="empty">
-                <h3>
-                  {basis === 'actual'
-                    ? 'No recorded expenses in this range'
-                    : 'No planned expenses in these months'}
-                </h3>
-                <p>
-                  {basis === 'actual'
-                    ? 'Import a statement, record a transaction, or try another range. Empty records do not establish zero spending.'
-                    : 'Add recurring bills or include a purchase estimate to see the breakdown.'}
-                </p>
-              </div>
-            ) : (
-              <>
-                <div className="breakdown-grid">
-                  <div
-                    className="breakdown-chart"
-                    style={{
-                      height: Math.max(220, data.categories.length * 43 + 45),
-                    }}
-                    aria-label="Net expenses by category; use the category buttons or table to drill down"
-                  >
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={data.categories}
-                        layout="vertical"
-                        margin={{ left: 0, right: 30, top: 8, bottom: 10 }}
-                      >
-                        <CartesianGrid
-                          horizontal={false}
-                          stroke="#e7ece1"
-                          strokeDasharray="3 5"
-                        />
-                        <XAxis
-                          type="number"
-                          tickFormatter={(n) => fmt(Number(n))}
-                          tick={{ fontSize: 10, fill: '#84917a' }}
-                          axisLine={false}
-                          tickLine={false}
-                        />
-                        <YAxis
-                          type="category"
-                          dataKey="name"
-                          tickFormatter={(value: string) =>
-                            value.length > 18 ? value.slice(0, 17) + '…' : value
-                          }
-                          width={110}
-                          tick={{ fontSize: 11, fill: '#637957' }}
-                          axisLine={false}
-                          tickLine={false}
-                        />
-                        <ReferenceLine x={0} stroke="#cfd9c5" />
-                        <Tooltip formatter={(value) => fmt(Number(value))} />
-                        <Bar
-                          name="Net expenses"
-                          dataKey="net"
-                          radius={[0, 4, 4, 0]}
-                          maxBarSize={20}
-                          onClick={(_, index) =>
-                            selectCategory(data.categories[index].category_id)
-                          }
+            <div>
+              <span>Refunds</span>
+              <strong className="green">{fmt(data.refunds)}</strong>
+            </div>
+            <div>
+              <span>Net expenses</span>
+              <strong>{fmt(data.net)}</strong>
+            </div>
+            <div>
+              <span>
+                {basis === 'actual' ? 'Transactions' : 'Planned entries'}
+              </span>
+              <strong>{data.entry_count}</strong>
+            </div>
+          </div>
+          {basis === 'actual' &&
+            data.months.some((m) => m.status !== 'complete') && (
+              <p className="breakdown-note">
+                Recorded spending only.{' '}
+                {data.months
+                  .filter((m) => m.status !== 'complete')
+                  .map((m) => `${monthLabel(m.month, true)}: ${m.status}`)
+                  .join(' · ')}
+                .
+              </p>
+            )}
+          {!data.categories.length ? (
+            <div className="empty">
+              <h3>
+                {basis === 'actual'
+                  ? 'No recorded expenses in this range'
+                  : 'No planned expenses in these months'}
+              </h3>
+              <p>
+                {basis === 'actual'
+                  ? 'Import a statement, record a transaction, or try another range. Empty records do not establish zero spending.'
+                  : 'Add recurring bills or include a purchase estimate to see the breakdown.'}
+              </p>
+            </div>
+          ) : (
+            <>
+              {view === 'breakdown' && (
+                <>
+                  <div className="breakdown-grid">
+                    <div
+                      className="breakdown-chart"
+                      style={{
+                        height: Math.max(220, data.categories.length * 43 + 45),
+                      }}
+                      aria-label="Net expenses by category; use the category buttons or table to drill down"
+                    >
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={data.categories}
+                          layout="vertical"
+                          margin={{ left: 0, right: 30, top: 8, bottom: 10 }}
                         >
-                          {data.categories.map((c, i) => (
-                            <Cell
-                              key={c.category_id ?? 'uncategorized'}
-                              fill={colors[i % colors.length]}
-                              opacity={
-                                focus === undefined || focus === c.category_id
-                                  ? 1
-                                  : 0.35
-                              }
-                              cursor="pointer"
-                            />
+                          <CartesianGrid
+                            horizontal={false}
+                            stroke="#e7ece1"
+                            strokeDasharray="3 5"
+                          />
+                          <XAxis
+                            type="number"
+                            tickFormatter={(n) => fmt(Number(n))}
+                            tick={{ fontSize: 10, fill: '#84917a' }}
+                            axisLine={false}
+                            tickLine={false}
+                          />
+                          <YAxis
+                            type="category"
+                            dataKey="name"
+                            tickFormatter={(value: string) =>
+                              value.length > 18
+                                ? value.slice(0, 17) + '…'
+                                : value
+                            }
+                            width={110}
+                            tick={{ fontSize: 11, fill: '#637957' }}
+                            axisLine={false}
+                            tickLine={false}
+                          />
+                          <ReferenceLine x={0} stroke="#cfd9c5" />
+                          <Tooltip formatter={(value) => fmt(Number(value))} />
+                          <Bar
+                            name="Net expenses"
+                            dataKey="net"
+                            radius={[0, 4, 4, 0]}
+                            maxBarSize={20}
+                            onClick={(_, index) =>
+                              selectCategory(data.categories[index].category_id)
+                            }
+                          >
+                            {data.categories.map((c, i) => (
+                              <Cell
+                                key={c.category_id ?? 'uncategorized'}
+                                fill={colors[i % colors.length]}
+                                opacity={
+                                  focus === undefined || focus === c.category_id
+                                    ? 1
+                                    : 0.35
+                                }
+                                cursor="pointer"
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="category-breakdown-list">
+                      {data.categories.map((c, i) => (
+                        <button
+                          className={
+                            'category-breakdown-row ' +
+                            (focus === c.category_id ? 'selected' : '')
+                          }
+                          key={c.category_id ?? 'uncategorized'}
+                          onClick={() => selectCategory(c.category_id)}
+                          aria-pressed={focus === c.category_id}
+                        >
+                          <i
+                            style={{ background: colors[i % colors.length] }}
+                          />
+                          <span className="grow">
+                            <strong>{c.name}</strong>
+                            <small>
+                              {c.entry_count}{' '}
+                              {basis === 'actual'
+                                ? 'transactions'
+                                : 'planned entries'}
+                            </small>
+                          </span>
+                          <strong>{fmt(c.net)}</strong>
+                          <ChevronRight size={15} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <details className="breakdown-category-table">
+                    <summary>Category totals as a table</summary>
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Category</th>
+                            <th>Charges</th>
+                            <th>Refunds</th>
+                            <th>Net expenses</th>
+                            <th>Entries</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.categories.map((c) => (
+                            <tr key={c.category_id ?? 'uncategorized'}>
+                              <th>
+                                <button
+                                  className="text-button"
+                                  onClick={() => selectCategory(c.category_id)}
+                                >
+                                  {c.name}
+                                </button>
+                              </th>
+                              <td>{fmt(c.charges)}</td>
+                              <td>{fmt(c.refunds)}</td>
+                              <td>{fmt(c.net)}</td>
+                              <td>{c.entry_count}</td>
+                            </tr>
                           ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="category-breakdown-list">
-                    {data.categories.map((c, i) => (
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                </>
+              )}
+              {view === 'entries' && (
+                <>
+                  <div className="breakdown-detail-head">
+                    <div>
+                      <h3>
+                        {focus === undefined
+                          ? 'Entries in this range'
+                          : (selected?.name ?? 'Selected category')}
+                      </h3>
+                      <p>
+                        {shortDate(data.start)} – {shortDate(data.end)} ·{' '}
+                        {entries.length} entries · {fmt(total)} net
+                      </p>
+                    </div>
+                    {focus !== undefined && (
                       <button
-                        className={
-                          'category-breakdown-row ' +
-                          (focus === c.category_id ? 'selected' : '')
-                        }
-                        key={c.category_id ?? 'uncategorized'}
-                        onClick={() => selectCategory(c.category_id)}
-                        aria-pressed={focus === c.category_id}
+                        className="text-button"
+                        onClick={() => {
+                          setFocus(undefined);
+                          setLimit(50);
+                        }}
                       >
-                        <i style={{ background: colors[i % colors.length] }} />
-                        <span className="grow">
-                          <strong>{c.name}</strong>
-                          <small>
-                            {c.entry_count}{' '}
-                            {basis === 'actual'
-                              ? 'transactions'
-                              : 'planned entries'}
-                          </small>
-                        </span>
-                        <strong>{fmt(c.net)}</strong>
-                        <ChevronRight size={15} />
+                        <ArrowLeft size={14} />
+                        All categories
                       </button>
-                    ))}
+                    )}
                   </div>
-                </div>
-                <details className="breakdown-category-table">
-                  <summary>Category totals as a table</summary>
                   <div className="table-scroll">
                     <table>
                       <thead>
                         <tr>
+                          <th>{basis === 'actual' ? 'Date' : 'Month'}</th>
+                          <th>Expense</th>
                           <th>Category</th>
-                          <th>Charges</th>
-                          <th>Refunds</th>
-                          <th>Net expenses</th>
-                          <th>Entries</th>
+                          <th>Type</th>
+                          {basis === 'actual' && <th>Card account</th>}
+                          <th>Amount</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {data.categories.map((c) => (
-                          <tr key={c.category_id ?? 'uncategorized'}>
-                            <th>
-                              <button
-                                className="text-button"
-                                onClick={() => selectCategory(c.category_id)}
-                              >
-                                {c.name}
-                              </button>
-                            </th>
-                            <td>{fmt(c.charges)}</td>
-                            <td>{fmt(c.refunds)}</td>
-                            <td>{fmt(c.net)}</td>
-                            <td>{c.entry_count}</td>
+                        {entries.slice(0, limit).map((entry) => (
+                          <tr key={entry.id}>
+                            <td>
+                              {entry.date ?? monthLabel(entry.month, true)}
+                            </td>
+                            <td>
+                              <strong>{entry.description}</strong>
+                            </td>
+                            <td>{entry.category_name}</td>
+                            <td>{entry.kind.replaceAll('_', ' ')}</td>
+                            {basis === 'actual' && (
+                              <td>{entry.account_name ?? '—'}</td>
+                            )}
+                            <td
+                              className={entry.signed_amount < 0 ? 'green' : ''}
+                            >
+                              {fmt(entry.signed_amount)}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                </details>
-                <div className="breakdown-detail-head">
-                  <div>
-                    <h3>
-                      {focus === undefined
-                        ? 'All expense entries'
-                        : (selected?.name ?? 'Selected category')}
-                    </h3>
-                    <p>
-                      {shortDate(data.start)} – {shortDate(data.end)} ·{' '}
-                      {entries.length} entries · {fmt(total)} net
-                    </p>
-                  </div>
-                  {focus !== undefined && (
-                    <button
-                      className="text-button"
-                      onClick={() => {
-                        setFocus(undefined);
-                        setLimit(50);
-                      }}
-                    >
-                      <ArrowLeft size={14} />
-                      All categories
-                    </button>
+                  {entries.length > limit && (
+                    <div className="breakdown-more">
+                      <button
+                        className="secondary small"
+                        onClick={() => setLimit((n) => n + 50)}
+                      >
+                        Show more ({entries.length - limit} remaining)
+                      </button>
+                    </div>
                   )}
-                </div>
-                <div className="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>{basis === 'actual' ? 'Date' : 'Month'}</th>
-                        <th>Expense</th>
-                        <th>Category</th>
-                        <th>Type</th>
-                        {basis === 'actual' && <th>Card account</th>}
-                        <th>Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {entries.slice(0, limit).map((entry) => (
-                        <tr key={entry.id}>
-                          <td>{entry.date ?? monthLabel(entry.month, true)}</td>
-                          <td>
-                            <strong>{entry.description}</strong>
-                          </td>
-                          <td>{entry.category_name}</td>
-                          <td>{entry.kind.replaceAll('_', ' ')}</td>
-                          {basis === 'actual' && (
-                            <td>{entry.account_name ?? '—'}</td>
-                          )}
-                          <td
-                            className={entry.signed_amount < 0 ? 'green' : ''}
-                          >
-                            {fmt(entry.signed_amount)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {entries.length > limit && (
-                  <div className="breakdown-more">
-                    <button
-                      className="secondary small"
-                      onClick={() => setLimit((n) => n + 50)}
-                    >
-                      Show more ({entries.length - limit} remaining)
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-            <div className="panel-foot">
-              {basis === 'actual'
-                ? 'Date range includes both end dates. Refunds reduce spending; card payments and transfers are excluded.'
-                : 'Full calendar months. Annual bills follow their distribution setting; draft purchases and income are excluded. Actual spending is separate.'}
-            </div>
-          </>
-        )}
+                </>
+              )}
+            </>
+          )}
+          <div className="panel-foot">
+            {basis === 'actual'
+              ? 'Date range includes both end dates. Refunds reduce spending; card payments and transfers are excluded.'
+              : 'Full calendar months. Annual bills follow their distribution setting; draft purchases and income are excluded. Actual spending is separate.'}
+          </div>
+        </>
+      )}
     </section>
   );
 }

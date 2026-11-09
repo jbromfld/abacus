@@ -284,14 +284,21 @@ and USD 200 shortfall. This is a single hardware/model-specific sample, not a
 latency guarantee. The common spending/purchase instructions decreased from
 7,266 characters to 2,792; specialized questions include additional relevant rules.
 The runtime uses an 8,192-token context and a no-thinking request. Replies default
-to 1,536 generated tokens (`ADVISOR_MAX_TOKENS`, configurable from 256 to 4,096 in
+to 768 generated tokens (`ADVISOR_MAX_TOKENS`, configurable from 256 to 4,096 in
 `.env`). The advisor requests concise Markdown and plain currency amounts; Python
 formats historical amounts and means before supplying them to the local model.
 A token-limit stop returns the available text with an explicit incomplete-answer
 warning; transport interruption still fails the request. Structured memory drafts
 that reach the limit fail into editable manual entry rather than accepting partial
 JSON. Raising the token limit can increase response time; the existing
-`ADVISOR_TIMEOUT_SECONDS` still applies. The short benchmark uses 128 tokens.
+`ADVISOR_TIMEOUT_SECONDS` still applies. Ordinary answers target fewer than 200 words. The model
+receives three recent history months, full-window Python averages, and at most
+eight payees (explicitly named payees are prioritized); detailed year/history
+questions receive the full monthly window. The UI retains the full evidence.
+Redundant recent-actual and unconfigured-guide data is omitted from the model
+payload. Follow-up history is capped at 3,000 characters and trimmed further for a large snapshot; full conversations stay
+in tab memory. These bounds reduce local prefill and generation work without
+changing financial calculations. The short benchmark uses 128 tokens.
 
 To add web research, obtain your own Brave Search API key, set it in `.env`, and
 refresh **Budget advisor → Travel research → Refresh connection**. Research becomes

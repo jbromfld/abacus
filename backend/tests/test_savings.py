@@ -412,14 +412,17 @@ def test_advisor_uses_same_projection_for_inferred_and_structured_bill(
     assert result["bill"]["amount"] == 20000 and result["bill_inferred_from_question"]
     assert result["first_negative_month"] == "2026-07"
     sent = json.loads(captured[0][0]["content"].split("BUDGET SNAPSHOT:\n")[1])
-    assert sent["savings_projection"]["ending_savings"] == result["ending_savings"]
+    assert "ending_savings" not in sent["savings_projection"]
+    assert sent["savings_projection"]["display_summary"]["ending_savings"].startswith(
+        "USD "
+    )
     assert sent["savings_projection"]["display_summary"]["monthly_bill"] == "USD 200.00"
     assert (
         sent["savings_projection"]["display_summary"]["starting_savings"]
         == "USD 500.00"
     )
     assert (
-        sent["savings_projection"]["months"][1]["annual_payments"][0]["name"]
+        sent["savings_projection"]["annual_payments"][0]["payments"][0]["name"]
         == "Summer tax"
     )
     payload = {

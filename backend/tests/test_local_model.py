@@ -37,7 +37,7 @@ def test_chat_transport_is_loopback_only_and_has_no_tools(monkeypatch):
     assert captured["body"]["think"] is False
     assert captured["body"]["messages"] == messages
     assert "tools" not in captured["body"]
-    assert captured["body"]["options"]["num_predict"] <= 1000
+    assert captured["body"]["options"]["num_predict"] == 768
     assert captured["body"]["options"]["num_ctx"] == 8192
 
 
@@ -168,4 +168,39 @@ def test_invalid_advisor_timeout(monkeypatch, value):
         local_model, "local_config", lambda: {"ADVISOR_TIMEOUT_SECONDS": value}
     )
     with pytest.raises(ValueError, match="ADVISOR_TIMEOUT_SECONDS"):
+        local_model.chat_with_model("local", [])
+
+
+@pytest.mark.parametrize("schema", [None, {"type": "object"}])
+def test_token_limit_is_not_silently_treated_as_a_complete_answer(monkeypatch, schema):
+    monkeypatch.setattr(local_model, "available_models", lambda: ["local"])
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        local_model.httpx,
+        "Client",
+        lambda **kw: real_client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    text='{"message":{"content":"Unfinished sentence"},"done":true,"done_reason":"length"}\n',
+                )
+            ),
+            **kw,
+        ),
+    )
+    if schema:
+        with pytest.raises(ValueError, match="reply limit"):
+            local_model.chat_with_model("local", [], schema)
+    else:
+        result = local_model.chat_with_model("local", [])
+        assert result == "Unfinished sentence" and result.truncated is True
+
+
+@pytest.mark.parametrize("value", ["255", "4097", "nan", "512.5"])
+def test_invalid_advisor_token_limit(monkeypatch, value):
+    monkeypatch.setattr(local_model, "available_models", lambda: ["local"])
+    monkeypatch.setattr(
+        local_model, "local_config", lambda: {"ADVISOR_MAX_TOKENS": value}
+    )
+    with pytest.raises(ValueError, match="ADVISOR_MAX_TOKENS"):
         local_model.chat_with_model("local", [])

@@ -402,7 +402,9 @@ def test_reconciliation_compares_forecast_changes_not_actuals_or_drafts(
     assert response.status_code == 200, response.text
     assert response.json()["context"]["forecast_comparison"] == result
     sent = json.loads(captured[0][0]["content"].split("BUDGET SNAPSHOT:\n")[1])
-    assert sent["forecast_comparison"] == result
+    assert sent["forecast_comparison"]["shortfall_display"] == "USD 53.67"
+    assert sent["forecast_comparison"]["current"]["expenses_display"] == "USD 3,003.67"
+    assert "shortfall_minor" not in sent["forecast_comparison"]
     assert "already owed card bill" in captured[0][0]["content"]
     assert client.get("/api/forecast?month=2026-12").json() == before
     assert db.scalar(select(func.count()).select_from(Transaction)) == 1

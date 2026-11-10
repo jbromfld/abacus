@@ -19,6 +19,7 @@ import {
   Trash2,
   LoaderCircle,
   MessageCircle,
+  RotateCcw,
 } from 'lucide-react';
 import {
   api,
@@ -42,8 +43,10 @@ import type {
   ImportJob,
   ImportUpdate,
 } from './api';
+import { useAlertDismissals } from './useAlertDismissals';
 import './style.css';
 const BudgetAdvisor = lazy(() => import('./BudgetAdvisor'));
+const AdvisorMemory = lazy(() => import('./AdvisorMemory'));
 const ExpenseBreakdown = lazy(() => import('./ExpenseBreakdown'));
 const BatchUploadDialog = lazy(() => import('./BatchUploadDialog'));
 import { importStage } from './batchStatus';
@@ -56,6 +59,7 @@ const HistoricalSpending = lazy(() => import('./HistoricalSpending'));
 const ImportReview = lazy(() => import('./ImportReview'));
 import FormEditor from './FormEditor';
 import type { Field, Editor } from './FormEditor';
+import OverviewComparison from './OverviewComparison';
 import YearSummary from './YearSummary';
 import { useWorkspace } from './useWorkspace';
 import type { AdvisorBillPlan } from './api';
@@ -94,6 +98,7 @@ function Empty({
 
 export default function App() {
   const [view, setView] = useState('Overview');
+  const budgetAlerts = useAlertDismissals();
   const [advisorVisited, setAdvisorVisited] = useState(false);
   useEffect(() => {
     if (view === 'Budget advisor') setAdvisorVisited(true);
@@ -105,9 +110,9 @@ export default function App() {
   const [advisorBillPlan, setAdvisorBillPlan] =
     useState<AdvisorBillPlan | null>(null);
   const [month, setMonth] = useState(monthNow());
-  const [spendingMode, setSpendingMode] = useState<'current' | 'historical'>(
-    'current',
-  );
+  const [spendingMode, setSpendingMode] = useState<
+    'breakdown' | 'entries' | 'transactions' | 'historical'
+  >('breakdown');
   const [historyEnd, setHistoryEnd] = useState(() =>
     actualMonthFor(monthNow()),
   );
@@ -153,14 +158,14 @@ export default function App() {
   const drillMonth = (value: string) => {
     setCurrentActual(true);
     setMonth(value);
-    setSpendingMode('current');
+    setSpendingMode('breakdown');
     setScrollToBreakdown(true);
   };
   useEffect(() => {
     if (
       scrollToBreakdown &&
       view === 'Spending' &&
-      spendingMode === 'current'
+      spendingMode === 'breakdown'
     ) {
       document
         .getElementById('expense-breakdown')
@@ -187,8 +192,6 @@ export default function App() {
     let active = true;
     const controller = new AbortController();
     setActualLoading(true);
-    setActualReport(null);
-    setTransactions([]);
     Promise.all([
       api<Forecast>(
         `/forecast?month=${actualMonth}`,
@@ -280,11 +283,6 @@ export default function App() {
       setMonitoring(null);
     }
   };
-  useEffect(() => {
-    if (!recurring.some((r) => r.ach_enabled)) return;
-    const timer = setInterval(refresh, 60000);
-    return () => clearInterval(timer);
-  }, [recurring.some((r) => r.ach_enabled)]);
   const staleCards = accounts.filter((card) => card.stale);
   const categoryOptions = [
     { value: '', label: 'Choose category' },
@@ -609,16 +607,15 @@ export default function App() {
     setImportJob(j);
   };
   const actualData = actualReport?.month === actualMonth ? actualReport : null;
-  const actualBusy =
-    actualLoading || !!(actualReport && actualReport.month !== actualMonth);
+  const actualBusy = actualLoading && !actualData;
   const filteredTransactions = (actualData ? transactions : []).filter((t) =>
     t.description.toLowerCase().includes(query.toLowerCase()),
   );
   const nav = [
     { name: 'Overview', icon: LayoutDashboard },
+    { name: 'Spending', icon: ChartNoAxesCombined },
     { name: 'Recurring accounts', icon: Repeat2 },
     { name: 'Purchase planner', icon: ShoppingBag },
-    { name: 'Spending', icon: ChartNoAxesCombined },
     { name: 'Statement imports', icon: Upload },
     ...(settings.advisor_enabled
       ? [{ name: 'Budget advisor', icon: MessageCircle }]
@@ -794,6 +791,11 @@ export default function App() {
                 ))}
               </section>
             )}
+            {budgetAlerts.error && (
+              <p className="notice danger" role="alert">
+                {budgetAlerts.error}
+              </p>
+            )}
             {(error || loadError) && (
               <div className="notice danger" role="alert">
                 <AlertTriangle size={18} />
@@ -817,6 +819,11 @@ export default function App() {
                   </button>
                 )}
               </div>
+            )}
+            {loading && forecast && (
+              <p className="notice" role="status">
+                Updating budget…
+              </p>
             )}
             {loading && !forecast ? (
               <div className="empty">
@@ -890,7 +897,7 @@ export default function App() {
                         <button
                           className="text-button stat-drill"
                           onClick={() => {
-                            setSpendingMode('current');
+                            setSpendingMode('breakdown');
                             setView('Spending');
                           }}
                         >
@@ -898,56 +905,97 @@ export default function App() {
                         </button>
                       </div>
                     </div>
-                    {forecast.deficit && (
-                      <div
-                        role="alert"
-                        className="notice danger forecast-deficit"
-                      >
-                        <AlertTriangle size={18} />
-                        <span>
-                          Forecast expenses exceed income by{' '}
-                          {fmt(-forecast.remaining)}.
-                        </span>
-                        {settings.advisor_enabled ? (
+                    {budgetAlerts.ready &&
+                      forecast.deficit &&
+                      !budgetAlerts.isDismissed('forecast_deficit', month) && (
+                        <div
+                          role="alert"
+                          className="notice danger forecast-deficit"
+                        >
+                          <AlertTriangle size={18} />
+                          <span>
+                            Forecast expenses exceed income by{' '}
+                            {fmt(-forecast.remaining)}.
+                          </span>
+                          {settings.advisor_enabled ? (
+                            <button
+                              className="text-button"
+                              onClick={() => {
+                                setAdvisorEntry({
+                                  key: Date.now(),
+                                  question: `Help me reconcile the ${monthLabel(month)} forecast deficit of ${fmt(-forecast.remaining)}. Compare it with ${monthLabel(shiftMonth(month, -1))}, explain what changed in income and expenses, and suggest realistic spending reductions to close the gap. Distinguish credit-card bills already owed from future flexible spending.`,
+                                });
+                                setView('Budget advisor');
+                              }}
+                            >
+                              Reconcile with Budget advisor →
+                            </button>
+                          ) : (
+                            <button
+                              className="text-button"
+                              onClick={() => setView('Settings')}
+                            >
+                              Set up Budget advisor →
+                            </button>
+                          )}
+                          <button
+                            className="text-button"
+                            disabled={budgetAlerts.busy}
+                            aria-label={`Dismiss forecast deficit alert for ${monthLabel(month)}`}
+                            onClick={() =>
+                              void budgetAlerts.dismiss(
+                                'forecast_deficit',
+                                month,
+                              )
+                            }
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      )}
+                    {budgetAlerts.ready &&
+                      actualData?.actual_deficit &&
+                      !budgetAlerts.isDismissed(
+                        'actual_deficit',
+                        actualMonth,
+                      ) && (
+                        <div
+                          role="alert"
+                          className="notice danger actual-deficit"
+                        >
+                          <AlertTriangle size={18} />
+                          <span>
+                            Recorded spending for {monthLabel(actualMonth)}{' '}
+                            exceeds that month’s forecast income by{' '}
+                            {fmt(
+                              actualData.actual.expenses - actualData.income,
+                            )}
+                            .
+                          </span>
                           <button
                             className="text-button"
                             onClick={() => {
-                              setAdvisorEntry({
-                                key: Date.now(),
-                                question: `Help me reconcile the ${monthLabel(month)} forecast deficit of ${fmt(-forecast.remaining)}. Compare it with ${monthLabel(shiftMonth(month, -1))}, explain what changed in income and expenses, and suggest realistic spending reductions to close the gap. Distinguish credit-card bills already owed from future flexible spending.`,
-                              });
-                              setView('Budget advisor');
+                              setSpendingMode('transactions');
+                              setView('Spending');
                             }}
                           >
-                            Reconcile with Budget advisor →
+                            Review spending <ArrowRight size={15} />
                           </button>
-                        ) : (
                           <button
                             className="text-button"
-                            onClick={() => setView('Settings')}
+                            disabled={budgetAlerts.busy}
+                            aria-label={`Dismiss recorded spending alert for ${monthLabel(actualMonth)}`}
+                            onClick={() =>
+                              void budgetAlerts.dismiss(
+                                'actual_deficit',
+                                actualMonth,
+                              )
+                            }
                           >
-                            Set up Budget advisor →
+                            Dismiss
                           </button>
-                        )}
-                      </div>
-                    )}
-                    {actualData?.actual_deficit && (
-                      <div role="alert" className="notice danger">
-                        <AlertTriangle size={18} />
-                        Recorded spending for {monthLabel(actualMonth)} exceeds
-                        that month’s forecast income by{' '}
-                        {fmt(actualData.actual.expenses - actualData.income)}.
-                        <button
-                          className="text-button"
-                          onClick={() => {
-                            setSpendingMode('current');
-                            setView('Spending');
-                          }}
-                        >
-                          Review spending <ArrowRight size={15} />
-                        </button>
-                      </div>
-                    )}
+                        </div>
+                      )}
                     <div className="overview-grid">
                       <UpcomingBills
                         currency={currency}
@@ -965,48 +1013,10 @@ export default function App() {
                         onChanged={refresh}
                       />
                       <div className="overview-tools">
-                        <section className="panel gentle">
-                          <div className="section-head">
-                            <div>
-                              <span className="pill">
-                                A LITTLE LOOKING AHEAD
-                              </span>
-                              <h2>Something on your mind?</h2>
-                              <p>Give your next purchase a little space.</p>
-                            </div>
-                            <ShoppingBag size={24} />
-                          </div>
-                          {purchases
-                            .filter((p) => !p.included)
-                            .slice(0, 3)
-                            .map((p) => (
-                              <div className="mini-purchase" key={p.id}>
-                                <div>
-                                  <strong>{p.name}</strong>
-                                  <small>{monthLabel(p.month, true)}</small>
-                                </div>
-                                <span>{fmt(p.amount)}</span>
-                              </div>
-                            ))}
-                          <p className="gentle-copy">
-                            Save an estimate, see how it fits, and decide when
-                            you’re ready.
-                          </p>
-                          <button
-                            className="secondary"
-                            onClick={() => setView('Purchase planner')}
-                          >
-                            <Plus size={16} />
-                            Open purchase planner
-                          </button>
-                          <div className="note">
-                            <Leaf size={17} />
-                            <span>
-                              Drafts stay out of your budget until you include
-                              them.
-                            </span>
-                          </div>
-                        </section>
+                        <OverviewComparison
+                          currency={currency}
+                          revision={revision}
+                        />
                       </div>
                     </div>
                     <section className="panel year-panel">
@@ -1360,39 +1370,32 @@ export default function App() {
                 {view === 'Spending' && (
                   <>
                     <div
-                      className="spending-navigation"
+                      className="planning-mode spending-sections"
                       role="group"
-                      aria-label="Spending view"
+                      aria-label="Spending section"
                     >
-                      <button
-                        className={
-                          'spending-view ' +
-                          (spendingMode === 'current' ? 'selected' : '')
-                        }
-                        aria-pressed={spendingMode === 'current'}
-                        onClick={() => setSpendingMode('current')}
-                      >
-                        <LayoutDashboard size={17} />
-                        <span>
-                          Current<small>Monthly breakdown & transactions</small>
-                        </span>
-                      </button>
-                      <button
-                        className={
-                          'spending-view ' +
-                          (spendingMode === 'historical' ? 'selected' : '')
-                        }
-                        aria-pressed={spendingMode === 'historical'}
-                        onClick={() => setSpendingMode('historical')}
-                      >
-                        <ChartNoAxesCombined size={17} />
-                        <span>
-                          Historical<small>Trends over 12 months</small>
-                        </span>
-                      </button>
+                      {(
+                        [
+                          ['breakdown', 'Expense breakdown'],
+                          ['entries', 'All expense entries'],
+                          ['transactions', 'Transactions'],
+                          ['historical', 'Historical trends'],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <button
+                          key={value}
+                          className={
+                            'chip ' + (spendingMode === value ? 'selected' : '')
+                          }
+                          aria-pressed={spendingMode === value}
+                          onClick={() => setSpendingMode(value)}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
-                    {spendingMode === 'current' && (
-                      <>
+                    {spendingMode !== 'historical' && (
+                      <div hidden={spendingMode === 'transactions'}>
                         <ExpenseBreakdown
                           month={month}
                           actualMonth={actualMonth}
@@ -1407,162 +1410,193 @@ export default function App() {
                           }
                           currency={currency}
                           revision={revision}
+                          view={
+                            spendingMode === 'entries' ? 'entries' : 'breakdown'
+                          }
+                          active={
+                            spendingMode === 'breakdown' ||
+                            spendingMode === 'entries'
+                          }
+                          onShowEntries={() => setSpendingMode('entries')}
                         />
-                        <section className="panel">
-                          <div className="section-head">
-                            <div>
-                              <h2>Transactions</h2>
-                              <p>
-                                {monthLabel(actualMonth)} ·{' '}
-                                {actualBusy
-                                  ? 'loading…'
-                                  : (actualData?.actual.status ??
-                                    'unavailable')}
-                              </p>
-                            </div>
-                            <div className="button-group">
-                              <button onClick={() => openTransaction()}>
-                                <Plus size={16} />
-                                Add transaction
-                              </button>
-                            </div>
-                          </div>
-                          <div className="transaction-toolbar">
-                            <input
-                              aria-label="Search transactions"
-                              placeholder="Search descriptions…"
-                              value={query}
-                              onChange={(e) => setQuery(e.target.value)}
-                            />
-                            <label className="checkbox">
-                              <input
-                                type="checkbox"
-                                checked={currentActual}
-                                onChange={(e) =>
-                                  setCurrentActual(e.target.checked)
-                                }
-                              />
-                              Current month
-                            </label>
-                            <label className="checkbox">
-                              <input
-                                type="checkbox"
-                                checked={
-                                  actualData?.actual.marked_complete ?? false
-                                }
-                                disabled={actualBusy || !actualData}
-                                onChange={(e) =>
-                                  void act(() =>
-                                    api('/months/' + actualMonth, 'PUT', {
-                                      complete: e.target.checked,
-                                    }),
-                                  )
-                                }
-                              />
-                              Actuals complete for this month
-                            </label>
-                          </div>
-                          {!accounts.length && (
-                            <div className="notice">
-                              Add a card account in Settings before recording or
-                              importing transactions.
-                              <button
-                                className="text-button"
-                                onClick={() => setView('Settings')}
-                              >
-                                Open Settings <ArrowRight size={15} />
-                              </button>
-                            </div>
-                          )}
-                          {actualBusy ? (
-                            <p className="muted pad" role="status">
-                              Loading transactions…
+                      </div>
+                    )}
+                    {spendingMode === 'transactions' && (
+                      <section className="panel">
+                        <div className="section-head">
+                          <div>
+                            <h2>Transactions</h2>
+                            <p>
+                              {monthLabel(actualMonth)} ·{' '}
+                              {actualBusy
+                                ? 'loading…'
+                                : (actualData?.actual.status ?? 'unavailable')}
                             </p>
-                          ) : filteredTransactions.length ? (
-                            <div className="table-scroll">
-                              <table>
-                                <thead>
-                                  <tr>
-                                    <th>Date</th>
-                                    <th>Description</th>
-                                    <th>Category</th>
-                                    <th>Type</th>
-                                    <th>Amount</th>
-                                    <th>
-                                      <span className="sr-only">Actions</span>
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {filteredTransactions.map((t) => (
-                                    <tr key={t.id}>
-                                      <td>{t.date}</td>
-                                      <td>
-                                        <strong>{t.description}</strong>
-                                        <small>
-                                          {
-                                            accounts.find(
-                                              (a) => a.id === t.account_id,
-                                            )?.name
-                                          }
+                          </div>
+                          <div className="button-group">
+                            <button
+                              className="secondary"
+                              aria-label="Refresh spending data"
+                              disabled={loading || actualLoading}
+                              onClick={refresh}
+                            >
+                              <RotateCcw
+                                size={16}
+                                className={actualLoading ? 'spin' : ''}
+                              />
+                              {actualLoading ? 'Refreshing…' : 'Refresh'}
+                            </button>
+                            <button onClick={() => openTransaction()}>
+                              <Plus size={16} />
+                              Add transaction
+                            </button>
+                          </div>
+                        </div>
+                        <div className="transaction-toolbar">
+                          <input
+                            aria-label="Search transactions"
+                            placeholder="Search descriptions…"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                          />
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              checked={currentActual}
+                              onChange={(e) =>
+                                setCurrentActual(e.target.checked)
+                              }
+                            />
+                            Current month
+                          </label>
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              checked={currentActual}
+                              onChange={(e) =>
+                                setCurrentActual(e.target.checked)
+                              }
+                            />
+                            Current month
+                          </label>
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              checked={
+                                actualData?.actual.marked_complete ?? false
+                              }
+                              disabled={actualBusy || !actualData}
+                              onChange={(e) =>
+                                void act(() =>
+                                  api('/months/' + actualMonth, 'PUT', {
+                                    complete: e.target.checked,
+                                  }),
+                                )
+                              }
+                            />
+                            Actuals complete for this month
+                          </label>
+                        </div>
+                        {!accounts.length && (
+                          <div className="notice">
+                            Add a card account in Settings before recording or
+                            importing transactions.
+                            <button
+                              className="text-button"
+                              onClick={() => setView('Settings')}
+                            >
+                              Open Settings <ArrowRight size={15} />
+                            </button>
+                          </div>
+                        )}
+                        {actualBusy ? (
+                          <p className="muted pad" role="status">
+                            Loading transactions…
+                          </p>
+                        ) : filteredTransactions.length ? (
+                          <div className="table-scroll">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Date</th>
+                                  <th>Description</th>
+                                  <th>Category</th>
+                                  <th>Type</th>
+                                  <th>Amount</th>
+                                  <th>
+                                    <span className="sr-only">Actions</span>
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {filteredTransactions.map((t) => (
+                                  <tr key={t.id}>
+                                    <td>{t.date}</td>
+                                    <td>
+                                      <strong>{t.description}</strong>
+                                      <small>
+                                        {
+                                          accounts.find(
+                                            (a) => a.id === t.account_id,
+                                          )?.name
+                                        }
+                                      </small>
+                                      {t.provenance?.type ===
+                                        'scheduled_ach' && (
+                                        <small className="ach-label">
+                                          Scheduled ACH · confirm with bank
                                         </small>
-                                        {t.provenance?.type ===
-                                          'scheduled_ach' && (
-                                          <small className="ach-label">
-                                            Scheduled ACH · confirm with bank
-                                          </small>
-                                        )}
-                                      </td>
-                                      <td>
-                                        {t.category_id
-                                          ? catName(t.category_id)
-                                          : '—'}
-                                      </td>
-                                      <td>
-                                        <span className="pill">{t.kind}</span>
-                                      </td>
-                                      <td
-                                        className={
-                                          t.kind === 'refund' ? 'green' : ''
+                                      )}
+                                    </td>
+                                    <td>
+                                      {t.category_id
+                                        ? catName(t.category_id)
+                                        : '—'}
+                                    </td>
+                                    <td>
+                                      <span className="pill">{t.kind}</span>
+                                    </td>
+                                    <td
+                                      className={
+                                        t.kind === 'refund' ? 'green' : ''
+                                      }
+                                    >
+                                      {t.kind === 'refund' ? '−' : ''}
+                                      {fmt(t.amount)}
+                                    </td>
+                                    <td className="nowrap">
+                                      <button
+                                        className="icon"
+                                        aria-label={`Edit ${t.description}`}
+                                        onClick={() => openTransaction(t)}
+                                      >
+                                        <Pencil size={15} />
+                                      </button>
+                                      <button
+                                        className="icon"
+                                        aria-label={`Delete ${t.description}`}
+                                        onClick={() =>
+                                          remove(
+                                            '/transactions/' + t.id,
+                                            t.description,
+                                          )
                                         }
                                       >
-                                        {t.kind === 'refund' ? '−' : ''}
-                                        {fmt(t.amount)}
-                                      </td>
-                                      <td className="nowrap">
-                                        <button
-                                          className="icon"
-                                          aria-label={`Edit ${t.description}`}
-                                          onClick={() => openTransaction(t)}
-                                        >
-                                          <Pencil size={15} />
-                                        </button>
-                                        <button
-                                          className="icon"
-                                          aria-label={`Delete ${t.description}`}
-                                          onClick={() =>
-                                            remove(
-                                              '/transactions/' + t.id,
-                                              t.description,
-                                            )
-                                          }
-                                        >
-                                          <Trash2 size={15} />
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : (
-                            <Empty title="No transactions to show">
-                              Import a statement or add a transaction. Payments
-                              and transfers won’t count as spending.
-                            </Empty>
-                          )}
-                        </section>
-                      </>
+                                        <Trash2 size={15} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <Empty title="No transactions to show">
+                            Import a statement or add a transaction. Payments
+                            and transfers won’t count as spending.
+                          </Empty>
+                        )}
+                      </section>
                     )}
                     {spendingMode === 'historical' && (
                       <Suspense
@@ -1663,316 +1697,374 @@ export default function App() {
                 )}
                 {view === 'Settings' && (
                   <div className="settings-grid">
-                    <section className="panel">
-                      <div className="section-head">
-                        <div>
-                          <h2>Budget & optional local tools</h2>
-                          <p>Your data stays in local PostgreSQL.</p>
-                        </div>
-                      </div>
-                      <form
-                        className="settings-form"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const data = new FormData(e.currentTarget);
-                          void act(() =>
-                            api('/settings', 'PUT', {
-                              currency: data.get('currency'),
-                              model: data.get('model'),
-                              advisor_enabled:
-                                data.get('advisor_enabled') === 'on',
-                              reserve_alerts_enabled:
-                                data.get('reserve_alerts_enabled') === 'on',
-                              reserve_checkpoint_day: Number(
-                                data.get('reserve_checkpoint_day'),
-                              ),
-                            }),
-                          );
-                        }}
-                      >
-                        <label>
-                          Budget currency
-                          <select
-                            name="currency"
-                            defaultValue={currency}
-                            key={currency}
-                          >
-                            {[
-                              'USD',
-                              'EUR',
-                              'GBP',
-                              'CAD',
-                              'AUD',
-                              'JPY',
-                              'CHF',
-                            ].map((c) => (
-                              <option key={c}>{c}</option>
-                            ))}
-                          </select>
-                          <small>
-                            Currency is fixed once entries or imports exist.
-                          </small>
-                        </label>
-                        <label>
-                          Local model for advisor / PDF extraction
-                          <select
-                            name="model"
-                            defaultValue={settings.model}
-                            key={settings.model + models.models.join()}
-                          >
-                            <option value="">
-                              None · CSV and manual review only
-                            </option>
-                            {[
-                              ...new Set([
-                                ...models.models,
-                                ...(settings.model ? [settings.model] : []),
-                              ]),
-                            ].map((m) => (
-                              <option key={m}>{m}</option>
-                            ))}
-                          </select>
-                          <small>
-                            Choose an installed model for chat or optional PDF
-                            extraction. CSV categorization uses remembered
-                            payees only.
-                          </small>
-                        </label>
-                        <label className="checkbox">
-                          <input
-                            type="checkbox"
-                            name="advisor_enabled"
-                            defaultChecked={settings.advisor_enabled}
-                            key={String(settings.advisor_enabled)}
-                          />
-                          Enable Budget advisor in the main menu
-                        </label>
-                        <label className="checkbox">
-                          <input
-                            type="checkbox"
-                            name="reserve_alerts_enabled"
-                            defaultChecked={settings.reserve_alerts_enabled}
-                            key={
-                              'reserve' +
-                              String(settings.reserve_alerts_enabled)
-                            }
-                          />
-                          Annual bill reserve alerts
-                        </label>
-                        <label>
-                          Reserve checkpoint day
-                          <input
-                            name="reserve_checkpoint_day"
-                            aria-label="Reserve checkpoint day"
-                            type="number"
-                            min="1"
-                            max="31"
-                            required
-                            defaultValue={settings.reserve_checkpoint_day}
-                            key={'day' + settings.reserve_checkpoint_day}
-                          />
-                          <small>
-                            Previous month’s allocations should reach savings by
-                            this day. Short months use their last day. Alerts
-                            appear only inside the app.
-                          </small>
-                        </label>
-                        {models.error && (
-                          <p className="notice">{models.error}</p>
-                        )}
-                        <div className="button-group">
-                          <button>Save settings</button>
-                          <button
-                            type="button"
-                            className="secondary"
-                            onClick={() =>
-                              void act(async () =>
-                                setModels(await api('/models')),
-                              )
-                            }
-                          >
-                            Refresh models
-                          </button>
-                        </div>
-                      </form>
-                    </section>
-                    <section className="panel">
-                      <div className="section-head">
-                        <div>
-                          <h2>Bank & card accounts</h2>
-                          <p>
-                            Add a bank account for ACH debits or a card for
-                            statement imports. Check a card to show in-app
-                            alerts when information is over 30 days old.
-                          </p>
-                        </div>
-                        <button
-                          className="text-button"
-                          onClick={() => manageName('accounts')}
-                        >
-                          <Plus size={16} />
-                          Add
-                        </button>
-                      </div>
-                      {accounts.map((a) => (
-                        <div className="name-row" key={a.id}>
-                          <div className="grow">
-                            <strong>{a.name}</strong>
-                            <small>
-                              {a.last_information_date
-                                ? `Information through ${a.last_information_date}`
-                                : 'No saved information yet'}
-                            </small>
-                            {a.csv_mapping && (
-                              <small>CSV mapping remembered</small>
-                            )}
+                    <div className="settings-column">
+                      <section className="panel">
+                        <div className="section-head">
+                          <div>
+                            <h2>Budget & optional local tools</h2>
+                            <p>Your data stays in local PostgreSQL.</p>
                           </div>
-                          <label className="checkbox card-monitor">
+                        </div>
+                        <form
+                          className="settings-form"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const data = new FormData(e.currentTarget);
+                            void act(() =>
+                              api('/settings', 'PUT', {
+                                currency: data.get('currency'),
+                                model: data.get('model'),
+                                advisor_enabled:
+                                  data.get('advisor_enabled') === 'on',
+                                advisor_memory_enabled:
+                                  data.get('advisor_memory_enabled') === 'on',
+                                reserve_alerts_enabled:
+                                  data.get('reserve_alerts_enabled') === 'on',
+                                reserve_checkpoint_day: Number(
+                                  data.get('reserve_checkpoint_day'),
+                                ),
+                              }),
+                            );
+                          }}
+                        >
+                          <label>
+                            Budget currency
+                            <select
+                              name="currency"
+                              defaultValue={currency}
+                              key={currency}
+                            >
+                              {[
+                                'USD',
+                                'EUR',
+                                'GBP',
+                                'CAD',
+                                'AUD',
+                                'JPY',
+                                'CHF',
+                              ].map((c) => (
+                                <option key={c}>{c}</option>
+                              ))}
+                            </select>
+                            <small>
+                              Currency is fixed once entries or imports exist.
+                            </small>
+                          </label>
+                          <label>
+                            Local model for advisor / PDF extraction
+                            <select
+                              name="model"
+                              defaultValue={settings.model}
+                              key={settings.model + models.models.join()}
+                            >
+                              <option value="">
+                                None · CSV and manual review only
+                              </option>
+                              {[
+                                ...new Set([
+                                  ...models.models,
+                                  ...(settings.model ? [settings.model] : []),
+                                ]),
+                              ].map((m) => (
+                                <option key={m}>{m}</option>
+                              ))}
+                            </select>
+                            <small>
+                              Choose an installed model for chat or optional PDF
+                              extraction. CSV categorization uses remembered
+                              payees only.
+                            </small>
+                          </label>
+                          <label className="checkbox">
                             <input
                               type="checkbox"
-                              checked={a.stale_alert_enabled}
-                              disabled={monitoring !== null}
-                              onChange={(e) =>
-                                void monitorCard(a.id, e.target.checked)
-                              }
-                              aria-label={`Alert when ${a.name} information is over 30 days old`}
+                              name="advisor_enabled"
+                              defaultChecked={settings.advisor_enabled}
+                              key={String(settings.advisor_enabled)}
                             />
-                            Alert after 30 days
+                            Enable Budget advisor in the main menu
                           </label>
-                          <button
-                            className="icon"
-                            aria-label={`Edit ${a.name}`}
-                            onClick={() => manageName('accounts', a)}
-                          >
-                            <Pencil size={16} />
-                          </button>
-                          <button
-                            className="icon"
-                            aria-label={`Delete ${a.name}`}
-                            onClick={() => remove('/accounts/' + a.id, a.name)}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      ))}
-                      {!accounts.length && (
-                        <p className="muted pad">
-                          Add a named card to start tracking actual spending.
-                        </p>
-                      )}
-                    </section>
-                    <section className="panel">
-                      <div className="section-head">
-                        <div>
-                          <h2>Categories</h2>
-                          <p>Make these feel like you.</p>
-                        </div>
-                        <button
-                          className="text-button"
-                          onClick={() => manageName('categories')}
-                        >
-                          <Plus size={16} />
-                          Add
-                        </button>
-                      </div>
-                      {categories.map((c, i) => (
-                        <div className="name-row" key={c.id}>
-                          <i
-                            className="color-dot"
-                            style={{ background: colors[i % colors.length] }}
-                          />
-                          <strong>{c.name}</strong>
-                          <button
-                            className="icon"
-                            aria-label={`Edit ${c.name}`}
-                            onClick={() => manageName('categories', c)}
-                          >
-                            <Pencil size={16} />
-                          </button>
-                          <button
-                            className="icon"
-                            aria-label={`Delete ${c.name}`}
-                            onClick={() =>
-                              remove('/categories/' + c.id, c.name)
-                            }
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      ))}
-                    </section>
-                    <section className="panel">
-                      <div className="section-head">
-                        <div>
-                          <h2>Remembered payees</h2>
-                          <p>
-                            Saved labels also match store-number and year/date
-                            variants. Conflicting categories stay for review.
-                          </p>
-                        </div>
-                      </div>
-                      {payeeRules.length ? (
-                        payeeRules.map((r) => (
-                          <div className="name-row" key={r.id}>
-                            <div className="grow">
-                              <strong>{r.payee}</strong>
-                              <small>
-                                {r.kind} · {catName(r.category_id)}
-                              </small>
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              name="advisor_memory_enabled"
+                              defaultChecked={
+                                settings.advisor_memory_enabled ?? false
+                              }
+                              key={
+                                'memory' +
+                                String(settings.advisor_memory_enabled)
+                              }
+                            />
+                            Enable optional local advisor memory (Memora)
+                          </label>
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              name="reserve_alerts_enabled"
+                              defaultChecked={settings.reserve_alerts_enabled}
+                              key={
+                                'reserve' +
+                                String(settings.reserve_alerts_enabled)
+                              }
+                            />
+                            Annual bill reserve alerts
+                          </label>
+                          <label>
+                            Reserve checkpoint day
+                            <input
+                              name="reserve_checkpoint_day"
+                              aria-label="Reserve checkpoint day"
+                              type="number"
+                              min="1"
+                              max="31"
+                              required
+                              defaultValue={settings.reserve_checkpoint_day}
+                              key={'day' + settings.reserve_checkpoint_day}
+                            />
+                            <small>
+                              Previous month’s allocations should reach savings
+                              by this day. Short months use their last day.
+                              Alerts appear only inside the app.
+                            </small>
+                          </label>
+                          {models.error && (
+                            <p className="notice">{models.error}</p>
+                          )}
+                          <div className="button-group">
+                            <button>Save settings</button>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() =>
+                                void act(async () =>
+                                  setModels(await api('/models')),
+                                )
+                              }
+                            >
+                              Refresh models
+                            </button>
+                          </div>
+                        </form>
+                      </section>
+                      <AdvisorMemory
+                        enabled={settings.advisor_memory_enabled ?? false}
+                        revision={revision}
+                      />
+                      {budgetAlerts.count > 0 && (
+                        <section className="panel">
+                          <div className="section-head">
+                            <div>
+                              <h2>Dismissed budget alerts</h2>
+                              <p>
+                                {budgetAlerts.count} reviewed alerts stay hidden
+                                by month and type, even if amounts change.
+                              </p>
                             </div>
+                          </div>
+                          <div className="pad">
+                            <button
+                              className="secondary"
+                              disabled={budgetAlerts.busy}
+                              onClick={() => void budgetAlerts.restore()}
+                            >
+                              Restore dismissed alerts
+                            </button>
+                          </div>
+                        </section>
+                      )}
+                    </div>
+                    <div className="settings-column">
+                      <section className="panel">
+                        <div className="section-head">
+                          <div>
+                            <h2>Bank & card accounts</h2>
+                            <p>
+                              Add a bank account for ACH debits or a card for
+                              statement imports. Check a card to show in-app
+                              alerts when information is over 30 days old.
+                            </p>
+                          </div>
+                          <button
+                            className="text-button"
+                            onClick={() => manageName('accounts')}
+                          >
+                            <Plus size={16} />
+                            Add
+                          </button>
+                        </div>
+                        {accounts.map((a) => (
+                          <div className="name-row" key={a.id}>
+                            <div className="grow">
+                              <strong>{a.name}</strong>
+                              <small>
+                                {a.last_information_date
+                                  ? `Information through ${a.last_information_date}`
+                                  : 'No saved information yet'}
+                              </small>
+                              {a.csv_mapping && (
+                                <small>CSV mapping remembered</small>
+                              )}
+                            </div>
+                            <label className="checkbox card-monitor">
+                              <input
+                                type="checkbox"
+                                checked={a.stale_alert_enabled}
+                                disabled={monitoring !== null}
+                                onChange={(e) =>
+                                  void monitorCard(a.id, e.target.checked)
+                                }
+                                aria-label={`Alert when ${a.name} information is over 30 days old`}
+                              />
+                              Alert after 30 days
+                            </label>
                             <button
                               className="icon"
-                              aria-label={`Edit remembered category for ${r.payee}`}
-                              onClick={() =>
-                                setEditor({
-                                  title: 'Edit remembered category',
-                                  description: r.payee + ' · ' + r.kind,
-                                  fields: [
-                                    {
-                                      name: 'category_id',
-                                      label: 'Category',
-                                      value: r.category_id,
-                                      options: categoryOptions,
-                                    },
-                                  ],
-                                  submit: async (d) => {
-                                    await api('/payee-rules/' + r.id, 'PUT', d);
-                                  },
-                                })
-                              }
+                              aria-label={`Edit ${a.name}`}
+                              onClick={() => manageName('accounts', a)}
                             >
                               <Pencil size={16} />
                             </button>
                             <button
                               className="icon"
-                              aria-label={`Forget ${r.payee}`}
+                              aria-label={`Delete ${a.name}`}
                               onClick={() =>
-                                remove(
-                                  '/payee-rules/' + r.id,
-                                  'this remembered payee rule',
-                                )
+                                remove('/accounts/' + a.id, a.name)
                               }
                             >
                               <Trash2 size={16} />
                             </button>
                           </div>
-                        ))
-                      ) : (
-                        <p className="muted pad">
-                          Save a categorized transaction or commit a reviewed
-                          import to remember its payee. Uncertain matches stay
-                          for manual review.
+                        ))}
+                        {!accounts.length && (
+                          <p className="muted pad">
+                            Add a named card to start tracking actual spending.
+                          </p>
+                        )}
+                      </section>
+                      <section className="panel">
+                        <div className="section-head">
+                          <div>
+                            <h2>Categories</h2>
+                            <p>Make these feel like you.</p>
+                          </div>
+                          <button
+                            className="text-button"
+                            onClick={() => manageName('categories')}
+                          >
+                            <Plus size={16} />
+                            Add
+                          </button>
+                        </div>
+                        {categories.map((c, i) => (
+                          <div className="name-row" key={c.id}>
+                            <i
+                              className="color-dot"
+                              style={{ background: colors[i % colors.length] }}
+                            />
+                            <strong>{c.name}</strong>
+                            <button
+                              className="icon"
+                              aria-label={`Edit ${c.name}`}
+                              onClick={() => manageName('categories', c)}
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              className="icon"
+                              aria-label={`Delete ${c.name}`}
+                              onClick={() =>
+                                remove('/categories/' + c.id, c.name)
+                              }
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </section>
+                      <details className="panel remembered-payees">
+                        <summary className="section-head">
+                          <div>
+                            <h2>
+                              Remembered payees{' '}
+                              <span className="settings-count">
+                                {payeeRules.length}
+                              </span>
+                            </h2>
+                            <p>
+                              Saved labels also match store-number and year/date
+                              variants. Conflicting categories stay for review.
+                            </p>
+                          </div>
+                          <ChevronRight size={18} aria-hidden="true" />
+                        </summary>
+                        {payeeRules.length ? (
+                          payeeRules.map((r) => (
+                            <div className="name-row" key={r.id}>
+                              <div className="grow">
+                                <strong>{r.payee}</strong>
+                                <small>
+                                  {r.kind} · {catName(r.category_id)}
+                                </small>
+                              </div>
+                              <button
+                                className="icon"
+                                aria-label={`Edit remembered category for ${r.payee}`}
+                                onClick={() =>
+                                  setEditor({
+                                    title: 'Edit remembered category',
+                                    description: r.payee + ' · ' + r.kind,
+                                    fields: [
+                                      {
+                                        name: 'category_id',
+                                        label: 'Category',
+                                        value: r.category_id,
+                                        options: categoryOptions,
+                                      },
+                                    ],
+                                    submit: async (d) => {
+                                      await api(
+                                        '/payee-rules/' + r.id,
+                                        'PUT',
+                                        d,
+                                      );
+                                    },
+                                  })
+                                }
+                              >
+                                <Pencil size={16} />
+                              </button>
+                              <button
+                                className="icon"
+                                aria-label={`Forget ${r.payee}`}
+                                onClick={() =>
+                                  remove(
+                                    '/payee-rules/' + r.id,
+                                    'this remembered payee rule',
+                                  )
+                                }
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="muted pad">
+                            Save a categorized transaction or commit a reviewed
+                            import to remember its payee. Uncertain matches stay
+                            for manual review.
+                          </p>
+                        )}
+                      </details>
+                      <div className="quiet-note">
+                        <Leaf size={22} />
+                        <h3>A private little workspace.</h3>
+                        <p>
+                          No bank connections, no cloud model fallback, and no
+                          notifications outside the app. Back up your PostgreSQL
+                          database to keep your budget safe.
                         </p>
-                      )}
-                    </section>
-                    <div className="quiet-note">
-                      <Leaf size={22} />
-                      <h3>A private little workspace.</h3>
-                      <p>
-                        No bank connections, no cloud model fallback, and no
-                        notifications outside the app. Back up your PostgreSQL
-                        database to keep your budget safe.
-                      </p>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1990,6 +2082,7 @@ export default function App() {
                     currency={currency}
                     purchases={purchases}
                     model={settings.model}
+                    memoryEnabled={settings.advisor_memory_enabled ?? false}
                   />
                 </div>
               )}

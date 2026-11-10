@@ -39,6 +39,9 @@ class Settings(Base):
     advisor_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    advisor_memory_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     reserve_alerts_enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true"
     )
@@ -49,6 +52,20 @@ class Settings(Base):
     savings_month: Mapped[str | None] = mapped_column(String(7))
     savings_floor: Mapped[int] = mapped_column(
         BigInteger, default=0, server_default="0"
+    )
+
+
+class AlertDismissal(Base):
+    __tablename__ = "alert_dismissals"
+    month: Mapped[str] = mapped_column(String(7), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(24), primary_key=True)
+    dismissed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('forecast_deficit','actual_deficit')", name="alert_dismissal_kind"
+        ),
     )
 
 

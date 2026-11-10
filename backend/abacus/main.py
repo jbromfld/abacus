@@ -26,6 +26,14 @@ from sqlalchemy.orm import load_only
 
 from .ach import record_due
 from .advisor import answer_question, budget_context
+from .advisor_history import latest_spending_comparison
+from .advisor_memory import (
+    close_memory,
+    invalidate_memory,
+    memory_epoch,
+    recalled_memory,
+)
+from .alert_api import router as alert_router
 from .budget import (
     ActualWindow,
     ForecastInputs,
@@ -49,6 +57,7 @@ from .dues import (
 from .expenses import expense_breakdown, month_end, month_key
 from .imports import csv_rows, executor, prepare_file, process_import, validate_rows
 from .local_model import available_models
+from .memory_api import router as memory_router
 from .models import (
     Account,
     AmountChange,
@@ -119,6 +128,7 @@ async def lifespan(app):
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
+        await asyncio.to_thread(close_memory)
 
 
 def record_due_in_session():
@@ -138,6 +148,8 @@ async def ach_scheduler():
 
 
 app = FastAPI(title="Abacus", lifespan=lifespan)
+app.include_router(memory_router)
+app.include_router(alert_router)
 DB = Annotated[DBSession, Depends(session)]
 ReadOnlyDB = Annotated[DBSession, Depends(read_only_session)]
 
@@ -248,7 +260,15 @@ def update_settings(data: SettingsIn, db: DB):
         plan = db.get(ReservePlan, 1)
         if plan:
             plan.dismissed_until = None
-    return save(db, setting, data.model_dump(exclude_none=True))
+    memory_changed = (
+        data.advisor_memory_enabled is not None
+        and data.advisor_memory_enabled != setting.advisor_memory_enabled
+    )
+    result = save(db, setting, data.model_dump(exclude_none=True))
+    if memory_changed:
+        invalidate_memory()
+        close_memory()
+    return result
 
 
 @app.get("/api/models")
@@ -284,6 +304,12 @@ def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
         raise HTTPException(409, "Enable Budget advisor in Settings to use local chat.")
     if not setting.model:
         raise HTTPException(422, "Choose an installed local model in Settings.")
+    memory_enabled = setting.advisor_memory_enabled
+    epoch = memory_epoch()
+    if memory_enabled and data.history and data.memory_epoch != epoch:
+        raise HTTPException(
+            409, "Advisor memory changed. Start a new conversation before continuing."
+        )
     if data.purchase_id:
         get(db, Purchase, data.purchase_id)
     if data.bill_estimate_id:
@@ -295,6 +321,7 @@ def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
     model = setting.model
     # Release the read transaction before waiting for the optional local model.
     db.rollback()
+    context["advisor_memory"] = recalled_memory(memory_enabled, data)
     try:
         reply = answer_question(model, data, context)
     except Exception as exc:
@@ -311,7 +338,16 @@ def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
             503,
             "Cannot get a reply from local Ollama. Check that it is running and the selected model is installed. Your budget is unchanged.",
         )
-    return {"reply": reply, "context": context}
+    if memory_epoch() != epoch:
+        raise HTTPException(
+            409,
+            "Advisor memory changed while answering. Start a new conversation and retry.",
+        )
+    return {
+        "reply": reply,
+        "reply_truncated": getattr(reply, "truncated", False),
+        "context": context,
+    }
 
 
 @app.get("/api/savings")
@@ -752,12 +788,18 @@ def month_forecast(month: Month, db: DB, preview: str | None = None):
 
 
 @app.get("/api/forecasts")
-def forecast_window(start: Month, db: DB, months: int = Query(default=12, ge=1, le=24)):
+def forecast_window(
+    start: Month,
+    db: DB,
+    months: int = Query(default=12, ge=1, le=24),
+    include_savings: bool = False,
+):
     last = shift_month(start, months - 1)
     if last > "9998-12":
         raise HTTPException(422, "The forecast window must end by December 9998.")
     inputs = ForecastInputs(db)
     actuals = ActualWindow(db, start, last)
+    savings = db.get(Settings, 1).savings_balance if include_savings else None
     result = []
     for offset in range(months):
         month = shift_month(start, offset)
@@ -768,9 +810,28 @@ def forecast_window(start: Month, db: DB, months: int = Query(default=12, ge=1, 
                 **values,
                 "actual": recorded,
                 "actual_deficit": recorded["expenses"] > values["income"],
+                **(
+                    {
+                        "savings_balance": savings,
+                        "remaining_with_savings": values["remaining"] + (savings or 0),
+                        "savings_adjusted_deficit": values["remaining"] + (savings or 0)
+                        < 0,
+                    }
+                    if include_savings
+                    else {}
+                ),
             }
         )
     return result
+
+
+@app.get("/api/spending/comparison")
+def overview_spending_comparison(db: DB):
+    today = local_today()
+    return {
+        "today": today.isoformat(),
+        "comparison": latest_spending_comparison(db, today),
+    }
 
 
 @app.get("/api/trends")

@@ -540,3 +540,51 @@ def test_due_month_only_overrides_and_midyear_rate_change(client, category_id):
     )
     assert client.get("/api/forecast?month=2026-05").json()["expenses"] == 18000
     assert client.get("/api/forecast?month=2027-05").json()["expenses"] == 15000
+
+
+@pytest.mark.parametrize(
+    "savings,combined,deficit",
+    [
+        (20000, 10000, False),
+        (10000, 0, False),
+        (9999, -1, True),
+        (0, -10000, True),
+        (None, -10000, True),
+    ],
+)
+def test_forecast_window_flags_deficits_after_current_savings_without_carry_forward(
+    client, db, category_id, savings, combined, deficit
+):
+    from abacus.models import Settings
+
+    db.get(Settings, 1).savings_balance = savings
+    db.commit()
+    for name, kind, amount in [
+        ("Income", "receivable", 10000),
+        ("Bill", "payable", 20000),
+    ]:
+        response = client.post(
+            "/api/recurring",
+            json={
+                "name": name,
+                "kind": kind,
+                "frequency": "monthly",
+                "amount": amount,
+                "start_month": "2026-01",
+                "category_id": category_id if kind == "payable" else None,
+            },
+        )
+        assert response.status_code == 201
+    rows = client.get(
+        "/api/forecasts",
+        params={"start": "2026-01", "months": 12, "include_savings": True},
+    ).json()
+    assert len(rows) == 12
+    for row in rows:
+        assert row["remaining"] == -10000 and row["deficit"] is True
+        assert row["savings_balance"] == savings
+        assert row["remaining_with_savings"] == combined
+        assert row["savings_adjusted_deficit"] is deficit
+    # The ordinary monthly forecast and user-entered savings are untouched.
+    assert client.get("/api/forecast?month=2026-01").json()["deficit"] is True
+    assert db.get(Settings, 1).savings_balance == savings

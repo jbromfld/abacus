@@ -14,6 +14,7 @@ export function useWorkspace(month: string, revision: number) {
     currency: 'USD',
     model: '',
     advisor_enabled: false,
+    advisor_memory_enabled: false,
     reserve_alerts_enabled: true,
     reserve_checkpoint_day: 1,
   });
@@ -69,7 +70,12 @@ export function useWorkspace(month: string, revision: number) {
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
-    setResult({ month, forecast: null, loading: true, error: '' });
+    setResult((previous) => ({
+      month,
+      forecast: previous.month === month ? previous.forecast : null,
+      loading: true,
+      error: '',
+    }));
     api<Forecast>(
       `/forecast?month=${month}`,
       'GET',

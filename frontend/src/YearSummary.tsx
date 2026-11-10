@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api, monthLabel, money } from './api';
-import type { Forecast } from './api';
+import type { SavingsAwareForecast } from './api';
 export default function YearSummary({
   year,
   currency,
@@ -12,14 +12,20 @@ export default function YearSummary({
   revision: number;
   selectMonth: (m: string) => void;
 }) {
-  const [data, setData] = useState<Forecast[]>([]);
+  const [result, setResult] = useState<{
+    year: string;
+    data: SavingsAwareForecast[];
+  }>({ year, data: [] });
+  const data = result.year === year ? result.data : [];
   const [error, setError] = useState('');
   useEffect(() => {
     let active = true;
-    api<Forecast[]>(`/forecasts?start=${year}-01&months=12`)
+    api<SavingsAwareForecast[]>(
+      `/forecasts?start=${year}-01&months=12&include_savings=true`,
+    )
       .then((d) => {
         if (active) {
-          setData(d);
+          setResult({ year, data: d });
           setError('');
         }
       })
@@ -40,10 +46,12 @@ export default function YearSummary({
         {data.map((d) => (
           <button
             key={d.month}
-            className={'year-month ' + (d.deficit ? 'over' : '')}
-            aria-label={`${monthLabel(d.month)}: income ${money(d.income, currency)}, expenses ${money(d.expenses, currency)}${d.deficit ? ', over budget' : ''}`}
+            className={
+              'year-month ' + (d.savings_adjusted_deficit ? 'over' : '')
+            }
+            aria-label={`${monthLabel(d.month)}: income ${money(d.income, currency)}, expenses ${money(d.expenses, currency)}${d.savings_adjusted_deficit ? ', deficit after savings' : d.deficit ? ', monthly shortfall covered by current savings' : ''}; remaining plus savings ${money(d.remaining_with_savings, currency)}`}
             onClick={() => selectMonth(d.month)}
-            title={`Income ${money(d.income, currency)} · Expenses ${money(d.expenses, currency)}`}
+            title={`Income ${money(d.income, currency)} · Expenses ${money(d.expenses, currency)} · Monthly remaining + current savings ${money(d.remaining_with_savings, currency)}`}
           >
             <div className="bars">
               <i
@@ -58,10 +66,19 @@ export default function YearSummary({
                 month: 'short',
               })}
             </span>
-            {d.deficit && <span className="red">!</span>}
+            {d.savings_adjusted_deficit && <span className="red">!</span>}
           </button>
         ))}
       </div>
+      <p className="chart-note">
+        Deficit markers use monthly forecast remaining plus your current
+        manually entered savings, checking each month independently. This does
+        not project a running savings balance.{' '}
+        {data.length > 0 &&
+          (data[0].savings_balance === null
+            ? 'Savings is not set, so markers use the monthly budget alone.'
+            : `Current savings: ${money(data[0].savings_balance, currency)}.`)}
+      </p>
       <details>
         <summary>View annual forecast table</summary>
         <div className="table-scroll">
@@ -71,7 +88,8 @@ export default function YearSummary({
                 <th>Month</th>
                 <th>Income</th>
                 <th>Expenses</th>
-                <th>Remaining</th>
+                <th>Monthly remaining</th>
+                <th>Remaining + current savings</th>
               </tr>
             </thead>
             <tbody>
@@ -87,8 +105,9 @@ export default function YearSummary({
                   </th>
                   <td>{money(d.income, currency)}</td>
                   <td>{money(d.expenses, currency)}</td>
-                  <td className={d.deficit ? 'red' : ''}>
-                    {money(d.remaining, currency)}
+                  <td>{money(d.remaining, currency)}</td>
+                  <td className={d.savings_adjusted_deficit ? 'red' : ''}>
+                    {money(d.remaining_with_savings, currency)}
                   </td>
                 </tr>
               ))}

@@ -68,6 +68,13 @@ def ask_model(model, prompt, schema):
         return json.loads(response.json()["message"]["content"])
 
 
+class ModelReply(str):
+    def __new__(cls, content, *, truncated=False):
+        value = super().__new__(cls, content)
+        value.truncated = truncated
+        return value
+
+
 def chat_with_model(model, messages, schema=None):
     if not model or model not in available_models():
         raise ValueError("Choose an installed local model in Settings.")
@@ -77,6 +84,12 @@ def chat_with_model(model, messages, schema=None):
             raise ValueError()
     except (TypeError, ValueError):
         raise ValueError("ADVISOR_TIMEOUT_SECONDS must be between 30 and 1800 seconds.")
+    try:
+        max_tokens = int(local_config().get("ADVISOR_MAX_TOKENS", "768"))
+        if not 256 <= max_tokens <= 4096:
+            raise ValueError()
+    except (TypeError, ValueError):
+        raise ValueError("ADVISOR_MAX_TOKENS must be between 256 and 4096.")
     started = monotonic()
     with httpx.Client(
         timeout=httpx.Timeout(timeout, connect=5),
@@ -92,13 +105,18 @@ def chat_with_model(model, messages, schema=None):
                 "think": False,
                 "messages": messages,
                 **({"format": schema} if schema else {}),
-                "options": {"temperature": 0.2, "num_predict": 512, "num_ctx": 8192},
+                "options": {
+                    "temperature": 0.2,
+                    "num_predict": max_tokens,
+                    "num_ctx": 8192,
+                },
             },
         ) as response:
             response.raise_for_status()
             parts = []
             length = 0
             complete = False
+            truncated = False
             for line in response.iter_lines():
                 if monotonic() - started > timeout:
                     raise httpx.ReadTimeout(
@@ -121,6 +139,7 @@ def chat_with_model(model, messages, schema=None):
                     )
                 parts.append(content)
                 if chunk.get("done"):
+                    truncated = chunk.get("done_reason") == "length"
                     complete = True
                     break
         if not complete:
@@ -132,4 +151,8 @@ def chat_with_model(model, messages, schema=None):
             raise ValueError(
                 "The local model returned an empty reply. Try another question or model."
             )
-        return content
+        if truncated and schema:
+            raise ValueError(
+                "The local model reached its reply limit. Retry the draft or enter it manually."
+            )
+        return ModelReply(content, truncated=truncated)

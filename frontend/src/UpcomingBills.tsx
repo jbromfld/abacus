@@ -38,6 +38,7 @@ export default function UpcomingBills({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [unpaidOnly, setUnpaidOnly] = useState(false);
   const [confirm, setConfirm] = useState<BillOccurrence | null>(null);
   const [paidOn, setPaidOn] = useState('');
   const [confirmError, setConfirmError] = useState('');
@@ -109,6 +110,12 @@ export default function UpcomingBills({
       setBusy(false);
     }
   };
+  const upcoming = (data?.monthly_upcoming ?? []).filter(
+    (bill) => !unpaidOnly || !bill.paid,
+  );
+  const overdue = (data?.monthly_overdue ?? []).filter(
+    (bill) => !unpaidOnly || !bill.paid,
+  );
   const row = (bill: BillOccurrence, label?: string) => (
     <li className="bill-row" key={bill.recurring_id + bill.period}>
       <div className={'bill-date ' + (bill.status === 'overdue' ? 'red' : '')}>
@@ -211,6 +218,14 @@ export default function UpcomingBills({
             Add bill
           </button>
         </div>
+        <label className="checkbox bill-unpaid-filter">
+          <input
+            type="checkbox"
+            checked={unpaidOnly}
+            onChange={(event) => setUnpaidOnly(event.target.checked)}
+          />
+          Unpaid only
+        </label>
         {loading && !data && (
           <p className="bill-empty" role="status">
             <LoaderCircle size={16} className="spin" />
@@ -228,18 +243,15 @@ export default function UpcomingBills({
         )}
         {data && (
           <>
-            {data.monthly_overdue.length > 0 && (
+            {overdue.length > 0 && (
               <div className="bill-overdue">
                 <h3>
-                  Overdue monthly bills{' '}
-                  <span>({data.monthly_overdue.length})</span>
+                  Overdue monthly bills <span>({overdue.length})</span>
                 </h3>
                 <ul className="bill-list">
-                  {data.monthly_overdue
-                    .slice(0, overdueLimit)
-                    .map((b) => row(b))}
+                  {overdue.slice(0, overdueLimit).map((b) => row(b))}
                 </ul>
-                {data.monthly_overdue.length > overdueLimit && (
+                {overdue.length > overdueLimit && (
                   <button
                     className="text-button"
                     onClick={() => setOverdueLimit((n) => n + 20)}
@@ -249,13 +261,13 @@ export default function UpcomingBills({
                 )}
               </div>
             )}
-            {data.monthly_upcoming.length ? (
-              <ul className="bill-list">
-                {data.monthly_upcoming.map((b) => row(b))}
-              </ul>
+            {upcoming.length ? (
+              <ul className="bill-list">{upcoming.map((b) => row(b))}</ul>
             ) : (
               <p className="bill-empty">
-                No monthly bills with due dates in the next 30 days.
+                {unpaidOnly
+                  ? 'No unpaid monthly bills with due dates in the next 30 days.'
+                  : 'No monthly bills with due dates in the next 30 days.'}
               </p>
             )}
           </>

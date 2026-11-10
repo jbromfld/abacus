@@ -225,6 +225,7 @@ characters). Optional fields:
 | Field | Meaning |
 | --- | --- |
 | `history` | Up to 12 user/assistant messages, with bounded content/total length |
+| `memory_epoch` | Echo `context.advisor_memory.epoch` for follow-ups with memory enabled; stale history returns 409 |
 | `purchase_id` or `scenario:{name,amount,month}` | A saved or one-off purchase; mutually exclusive |
 | `monthly_bill` or `bill_estimate_id` | Structured monthly payment or saved estimate; exclusive with purchase scenarios |
 | `savings` | Explicit opening snapshot override for this request |
@@ -233,10 +234,11 @@ characters). Optional fields:
 | `research_confirmation` | Confirmation from `/advisor/research-preview` for this exact topic and query plan; required before outbound search |
 | `planning:{available_savings,monthly_buffer}` | Optional separate trip-funding assumptions |
 
-The response is `{reply,context}`. Context includes monthly forecasts, recent
+The response is `{reply,reply_truncated,context}`. `reply_truncated` is true when
+Ollama ends generation at its token limit; the UI marks that answer incomplete. Context includes monthly forecasts, recent
 actuals/completeness, drafts, category guide statistics, Python-calculated
 `forecast_comparison`, selected scenario, `savings_projection`, `planning_capacity`,
-`spending_history`, and `web_research`. Monetary names ending `_minor` are integer minor units; **all
+`spending_history`, `spending_comparison`, and `web_research`. Monetary names ending `_minor` are integer minor units; **all
 money in savings_projection also uses minor units**, even without that suffix.
 
 The API waits for the completed reply while the local transport reads streamed
@@ -249,6 +251,35 @@ public request with `use_web`, `research_topic`, and `research_confirmation`; no
 financial snapshot, private message/history, or model output enters that adapter. Timeout/
 research errors never save transactions or plans. The advisor must be opted in and
 have a selected model; no cloud fallback or model download occurs.
+
+## Optional advisor memory API
+
+Settings accepts optional `advisor_memory_enabled` (default false; omission
+preserves the preference). These operations use separate Memora storage.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/api/advisor/memory/status` | Safe status/message and generation `epoch` |
+| POST | `/api/advisor/memory/draft` | `{user_message,assistant_message?}` → editable `{note,warning}`; never saves |
+| GET | `/api/advisor/memory?offset=0` | Up to 25 `{items,next_offset}` across all statuses |
+| POST | `/api/advisor/memory/similar` | `{query}` → up to three active matches; no merging |
+| POST | `/api/advisor/memory` | `{note,create_key:UUID}` → approved note, HTTP 201; identical retries are idempotent |
+| GET | `/api/advisor/memory/{id}` | Note with revision history |
+| PUT | `/api/advisor/memory/{id}` | `{note,expected_revision}` → new revision; conflicts return 409 |
+| DELETE | `/api/advisor/memory/{id}?expected_revision=N` | Purges note/history/embedding; returns `{forgotten,epoch}` |
+
+Note fields: `title` (1–100), `text` (1–400), `kind`
+(`intention|preference|decision`), ISO `source_date`, `source_excerpt` (up to 1,000),
+`cues` (up to eight nonempty strings of at most 50), and `status`
+(`active|completed|abandoned`, default active). Extra fields are rejected.
+Draft failure returns blank editable fields and a safe warning.
+
+Chat context adds `advisor_memory:{status,warnings,notes,epoch}`. Model context
+contains at most three active notes within 1,500 serialized characters, excluding
+source excerpts. Unavailability warns without failing chat. Management returns
+503 when unavailable, 409 when disabled/conflicted, and 422 for invalid fields.
+Updates/forgetting invalidate pending answers and stale follow-up epochs (409).
+See [memory operations and privacy](advisor-memory.md).
 
 ## Examples
 
@@ -334,3 +365,52 @@ payments/transfers are excluded. Partial months remain qualified evidence rather
 than complete actuals. All summary values are deterministic; payee selection is
 bounded and is not a claim that the full ledger was sent. `reply` may be Markdown.
 No new endpoint gives the model arbitrary transaction lookup or SQL access.
+
+
+### Recorded spending comparison
+
+`context.spending_comparison` compares the latest two finished calendar months,
+ending at the selected month or the latest finished month, whichever is earlier.
+It contains `previous_month`, `month`, completeness statuses, `totals`, `accounts`
+(named accounts only, no IDs), and `categories`. Rows contain `previous_minor`,
+`current_minor`, and `change_minor`: purchases and fees less refunds, by transaction
+date. Card payments and transfers are excluded. Missing months produce null values;
+explicitly complete zero months produce zero. Partial data is labeled.
+
+Its `budget_impact` rows subtract actual recorded spending from planned income for
+each comparison month. Unrecorded income or missing actuals yields unknown room.
+These are not verified income receipts, achieved savings, or a bank balance.
+`forecast_comparison` remains separate planning evidence for forecast shortfalls;
+a changed allowance never establishes changed actual spending. Future
+`savings_projection` continues to use budget assumptions, not a substitution of
+historical charges. History rows also include Python-calculated `average_minor`
+and `sample_count`, excluding missing months. The local-model payload receives
+formatted currency values for all monetary paths, including forecast changes,
+annual payments, and savings. Model-only forecast/projection tables share column
+labels to reduce prompt size; the API retains integer
+minor units for UI calculations.
+
+
+`GET /api/spending/comparison` is a deterministic Overview read, available without
+Budget advisor enabled. It returns `{today,comparison}` for the latest two finished
+months in `APP_TIMEZONE`, including account/category deltas and completeness. It
+never invokes Ollama or web research and does not depend on the selected forecast
+month. Refunds reduce spending; payments/transfers are excluded.
+
+`GET /api/forecasts?...&include_savings=true` adds `savings_balance` (nullable),
+`remaining_with_savings`, and `savings_adjusted_deficit` to each forecast. The last
+field tests `remaining + (savings_balance or 0) < 0` independently per month, with
+no carry-forward or changes to the original `remaining`/`deficit` fields. The
+parameter defaults false to preserve the standard forecast-window response.
+
+
+### Permanent budget-alert acknowledgements
+
+`GET /api/alerts/dismissals` returns `{month,kind,dismissed_at}` records.
+`POST /api/alerts/dismissals` accepts a validated month and `kind` of
+`forecast_deficit` or `actual_deficit`. The composite month/type key makes repeated
+requests idempotent and preserves the original dismissal timestamp.
+`DELETE /api/alerts/dismissals` restores all notices and returns `{restored:count}`.
+Dismissals do not expire or depend on amounts and never modify financial records.
+They control Overview notices only; reserve reminders retain their existing
+checkpoint-based dismissal. The advisor login receives no access to this table.

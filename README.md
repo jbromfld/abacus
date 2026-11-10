@@ -1,5 +1,7 @@
 # Abacus
 
+<img src="docs/assets/abacus-logo.png" alt="Abacus logo" width="240" />
+
 A local personal budget app: recurring income and bills, purchase estimates, actual spending, and 12-month category trends. React/TypeScript + FastAPI + PostgreSQL, with classification memory, an optional local Budget advisor, and optional Ollama PDF extraction.
 
 ## Documentation
@@ -9,6 +11,7 @@ A local personal budget app: recurring income and bills, purchase estimates, act
 - [Setup, configuration, upgrades, backups, and troubleshooting](docs/operations.md)
 - [Complete API reference](docs/api.md)
 - [Classification memory and future training](training/README.md)
+- [Optional local advisor memory with Memora](docs/advisor-memory.md)
 
 Use the user guide for daily workflows and Operations for maintenance. Feature details live in those guides to keep one source of truth.
 
@@ -83,3 +86,4 @@ isolated PostgreSQL test setup, frontend behavior tests, lint, formatting, schem
 checks, and production build. The GitHub Actions workflow runs those checks on
 pull requests. See [the review fixes](docs/review-fixes.md) for migration 0012 and
 this change’s regression coverage.
+

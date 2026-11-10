@@ -1,11 +1,12 @@
 """Read-only local budget advice; monetary scenarios are calculated by Python."""
 
 import json
+import re
 from decimal import Decimal
 
 from sqlalchemy import select
 
-from .advisor_history import spending_history
+from .advisor_history import spending_comparison, spending_history
 from .advisor_prompts import system_instructions
 from .budget import ActualWindow, ForecastInputs, forecast, shift_month
 from .category_planning import category_averages
@@ -180,6 +181,31 @@ def budget_context(db, request):
         if guide_end >= "1900-12"
         else []
     )
+    history = spending_history(db, request.month, today, categories)
+    comparison = spending_comparison(db, history)
+    if comparison:
+        comparison["budget_impact"] = []
+        for period, key in (
+            (comparison["previous_month"], "previous_minor"),
+            (comparison["month"], "current_minor"),
+        ):
+            planned = inputs.forecast(period)
+            income_recorded = any(
+                line["kind"] == "receivable" for line in planned["lines"]
+            )
+            spending = comparison["totals"][key]
+            comparison["budget_impact"].append(
+                {
+                    "month": period,
+                    "planned_income_minor": planned["income"]
+                    if income_recorded
+                    else None,
+                    "actual_spending_minor": spending,
+                    "room_after_recorded_spending_minor": planned["income"] - spending
+                    if income_recorded and spending is not None
+                    else None,
+                }
+            )
     return {
         "currency": currency,
         "minor_unit_digits": 0 if currency == "JPY" else 2,
@@ -197,7 +223,8 @@ def budget_context(db, request):
         },
         "monthly_forecasts": projections,
         "recent_actuals": recent,
-        "spending_history": spending_history(db, request.month, today, categories),
+        "spending_history": history,
+        "spending_comparison": comparison,
         "forecast_comparison": forecast_comparison(
             db, request.month, inputs=inputs, categories=categories
         ),
@@ -290,7 +317,7 @@ def planning_capacity(db, request, today, scenario, inputs=None):
     }
 
 
-def model_snapshot(context):
+def model_snapshot(context, question=""):
     """Compact local-only input; Python formats amounts prone to model conversion errors."""
     # The UI keeps the full snapshot. Unknown funding assumptions do not need
     # 24 repeated unknown balances in the model prompt.
@@ -308,13 +335,40 @@ def model_snapshot(context):
             )
         )
 
+    def display_fields(row):
+        return {
+            key.removesuffix("_minor") + "_display"
+            if key.endswith("_minor")
+            else key: display_money(value) if key.endswith("_minor") else value
+            for key, value in row.items()
+        }
+
     # The UI keeps the complete evidence. Share window metadata once in the
     # local prompt to leave room for forecasts within Ollama's context window.
     if history := context.get("spending_history"):
         evidence = history["categories"] or history["payees"]
         windows = evidence[0]["comparisons"] if evidence else []
+        detailed = bool(
+            re.search(r"\b(12|twelve|year|history|trend)\b", question, re.I)
+        )
+        count = 12 if detailed else 3
+        all_months = history.get("months", [])
+        selected_payees = sorted(
+            history["payees"],
+            key=lambda row: not bool(row["payee"].casefold() in question.casefold()),
+        )[:8]
         model_context["spending_history"] = {
-            **history,
+            "months": all_months[-count:],
+            "average_window": {
+                "start_month": history.get("start_month"),
+                "end_month": history.get("end_month"),
+                "partial_month_count": sum(
+                    month["status"] == "partial" for month in all_months
+                ),
+            },
+            "additional_payees_omitted": history.get("additional_payees_omitted", 0)
+            + len(history["payees"])
+            - len(selected_payees),
             "comparison_windows": [
                 {
                     key: value
@@ -327,20 +381,48 @@ def model_snapshot(context):
             **{
                 group: [
                     {
-                        **row,
+                        **{
+                            key: value
+                            for key, value in row.items()
+                            if key not in ("monthly_net_minor", "average_minor")
+                        },
+                        "monthly_net_display": [
+                            display_money(value)
+                            for value in row["monthly_net_minor"][-count:]
+                        ],
+                        "average_display": display_money(row["average_minor"]),
                         "comparisons": [
                             {
                                 "months": change["months"],
-                                "change_minor": change["change_minor"],
+                                "change_display": display_money(change["change_minor"]),
                             }
                             for change in row["comparisons"]
                         ],
                     }
-                    for row in history[group]
+                    for row in (
+                        selected_payees if group == "payees" else history[group]
+                    )
                 ]
                 for group in ("categories", "payees")
             },
         }
+        model_context.pop("recent_actuals", None)
+    if comparison := context.get("spending_comparison"):
+        model_context["spending_comparison"] = {
+            **comparison,
+            "totals": display_fields(comparison["totals"]),
+            "accounts": [display_fields(row) for row in comparison["accounts"]],
+            "categories": [display_fields(row) for row in comparison["categories"]],
+            "budget_impact": [
+                display_fields(row) for row in comparison.get("budget_impact", [])
+            ],
+        }
+    if "category_guides" in context:
+        model_context["category_guides"] = [
+            display_fields(row)
+            for row in context["category_guides"]
+            if row["monthly_guide_minor"] is not None
+        ]
     capacity = context["planning_capacity"]
     if not capacity["assumptions_complete"] or (
         context.get("savings_projection") and context["savings_projection"]["bill"]
@@ -348,21 +430,37 @@ def model_snapshot(context):
         model_context["planning_capacity"] = {
             key: value for key, value in capacity.items() if key != "months"
         }
+    if isinstance(context.get("monthly_forecasts"), list):
+        model_context["monthly_forecasts"] = {
+            "columns": ["month", "income", "expenses", "remaining", "income_entries"],
+            "rows": [
+                [
+                    row["month"],
+                    display_money(row["income_minor"]),
+                    display_money(row["expenses_minor"]),
+                    display_money(row["remaining_minor"]),
+                    row["income_entries"],
+                ]
+                for row in context["monthly_forecasts"]
+            ],
+        }
     if context.get("savings_projection"):
         projection = context["savings_projection"]
         model_context["savings_projection"] = {
-            **projection,
+            **{key: value for key, value in projection.items() if key != "assumptions"},
+            "month_columns": ["month", "budget_remaining", "savings"],
             "months": [
-                {
-                    key: row[key]
-                    for key in (
-                        "month",
-                        "budget_remaining_after_bill",
-                        "scenario_savings",
-                        "annual_payments",
-                    )
-                }
+                [
+                    row["month"],
+                    display_money(row["budget_remaining_after_bill"]),
+                    display_money(row["scenario_savings"]),
+                ]
                 for row in projection["months"]
+            ],
+            "annual_payments": [
+                {"month": row["month"], "payments": row["annual_payments"]}
+                for row in projection["months"]
+                if row["annual_payments"]
             ],
         }
 
@@ -394,7 +492,48 @@ def model_snapshot(context):
                 )
             },
         }
-    return model_context
+    # No raw minor-unit amounts cross the model boundary, even in nested
+    # annual payments, forecast deltas, scenarios, or savings projections.
+    money_keys = {
+        "amount",
+        "starting_savings",
+        "savings_floor",
+        "ending_savings",
+        "baseline_ending_savings",
+        "total_new_bill_cost",
+        "total_budget_change",
+        "lowest_savings",
+        "first_bill_month_remaining",
+        "budget_remaining_after_bill",
+        "scenario_savings",
+    }
+
+    def formatted_tree(value):
+        if isinstance(value, list):
+            return [formatted_tree(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        result = {}
+        summary = value.get("display_summary", {})
+        for key, item in value.items():
+            if key == "minor_unit_digits":
+                continue
+            if key == "display_summary":
+                result[key] = {
+                    name.removesuffix("_minor"): amount for name, amount in item.items()
+                }
+                continue
+            is_money = key.endswith("_minor") or key in money_keys
+            if is_money and (item is None or type(item) is int):
+                if key not in summary:
+                    result[key.removesuffix("_minor") + "_display"] = display_money(
+                        item
+                    )
+            else:
+                result[key] = formatted_tree(item)
+        return result
+
+    return formatted_tree(model_context)
 
 
 def answer_question(model, request, context):
@@ -406,13 +545,22 @@ def answer_question(model, request, context):
     )
     research = gather_research(public_request, context["current_date"])
     context["web_research"] = research
-    model_context = model_snapshot(context)
+    model_context = model_snapshot(context, request.message)
     system = (
         system_instructions(request, model_context)
         + "\nBUDGET SNAPSHOT:\n"
         + json.dumps(model_context, ensure_ascii=False, separators=(",", ":"))
     )
-    history = [{"role": m.role, "content": m.content[:1000]} for m in request.history]
+    # Keep the newest exchanges; very long conversations must not crowd out
+    # the fresh budget snapshot or the answer in the local model's context.
+    history = []
+    remaining = max(0, min(3000, 20000 - len(system) - len(request.message)))
+    for message in reversed(request.history):
+        content = message.content[: min(1000, remaining)]
+        if not content:
+            break
+        history.insert(0, {"role": message.role, "content": content})
+        remaining -= len(content)
     return chat_with_model(
         model,
         [

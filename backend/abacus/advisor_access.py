@@ -1,5 +1,7 @@
 """Explicit advisor permissions, independent of transaction read-only settings."""
 
+import json
+
 from sqlalchemy import text
 
 ADVISOR_TABLES = (
@@ -12,6 +14,7 @@ ADVISOR_TABLES = (
     "month_status",
     "bill_estimates",
 )
+ADVISOR_COLUMNS = {"accounts": ("id", "name")}
 ROLE_ATTRIBUTES = (
     "rolsuper",
     "rolcreatedb",
@@ -121,11 +124,27 @@ def verify_advisor_access(connection, expected_role):
           WHERE x.grantee IN (0,:role_oid) AND n.nspname NOT LIKE 'pg_%'
             AND n.nspname <> 'information_schema'
             AND (x.privilege_type <> 'SELECT' OR x.is_grantable OR n.nspname <> 'public'
-                 OR NOT (c.relname = ANY(:tables))))
+                 OR NOT (c.relname = ANY(:tables) OR
+                   COALESCE((CAST(:columns AS jsonb)->c.relname) ? a.attname, false))))
     """),
-        {"role_oid": role["oid"], "tables": list(ADVISOR_TABLES)},
+        {
+            "role_oid": role["oid"],
+            "tables": list(ADVISOR_TABLES),
+            "columns": json.dumps(ADVISOR_COLUMNS),
+        },
     ):
         raise AdvisorAccessError("Unexpected column privileges for the advisor.")
+    for table, columns in ADVISOR_COLUMNS.items():
+        for column in columns:
+            if not connection.scalar(
+                text(
+                    "SELECT has_column_privilege(current_user, :table, :column, 'SELECT')"
+                ),
+                {"table": "public." + table, "column": column},
+            ):
+                raise AdvisorAccessError(
+                    "The advisor lacks required account-label access."
+                )
     if connection.scalar(
         text("""
         SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace

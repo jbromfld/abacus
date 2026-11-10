@@ -41,6 +41,7 @@ def test_role_can_read_only_the_explicit_allowlist(reader_engine):
         verify_advisor_access(
             connection, connection.scalar(text("SELECT current_user"))
         )
+        connection.execute(text("SELECT id, name FROM accounts LIMIT 0"))
         for name in ADVISOR_TABLES:
             connection.execute(text(f'SELECT 1 FROM public."{name}" LIMIT 0'))
 
@@ -55,7 +56,9 @@ def test_role_can_read_only_the_explicit_allowlist(reader_engine):
         "ALTER TABLE settings ADD COLUMN advisor_bad int",
         "DROP TABLE month_status",
         "CREATE TABLE public.advisor_bad(id int)",
-        "SELECT 1 FROM accounts LIMIT 0",
+        "SELECT csv_mapping FROM accounts LIMIT 0",
+        "SELECT stale_alert_enabled FROM accounts LIMIT 0",
+        "UPDATE accounts SET name=name",
         "SELECT 1 FROM imports LIMIT 0",
         "SELECT 1 FROM import_pages LIMIT 0",
     ],

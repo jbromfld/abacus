@@ -345,7 +345,7 @@ export default function ImportReview({
       )}
       {rows.length > 0 && (
         <>
-          <nav aria-label="Review pages">
+          <nav className="button-group pagination" aria-label="Review pages">
             <button disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
               Previous page
             </button>

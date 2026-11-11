@@ -1558,7 +1558,10 @@ export default function App() {
                       </button>
                     </div>
                     {importPage.error && <p role="alert">{importPage.error}</p>}
-                    <div className="button-group" aria-label="Import pages">
+                    <div
+                      className="button-group pagination"
+                      aria-label="Import pages"
+                    >
                       <button
                         disabled={!importPage.hasPrevious || importPage.loading}
                         onClick={importPage.first}

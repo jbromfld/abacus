@@ -3557,3 +3557,24 @@ dialog:has(.batch-table) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Keep import pagination aligned with its content, including inside dialogs. */
+.pagination {
+  flex-direction: row;
+  align-items: center;
+}
+.pagination button {
+  padding: 10px 14px;
+}
+.statement-imports > .pagination {
+  padding: 0 25px 20px;
+}
+.modal .pagination,
+dialog .pagination {
+  margin: 16px 0;
+}
+@media (max-width: 600px) {
+  .statement-imports > .pagination {
+    padding: 0 20px 18px;
+  }
+}

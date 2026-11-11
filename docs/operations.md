@@ -378,6 +378,13 @@ feature-specific data. In particular, reserve setup is explicit: its migration
 preserves an existing nonfuture savings opening balance as a dated observation,
 without inventing a reserve target.
 
+Migration 0016 intentionally resets obsolete purchases, bill estimates and the old
+combined reserve target. It preserves imported expenses/provenance, recurring
+bills and their history, account/category data, savings and annual income. New
+Planning goals are stored separately and survive subsequent updater runs. Advisor
+setup adds SELECT-only grants for the two new planning tables. Rebuild and restart
+after upgrading; no manual reset or data import is needed.
+
 ## Backup and restore
 
 PostgreSQL contains the budget, actuals, imports/review provenance, payee memory,

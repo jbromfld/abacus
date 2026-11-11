@@ -82,7 +82,7 @@ export default function SavingsSettings({
         <div>
           <h2>Savings</h2>
           <p>
-            Your saved starting balance for Purchase planner and Budget advisor.
+            The shared savings balance used by your plans and Budget advisor.
           </p>
         </div>
       </div>
@@ -146,10 +146,9 @@ export default function SavingsSettings({
           </label>
         </div>
         <p className="savings-hint">
-          Use the balance at the start of this month. Saving a past/current
-          month also records that dated balance for reserve checks; it never
-          resets the reserve target. Savings is separate from recurring income
-          and expenses; scenarios use it without adding it to monthly income.
+          Use the opening balance for this month. Plans share this savings pool;
+          it is separate from monthly income. The protected savings floor stays
+          available as your buffer.
         </p>
         {error && (
           <p role="alert" className="notice danger">

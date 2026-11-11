@@ -87,6 +87,30 @@ class SavingsObservation(Base):
     __table_args__ = (CheckConstraint("amount >= 0"),)
 
 
+class PlanCategory(Base):
+    __tablename__ = "plan_categories"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+
+
+class Plan(Base):
+    __tablename__ = "plans"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    name: Mapped[str] = mapped_column(String(160))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    target_date: Mapped[date] = mapped_column(Date, index=True)
+    category_id: Mapped[str | None] = mapped_column(
+        ForeignKey("plan_categories.id", ondelete="SET NULL")
+    )
+    recurring_id: Mapped[str | None] = mapped_column(
+        ForeignKey("recurring.id", ondelete="SET NULL")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    __table_args__ = (CheckConstraint("amount > 0 AND amount <= 9000000000000"),)
+
+
 class AnnualIncome(Base):
     __tablename__ = "annual_income"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -274,11 +298,33 @@ class RecurringDebit(Base):
     __table_args__ = (UniqueConstraint("recurring_id", "month"),)
 
 
+class PayeeGroup(Base):
+    __tablename__ = "payee_groups"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    name: Mapped[str] = mapped_column(String(160))
+    kind: Mapped[str] = mapped_column(String(16))
+    __table_args__ = (CheckConstraint("kind IN ('purchase','refund','fee')"),)
+
+
+class PayeeReview(Base):
+    __tablename__ = "payee_reviews"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    snapshot: Mapped[list] = mapped_column(JSON, default=list)
+    suggestions: Mapped[list] = mapped_column(JSON, default=list)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str] = mapped_column(String(500), default="")
+    result: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
 class PayeeRule(Base):
     __tablename__ = "payee_rules"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     payee: Mapped[str] = mapped_column(String(500))
     kind: Mapped[str] = mapped_column(String(16))
+    group_id: Mapped[str | None] = mapped_column(ForeignKey("payee_groups.id", ondelete="SET NULL"), index=True)
     category_id: Mapped[str] = mapped_column(
         ForeignKey("categories.id", ondelete="CASCADE")
     )

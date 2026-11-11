@@ -267,6 +267,7 @@ class SavingsProjectionIn(BaseModel):
 
 class AdvisorIn(BaseModel):
     month: Month
+    plan_id: str | None = Field(default=None, max_length=36)
     use_web: bool = False
     research_topic: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=1000)

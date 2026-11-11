@@ -106,6 +106,36 @@ altering savings observations. These are estimates, not dated cash receipts.
 Advisor access is SELECT-only on `annual_income`; rerun advisor setup after
 migration 0015 to maintain the explicit allowlist.
 
+## Planning
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/planning` | Goals, shared-savings allocation, annual-expense shortcuts and conditional 24-month projection |
+| POST | `/api/planning` | Save `{name,amount,target_date,category_id?,recurring_id?,request_id?}` |
+| GET | `/api/planning/{id}` | Current goal/funding; deleted IDs return 404 |
+| PUT | `/api/planning/{id}` | Replace the goal using the same input |
+| DELETE | `/api/planning/{id}` | Permanently delete; repeated deletion succeeds |
+| GET/POST | `/api/planning/categories` | List or create `{name}` |
+| PUT/DELETE | `/api/planning/categories/{id}` | Rename or delete a label; deleting retains uncategorized goals |
+| POST | `/api/planning/draft` | Local-model extraction from `{user_message,assistant_message}` for review; never writes a goal |
+
+Amounts are positive integer minor units. Target dates use YYYY-MM-DD (1900–9998).
+The optional UUID `request_id` makes a retried create reuse the original saved goal.
+Planning categories are separate from transaction categories. Linked annual
+expenses must exist and have at most one plan per year. Savings remains a manual
+opening snapshot. New goals affect the Planning funding projection, not actual
+transactions. Linked annual cash amounts are replaced once in that projection;
+saved recurring bills are not edited.
+
+Advisor chat accepts optional `plan_id`. The server resolves it inside the fresh
+read-only snapshot and rejects a response if that plan was edited or deleted
+while the model was answering. `plans` and `plan_categories` require the normal
+advisor setup SELECT grants after migration 0016.
+
+The following legacy planning endpoints are retained for internal scenario
+calculations and older API callers; the application UI uses only Planning.
+Migration 0016 clears their obsolete saved plan records.
+
 ## Purchases and payment estimates
 
 | Method | Path | Purpose / inputs |

@@ -20,6 +20,8 @@ from abacus.models import (
     ImportPage,
     MonthStatus,
     PayeeRule,
+    Plan,
+    PlanCategory,
     Purchase,
     Recurring,
     ReservePlan,
@@ -64,6 +66,7 @@ def clean_database(monkeypatch, tmp_path, advisor_credentials):
         )
     with Session() as db:
         for model in [
+            Plan,
             AnnualIncome,
             AlertDismissal,
             ImportPage,
@@ -90,6 +93,12 @@ def clean_database(monkeypatch, tmp_path, advisor_credentials):
             0,
         )
         db.execute(update(Category).values(monthly_guide=None))
+        # Custom planning categories are isolated, while migration defaults persist.
+        db.execute(
+            delete(PlanCategory).where(
+                PlanCategory.id.not_in(["tax", "vacation", "purchase"])
+            )
+        )
         db.commit()
     yield
 

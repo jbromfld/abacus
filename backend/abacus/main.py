@@ -67,6 +67,7 @@ from .models import (
     Category,
     MonthStatus,
     PayeeRule,
+    Plan,
     Purchase,
     Recurring,
     RecurringDebit,
@@ -77,6 +78,7 @@ from .models import (
     Transaction,
     uid,
 )
+from .planning import router as planning_router
 from .provenance import compact_pdf_rows, expanded_sources
 from .research import confirmation_for, plan_research, research_status
 from .reserves import observe, reserve_check, schedule_snapshot
@@ -152,6 +154,7 @@ app = FastAPI(title="Abacus", lifespan=lifespan)
 app.include_router(memory_router)
 app.include_router(alert_router)
 app.include_router(annual_income_router)
+app.include_router(planning_router)
 DB = Annotated[DBSession, Depends(session)]
 ReadOnlyDB = Annotated[DBSession, Depends(read_only_session)]
 
@@ -228,6 +231,7 @@ def update_settings(data: SettingsIn, db: DB):
             db.scalar(select(func.count()).select_from(model))
             for model in (
                 Recurring,
+                Plan,
                 Purchase,
                 Transaction,
                 StatementImport,
@@ -314,6 +318,8 @@ def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
         )
     if data.purchase_id:
         get(db, Purchase, data.purchase_id)
+    if data.plan_id:
+        get(db, Plan, data.plan_id)
     if data.bill_estimate_id:
         get(db, BillEstimate, data.bill_estimate_id)
     try:
@@ -345,6 +351,18 @@ def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
             409,
             "Advisor memory changed while answering. Start a new conversation and retry.",
         )
+    if data.plan_id:
+        current = db.execute(
+            select(Plan.updated_at).where(Plan.id == data.plan_id)
+        ).scalar_one_or_none()
+        if (
+            current is None
+            or current.isoformat() != context["selected_plan"]["updated_at"]
+        ):
+            raise HTTPException(
+                409,
+                "This plan changed or was deleted while answering. Ask again using the current Planning item.",
+            )
     return {
         "reply": reply,
         "reply_truncated": getattr(reply, "truncated", False),

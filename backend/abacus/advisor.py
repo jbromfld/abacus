@@ -111,6 +111,8 @@ def forecast_comparison(db, month, inputs=None, categories=None):
 
 
 def budget_context(db, request):
+    from .planning import planning_summary
+
     currency = db.get(Settings, 1).currency
     today = local_today()
     inputs = ForecastInputs(db)
@@ -185,6 +187,14 @@ def budget_context(db, request):
     )
     history = spending_history(db, request.month, today, categories)
     comparison = spending_comparison(db, history)
+    goals = planning_summary(db, inputs=inputs)
+    selected = next(
+        (row for row in goals["plans"] if row["id"] == request.plan_id), None
+    )
+    if request.plan_id and selected is None:
+        raise ValueError(
+            "The selected plan is no longer available. Open Planning to choose a current plan."
+        )
     if comparison:
         comparison["budget_impact"] = []
         for period, key in (
@@ -224,6 +234,54 @@ def budget_context(db, request):
             "draft_purchases_are_excluded_unless_selected_as_scenario": True,
         },
         "monthly_forecasts": projections,
+        "selected_plan": {
+            "id": selected["id"],
+            "name": selected["name"],
+            "target_date": selected["target_date"],
+            "category": selected["category"],
+            "amount_minor": selected["amount"],
+            "set_aside_minor": selected["set_aside"],
+            "still_needed_minor": selected["still_needed"],
+            "monthly_needed_minor": selected["monthly_needed"],
+            "status": selected["status"],
+            "updated_at": selected["updated_at"],
+        }
+        if selected
+        else None,
+        "planning_goals": {
+            "basis": goals["basis"],
+            "savings_month": goals["savings_month"],
+            "saved_savings_minor": goals["savings"],
+            "set_aside_minor": goals["set_aside"],
+            "free_savings_minor": goals["free_savings"],
+            "total_planned_minor": goals["total_planned"],
+            "plans": [
+                {
+                    "name": row["name"],
+                    "target_date": row["target_date"],
+                    "category": row["category"],
+                    "amount_minor": row["amount"],
+                    "set_aside_minor": row["set_aside"],
+                    "still_needed_minor": row["still_needed"],
+                }
+                for row in goals["plans"][:20]
+            ],
+            "additional_plans_omitted": max(0, len(goals["plans"]) - 20),
+            "projection": {
+                "basis": goals["projection"]["basis"],
+                "income_complete": goals["projection"]["income_complete"],
+                "months": [
+                    {
+                        "month": row["month"],
+                        "balance_minor": row["balance"],
+                        "plan_payments_minor": row["plan_payments"],
+                    }
+                    for row in goals["projection"]["months"]
+                ],
+            }
+            if goals["projection"]
+            else None,
+        },
         "annual_income_estimates": [
             {
                 "name": item.name,

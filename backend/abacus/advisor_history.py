@@ -7,9 +7,8 @@ from sqlalchemy import case, func, select
 
 from .budget import ActualWindow, shift_month
 from .category_planning import average
-from .classification import normalize_payee
+from .classification import approved_payee_names, exact_payee, normalize_payee
 from .models import Account, Category, Transaction
-from .payee_matching import load_matching_config
 
 MAX_PAYEES = 20
 
@@ -94,10 +93,10 @@ def spending_history(db, selected_month, today, categories):
         )
         .group_by(period, Transaction.description, Transaction.category_id)
     )
-    patterns, _, _ = load_matching_config()
+    aliases = approved_payee_names(db)
     payees = defaultdict(lambda: defaultdict(int))
     for month, description, category_id, amount in rows:
-        name = normalize_payee(description, patterns) or "Unspecified payee"
+        name = aliases.get((exact_payee(description), "purchase")) or normalize_payee(description) or "Unspecified payee"
         payees[(name, category_id)][month.strftime("%Y-%m")] += int(amount)
     payee_rows = []
     for (payee, category_id), totals in payees.items():

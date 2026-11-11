@@ -37,7 +37,6 @@ import type {
   Account,
   PayeeRule,
   Recurring,
-  Purchase,
   Transaction,
   Forecast,
   ImportJob,
@@ -50,12 +49,10 @@ const AdvisorMemory = lazy(() => import('./AdvisorMemory'));
 const ExpenseBreakdown = lazy(() => import('./ExpenseBreakdown'));
 const BatchUploadDialog = lazy(() => import('./BatchUploadDialog'));
 import { importStage } from './batchStatus';
-import Modal from './Modal';
 import UpcomingBills from './UpcomingBills';
-const BudgetImpactPlanner = lazy(() => import('./BudgetImpactPlanner'));
-import SavingsSettings from './SavingsSettings';
 import AnnualExpectedIncome from './AnnualExpectedIncome';
-import ReserveMonitor from './ReserveMonitor';
+import Planning, { PlanningCategories, PlanningOverview } from './Planning';
+import type { PlanDraft } from './Planning';
 const HistoricalSpending = lazy(() => import('./HistoricalSpending'));
 const ImportReview = lazy(() => import('./ImportReview'));
 import FormEditor from './FormEditor';
@@ -63,7 +60,6 @@ import type { Field, Editor } from './FormEditor';
 import OverviewComparison from './OverviewComparison';
 import YearSummary from './YearSummary';
 import { useWorkspace } from './useWorkspace';
-import type { AdvisorBillPlan } from './api';
 
 const colors = [
   '#548574',
@@ -108,8 +104,11 @@ export default function App() {
     question: string;
     key: number;
   } | null>(null);
-  const [advisorBillPlan, setAdvisorBillPlan] =
-    useState<AdvisorBillPlan | null>(null);
+  const [advisorPlanId, setAdvisorPlanId] = useState<string | null>(null);
+  const [planDraft, setPlanDraft] = useState<{
+    key: number;
+    value: PlanDraft;
+  } | null>(null);
   const [month, setMonth] = useState(monthNow());
   const [spendingMode, setSpendingMode] = useState<
     'breakdown' | 'entries' | 'transactions' | 'historical'
@@ -129,7 +128,6 @@ export default function App() {
     accounts,
     setAccounts,
     recurring,
-    purchases,
     forecast,
     imports,
     loading,
@@ -144,10 +142,6 @@ export default function App() {
   const [uploadAccount, setUploadAccount] = useState('');
   const [uploadPeriod, setUploadPeriod] = useState<string | null>(null);
   const [monitoring, setMonitoring] = useState<string | null>(null);
-  const [preview, setPreview] = useState<{
-    purchase: Purchase;
-    result: Forecast;
-  } | null>(null);
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [overlay, setOverlay] = useState(true);
   const [query, setQuery] = useState('');
@@ -499,42 +493,6 @@ export default function App() {
         });
       },
     });
-  const openPurchase = (p?: Purchase) =>
-    setEditor({
-      title: p ? 'Edit purchase' : 'Plan a purchase',
-      description:
-        'Save an estimate first. Include it when you are ready for it to count toward your forecast.',
-      fields: [
-        { name: 'name', label: 'What are you planning?', value: p?.name },
-        amountField(p?.amount),
-        {
-          name: 'month',
-          label: 'Target month',
-          type: 'month',
-          value: p?.month ?? month,
-        },
-        {
-          name: 'category_id',
-          label: 'Category',
-          value: p?.category_id ?? '',
-          options: categoryOptions,
-        },
-        {
-          name: 'notes',
-          label: 'Notes (optional)',
-          type: 'textarea',
-          value: p?.notes,
-          required: false,
-        },
-      ],
-      submit: async (d) => {
-        await api(p ? `/purchases/${p.id}` : '/purchases', p ? 'PUT' : 'POST', {
-          ...d,
-          amount: minor(d.amount, currency),
-          included: p?.included ?? false,
-        });
-      },
-    });
   const openTransaction = (t?: Transaction) =>
     setEditor({
       title: t ? 'Edit transaction' : 'Record a transaction',
@@ -616,7 +574,7 @@ export default function App() {
     { name: 'Overview', icon: LayoutDashboard },
     { name: 'Spending', icon: ChartNoAxesCombined },
     { name: 'Recurring accounts', icon: Repeat2 },
-    { name: 'Purchase planner', icon: ShoppingBag },
+    { name: 'Planning', icon: ShoppingBag },
     { name: 'Statement imports', icon: Upload },
     ...(settings.advisor_enabled
       ? [{ name: 'Budget advisor', icon: MessageCircle }]
@@ -701,7 +659,7 @@ export default function App() {
                     ? 'Make room for what matters.'
                     : view === 'Recurring accounts'
                       ? 'The regular things.'
-                      : view === 'Purchase planner'
+                      : view === 'Planning'
                         ? 'A little looking ahead.'
                         : view === 'Spending'
                           ? 'See where it goes.'
@@ -716,8 +674,8 @@ export default function App() {
                     ? 'Your month, thoughtfully laid out. One less thing on your mind.'
                     : view === 'Recurring accounts'
                       ? 'Give your bills and income a predictable place.'
-                      : view === 'Purchase planner'
-                        ? 'Estimate purchases and recurring payment changes before adjusting your budget.'
+                      : view === 'Planning'
+                        ? 'A name, an amount, and a date. Make room for what matters.'
                         : view === 'Spending'
                           ? 'Small details, a clearer picture. Explore your spending over time.'
                           : view === 'Statement imports'
@@ -900,12 +858,10 @@ export default function App() {
                         </button>
                       </div>
                     </div>
-                    <ReserveMonitor
-                      collapsible
+                    <PlanningOverview
                       currency={currency}
                       revision={revision}
-                      onConfigure={() => setView('Recurring accounts')}
-                      onChanged={refresh}
+                      onOpen={() => setView('Planning')}
                     />
                     {budgetAlerts.ready &&
                       forecast.deficit &&
@@ -1066,22 +1022,11 @@ export default function App() {
                           </div>
                         </div>
                       </section>
-                      <SavingsSettings
-                        currency={currency}
-                        onChanged={refresh}
-                      />
                     </div>
                     <AnnualExpectedIncome
                       year={Number(month.slice(0, 4))}
                       currency={currency}
                       revision={revision}
-                      onChanged={refresh}
-                    />
-                    <ReserveMonitor
-                      manage
-                      currency={currency}
-                      revision={revision}
-                      onConfigure={() => setView('Settings')}
                       onChanged={refresh}
                     />
                     <section className="panel">
@@ -1243,135 +1188,26 @@ export default function App() {
                     </section>
                   </>
                 )}
-                {view === 'Purchase planner' && (
-                  <>
-                    <ReserveMonitor
-                      currency={currency}
-                      revision={revision}
-                      onConfigure={() => setView('Recurring accounts')}
-                      onChanged={refresh}
-                    />
-                    <BudgetImpactPlanner
-                      currency={currency}
-                      categories={categories}
-                      recurring={recurring}
-                      month={month}
-                      revision={revision}
-                      onChanged={refresh}
-                      onConfigure={() => setView('Recurring accounts')}
-                      onDiscuss={
-                        settings.advisor_enabled
-                          ? (plan) => {
-                              setAdvisorBillPlan(plan);
-                              setView('Budget advisor');
-                            }
-                          : undefined
+                {view === 'Planning' && (
+                  <Planning
+                    advisorEnabled={settings.advisor_enabled}
+                    currency={currency}
+                    revision={revision}
+                    onChanged={refresh}
+                    onDiscuss={(id) => {
+                      if (!settings.advisor_enabled) {
+                        setView('Settings');
+                        return;
                       }
-                    />
-                    <div className="section-head outside">
-                      <div>
-                        <h2>One-time purchases</h2>
-                        <p>
-                          Drafts are possibilities. Included purchases count
-                          toward your forecast.
-                        </p>
-                      </div>
-                      <button onClick={() => openPurchase()}>
-                        <Plus size={17} />
-                        Plan a purchase
-                      </button>
-                    </div>
-                    {!purchases.length ? (
-                      <section className="panel">
-                        <Empty
-                          title="What would you like to make room for?"
-                          action={
-                            <button onClick={() => openPurchase()}>
-                              Add an estimate
-                            </button>
-                          }
-                        >
-                          A trip, a new laptop, or something small. Try it out
-                          here first.
-                        </Empty>
-                      </section>
-                    ) : (
-                      <div className="purchase-grid">
-                        {purchases.map((p) => (
-                          <article className="panel purchase-card" key={p.id}>
-                            <div className="row-top">
-                              <span
-                                className={
-                                  'pill ' + (p.included ? 'included' : '')
-                                }
-                              >
-                                {p.included
-                                  ? 'Included in budget'
-                                  : 'Draft estimate'}
-                              </span>
-                              <div className="grow" />
-                              <button
-                                className="icon"
-                                aria-label={`Edit ${p.name}`}
-                                onClick={() => openPurchase(p)}
-                              >
-                                <Pencil size={16} />
-                              </button>
-                              <button
-                                className="icon"
-                                aria-label={`Delete ${p.name}`}
-                                onClick={() =>
-                                  remove('/purchases/' + p.id, p.name)
-                                }
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                            <h2>{p.name}</h2>
-                            <p>
-                              {catName(p.category_id)} ·{' '}
-                              {monthLabel(p.month, true)}
-                            </p>
-                            <strong className="purchase-amount">
-                              {fmt(p.amount)}
-                            </strong>
-                            {p.notes && <p>{p.notes}</p>}
-                            <div className="purchase-actions">
-                              <button
-                                className="secondary"
-                                onClick={() =>
-                                  void act(async () => {
-                                    setPreview({
-                                      purchase: p,
-                                      result: await api<Forecast>(
-                                        `/forecast?month=${p.month}&preview=${p.id}`,
-                                      ),
-                                    });
-                                  })
-                                }
-                              >
-                                Preview impact
-                              </button>
-                              <button
-                                onClick={() =>
-                                  void act(() =>
-                                    api('/purchases/' + p.id, 'PUT', {
-                                      ...p,
-                                      included: !p.included,
-                                    }),
-                                  )
-                                }
-                              >
-                                {p.included
-                                  ? 'Return to draft'
-                                  : 'Include in budget'}
-                              </button>
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                  </>
+                      setAdvisorPlanId(id);
+                      setView('Budget advisor');
+                    }}
+                    onDeleted={(id) => {
+                      if (advisorPlanId === id) setAdvisorPlanId(null);
+                    }}
+                    initialDraft={planDraft}
+                    onDraftUsed={() => setPlanDraft(null)}
+                  />
                 )}
                 {view === 'Spending' && (
                   <>
@@ -1705,6 +1541,10 @@ export default function App() {
                 {view === 'Settings' && (
                   <div className="settings-grid">
                     <div className="settings-column">
+                      <PlanningCategories
+                        revision={revision}
+                        onChanged={refresh}
+                      />
                       <section className="panel">
                         <div className="section-head">
                           <div>
@@ -1725,11 +1565,6 @@ export default function App() {
                                   data.get('advisor_enabled') === 'on',
                                 advisor_memory_enabled:
                                   data.get('advisor_memory_enabled') === 'on',
-                                reserve_alerts_enabled:
-                                  data.get('reserve_alerts_enabled') === 'on',
-                                reserve_checkpoint_day: Number(
-                                  data.get('reserve_checkpoint_day'),
-                                ),
                               }),
                             );
                           }}
@@ -1804,36 +1639,6 @@ export default function App() {
                               }
                             />
                             Enable optional local advisor memory (Memora)
-                          </label>
-                          <label className="checkbox">
-                            <input
-                              type="checkbox"
-                              name="reserve_alerts_enabled"
-                              defaultChecked={settings.reserve_alerts_enabled}
-                              key={
-                                'reserve' +
-                                String(settings.reserve_alerts_enabled)
-                              }
-                            />
-                            Annual bill reserve alerts
-                          </label>
-                          <label>
-                            Reserve checkpoint day
-                            <input
-                              name="reserve_checkpoint_day"
-                              aria-label="Reserve checkpoint day"
-                              type="number"
-                              min="1"
-                              max="31"
-                              required
-                              defaultValue={settings.reserve_checkpoint_day}
-                              key={'day' + settings.reserve_checkpoint_day}
-                            />
-                            <small>
-                              Previous month’s allocations should reach savings
-                              by this day. Short months use their last day.
-                              Alerts appear only inside the app.
-                            </small>
                           </label>
                           {models.error && (
                             <p className="notice">{models.error}</p>
@@ -2082,12 +1887,15 @@ export default function App() {
                 <div hidden={view !== 'Budget advisor'}>
                   <BudgetAdvisor
                     entry={advisorEntry}
-                    onOpenPlanner={() => setView('Purchase planner')}
-                    billPlan={advisorBillPlan}
+                    planId={advisorPlanId}
+                    onClearPlan={() => setAdvisorPlanId(null)}
+                    onCreatePlan={(value) => {
+                      setPlanDraft({ key: Date.now(), value });
+                      setView('Planning');
+                    }}
                     revision={revision}
                     month={month}
                     currency={currency}
-                    purchases={purchases}
                     model={settings.model}
                     memoryEnabled={settings.advisor_memory_enabled ?? false}
                   />
@@ -2139,34 +1947,6 @@ export default function App() {
               refresh();
             }}
           />
-        )}
-        {preview && (
-          <Modal
-            title="A little room for this?"
-            onClose={() => setPreview(null)}
-          >
-            <p className="muted">
-              {preview.purchase.name} · {monthLabel(preview.purchase.month)}
-            </p>
-            <div className="preview-total">
-              <span>Remaining budget with this purchase</span>
-              <strong className={preview.result.deficit ? 'red' : 'green'}>
-                {fmt(preview.result.remaining)}
-              </strong>
-            </div>
-            <p>
-              {preview.result.deficit
-                ? `This would put the month over budget by ${fmt(-preview.result.remaining)}.`
-                : 'This fits within the current month’s forecast income.'}
-            </p>
-            <p className="muted">
-              The preview counts this purchase once and doesn’t change its
-              status.
-            </p>
-            <div className="modal-actions">
-              <button onClick={() => setPreview(null)}>Done</button>
-            </div>
-          </Modal>
         )}
       </div>
     </Suspense>

@@ -49,6 +49,7 @@ it('never displays November totals under December after its request fails, and s
         },
         actual_deficit: false,
       };
+    if (path === '/planning') return { plans: [] };
     return [];
   });
   render(<App />);
@@ -57,9 +58,7 @@ it('never displays November totals under December after its request fails, and s
     .getByText('Planned expenses')
     .closest('.overview-stats')!;
   expect(stats.children).toHaveLength(3);
-  expect(stats.nextElementSibling).toBe(
-    screen.getByRole('region', { name: 'Overview reserve' }),
-  );
+  expect(screen.getByRole('button', { name: 'Planning' })).toBeInTheDocument();
   await waitFor(() =>
     expect(vi.mocked(api).mock.calls.some(([p]) => p === '/settings')).toBe(
       true,
@@ -146,6 +145,7 @@ it('keeps advisor messages, drafts and in-flight replies mounted while saving a 
       });
     if (path.startsWith('/forecast?'))
       return { ...forecast, month: path.split('=')[1] };
+    if (path === '/planning') return { plans: [] };
     return [];
   });
   render(<App />);
@@ -267,6 +267,7 @@ it('keeps transactions mounted through minute timers and manual refreshes while 
         );
       return [transaction];
     }
+    if (path === '/planning') return { plans: [] };
     return [];
   });
   render(<App />);

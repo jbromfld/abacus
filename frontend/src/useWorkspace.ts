@@ -5,7 +5,6 @@ import type {
   Category,
   Account,
   Recurring,
-  Purchase,
   Forecast,
   ImportSummary,
 } from './api';
@@ -21,7 +20,6 @@ export function useWorkspace(month: string, revision: number) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [recurring, setRecurring] = useState<Recurring[]>([]);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [imports, setImports] = useState<ImportSummary[]>([]);
   const [result, setResult] = useState<{
     month: string;
@@ -42,16 +40,14 @@ export function useWorkspace(month: string, revision: number) {
       api<Category[]>('/categories', 'GET', undefined, controller.signal),
       api<Account[]>('/accounts', 'GET', undefined, controller.signal),
       api<Recurring[]>('/recurring', 'GET', undefined, controller.signal),
-      api<Purchase[]>('/purchases', 'GET', undefined, controller.signal),
       api<ImportSummary[]>('/imports', 'GET', undefined, controller.signal),
     ])
-      .then(([s, c, a, r, p, i]) => {
+      .then(([s, c, a, r, i]) => {
         if (active) {
           setSettings(s);
           setCategories(c);
           setAccounts(a);
           setRecurring(r);
-          setPurchases(p);
           setImports(i);
           setMetadataReady(true);
         }
@@ -107,7 +103,6 @@ export function useWorkspace(month: string, revision: number) {
     accounts,
     setAccounts,
     recurring,
-    purchases,
     imports,
     forecast: current && metadataReady ? result.forecast : null,
     loading: !current || result.loading || metadataLoading,

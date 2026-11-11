@@ -29,15 +29,12 @@ it('keeps web off by default and requires preview consent without sending privat
       entry={null}
       month="2026-11"
       currency="USD"
-      purchases={[]}
       model="local"
-      billPlan={null}
       revision={0}
-      onOpenPlanner={() => {}}
     />,
   );
   const web = screen.getByRole('checkbox', {
-    name: 'Use current web research',
+    name: 'Enable web search',
   });
   await waitFor(() => expect(web).toBeEnabled());
   expect(web).not.toBeChecked();
@@ -52,7 +49,7 @@ it('keeps web off by default and requires preview consent without sending privat
   expect(vi.mocked(api).mock.calls.some(([p]) => p === '/advisor/chat')).toBe(
     false,
   );
-  fireEvent.change(screen.getByLabelText(/Public research topic/), {
+  fireEvent.change(screen.getByLabelText(/Public search topic/), {
     target: { value: ' Miami July 2027 ' },
   });
   fireEvent.click(
@@ -82,7 +79,7 @@ it('keeps web off by default and requires preview consent without sending privat
     research_confirmation: 'preview-token',
   });
   await screen.findByText('Synthetic reply unavailable');
-  fireEvent.change(screen.getByLabelText(/Public research topic/), {
+  fireEvent.change(screen.getByLabelText(/Public search topic/), {
     target: { value: 'Detroit July 2027' },
   });
   expect(
@@ -180,11 +177,8 @@ it('places actual comparisons and projected impact below chat and identifies a t
       entry={null}
       month="2026-11"
       currency="USD"
-      purchases={[]}
       model="local"
-      billPlan={null}
       revision={0}
-      onOpenPlanner={() => {}}
     />,
   );
   fireEvent.change(screen.getByLabelText('Ask about your budget'), {
@@ -204,9 +198,7 @@ it('places actual comparisons and projected impact below chat and identifies a t
   expect(impact.closest('.advisor-main')).toBeTruthy();
   const evidence = screen.getByRole('heading', { name: 'Spending evidence' });
   expect(evidence.closest('.advisor-main')).toBeTruthy();
-  expect(container.querySelector('.advisor-side')).not.toContainElement(
-    evidence,
-  );
+  expect(container.querySelector('.advisor-side')).toBeNull();
   fireEvent.click(
     screen.getByText('Local transaction history used for this answer'),
   );
@@ -216,9 +208,7 @@ it('places actual comparisons and projected impact below chat and identifies a t
   expect(
     screen.getByRole('region', { name: 'Local payee spending history' }),
   ).toHaveTextContent('Local cafe');
-  expect(container.querySelector('.advisor-side')).not.toContainElement(
-    changed,
-  );
+  expect(container.querySelector('.advisor-side')).toBeNull();
   expect(
     container.querySelector('.advisor-chat')!.compareDocumentPosition(changed) &
       Node.DOCUMENT_POSITION_FOLLOWING,
@@ -229,9 +219,7 @@ it('places actual comparisons and projected impact below chat and identifies a t
   expect(
     screen.getByText(/Incomplete imports can understate spending/),
   ).toBeInTheDocument();
-  expect(
-    screen.getByText(/Future estimates use your saved budget/),
-  ).toBeInTheDocument();
+  expect(screen.getByText(/Forecasts are estimates/)).toBeInTheDocument();
 });
 
 it('keeps a timed-out first question visible across budget refreshes and retries without duplicating failed history', async () => {
@@ -239,11 +227,8 @@ it('keeps a timed-out first question visible across budget refreshes and retries
     entry: null,
     month: '2026-11',
     currency: 'USD',
-    purchases: [],
     model: 'local',
-    billPlan: null,
     revision: 0,
-    onOpenPlanner: () => {},
   };
   const { rerender } = render(<BudgetAdvisor {...props} />);
   fireEvent.change(screen.getByLabelText('Ask about your budget'), {
@@ -295,4 +280,44 @@ it('keeps a timed-out first question visible across budget refreshes and retries
   expect(
     screen.queryByText(/This question could not be completed/),
   ).not.toBeInTheDocument();
+});
+
+it('uses a current plan ID and clears a deleted plan without a context dropdown', async () => {
+  const fallback = vi.mocked(api).getMockImplementation()!;
+  let deleted = false;
+  vi.mocked(api).mockImplementation(async (path, ...args) => {
+    if (path === '/planning/one') {
+      if (deleted) throw Object.assign(new Error('Deleted'), { status: 404 });
+      return {
+        id: 'one',
+        name: 'Fall vacation',
+        amount: 240000,
+        target_date: '2027-10-01',
+      };
+    }
+    return fallback(path, ...args);
+  });
+  const clear = vi.fn();
+  const props = {
+    entry: null,
+    month: '2026-11',
+    currency: 'USD',
+    model: 'local',
+    revision: 0,
+    planId: 'one',
+    onClearPlan: clear,
+  };
+  const { rerender } = render(<BudgetAdvisor {...props} />);
+  await screen.findByText('Fall vacation');
+  expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('heading', { name: 'Planner context' }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('heading', { name: 'Travel research' }),
+  ).not.toBeInTheDocument();
+  deleted = true;
+  rerender(<BudgetAdvisor {...props} revision={1} />);
+  await waitFor(() => expect(clear).toHaveBeenCalledOnce());
+  expect(screen.queryByText('Fall vacation')).not.toBeInTheDocument();
 });

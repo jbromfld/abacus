@@ -10,13 +10,15 @@ from decimal import Decimal, InvalidOperation
 
 import pdfplumber
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import select
+from sqlalchemy import Text, cast, func, select, tuple_
+from sqlalchemy.dialects.postgresql import ARRAY
 
 from .classification import apply_description_defaults, apply_payee_rules
 from .db import Session
 from .local_model import ask_model
 from .models import Category, Settings, StatementImport, Transaction
 from .schemas import Kind, TransactionIn
+from .source_keys import csv_fields_key, fingerprint
 
 executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="statement")
 MAX_ROWS = 5000
@@ -169,40 +171,73 @@ def csv_rows(source, mapping, period, currency):
     return apply_description_defaults(rows)
 
 
-def csv_fields_key(source):
-    """All original named CSV fields, with exact string values and no row number.
-
-    Column order is irrelevant; case, whitespace, formatting, and unmapped
-    columns remain significant. PDF source text and manual rows have no key.
-    """
-    original = source.get("original") if isinstance(source, dict) else None
-    if (
-        not isinstance(original, dict)
-        or not original
-        or not all(
-            isinstance(k, str) and isinstance(v, str) for k, v in original.items()
-        )
-    ):
-        return None
-    return json.dumps(
-        original, sort_keys=True, ensure_ascii=False, separators=(",", ":")
-    )
-
-
 def validate_rows(db, rows, account_id):
     categories = set(db.scalars(select(Category.id)).all())
     seen = set()
     seen_csv = set()
     imported_csv = set()
-    if any(csv_fields_key(row.get("source")) is not None for row in rows):
+    raw_keys = {
+        key for row in rows if (key := csv_fields_key(row.get("source"))) is not None
+    }
+
+    hashes = sorted({fingerprint(key) for key in raw_keys})
+    for offset in range(0, len(hashes), 500):
         for provenance in db.scalars(
             select(Transaction.provenance).where(
-                Transaction.account_id == account_id, Transaction.import_id.is_not(None)
+                Transaction.account_id == account_id,
+                Transaction.import_id.is_not(None),
+                Transaction.csv_fingerprint.in_(hashes[offset : offset + 500]),
             )
-        ).all():
+        ):
             key = csv_fields_key(provenance.get("source", {}))
-            if key is not None:
+            if key in raw_keys:
                 imported_csv.add(key)
+    # Narrow candidates using indexed account/date plus amount/type. Keep the
+    # database's case-insensitive matching semantics rather than Python casefold.
+    candidates = set()
+    for row in rows:
+        if csv_fields_key(row.get("source")) is not None:
+            continue
+        try:
+            value = TransactionIn.model_validate({**row, "account_id": account_id})
+            candidates.add((value.date, value.amount, value.kind))
+        except ValidationError:
+            pass
+    existing_keys = set()
+    candidates = sorted(candidates)
+    for offset in range(0, len(candidates), 500):
+        matches = db.execute(
+            select(
+                Transaction.date,
+                func.lower(Transaction.description).label("description"),
+                Transaction.amount,
+                Transaction.kind,
+            ).where(
+                Transaction.account_id == account_id,
+                tuple_(Transaction.date, Transaction.amount, Transaction.kind).in_(
+                    candidates[offset : offset + 500]
+                ),
+            )
+        ).all()
+        existing_keys.update(tuple(m) for m in matches)
+    description_values = sorted(
+        {
+            str(r.get("description", "")).strip()
+            for r in rows
+            if csv_fields_key(r.get("source")) is None
+        }
+    )
+    normalized = {}
+    for offset in range(0, len(description_values), 500):
+        values = description_values[offset : offset + 500]
+        normalized.update(
+            db.execute(
+                select(
+                    func.unnest(cast(values, ARRAY(Text))),
+                    func.lower(func.unnest(cast(values, ARRAY(Text)))),
+                )
+            ).all()
+        )
     result = []
     for row in rows:
         item = dict(row)
@@ -226,23 +261,16 @@ def validate_rows(db, rows, account_id):
                 validated.amount,
                 validated.kind,
             )
-            existing = None
-            if raw_key is None:
-                existing = db.scalar(
-                    select(Transaction.id)
-                    .where(
-                        Transaction.account_id == account_id,
-                        Transaction.date == validated.date,
-                        Transaction.description.ilike(
-                            validated.description.replace("%", "\\%").replace(
-                                "_", "\\_"
-                            )
-                        ),
-                        Transaction.amount == validated.amount,
-                        Transaction.kind == validated.kind,
-                    )
-                    .limit(1)
+            existing = (
+                raw_key is None
+                and (
+                    validated.date,
+                    normalized.get(validated.description, validated.description),
+                    validated.amount,
+                    validated.kind,
                 )
+                in existing_keys
+            )
             item["duplicate"] = bool(item["duplicate"] or existing or key in seen)
             seen.add(key)
         except ValidationError as exc:

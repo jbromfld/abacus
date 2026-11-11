@@ -178,3 +178,50 @@ def test_concurrent_overlapping_commits_are_serialized_per_card(
     assert sum(o["added"] for o in outcomes) == 1
     assert sum(o["skipped"] for o in outcomes) == 1
     assert len(client.get("/api/transactions").json()) == 1
+
+
+def test_duplicate_validation_queries_are_batched(db, account_id, category_id):
+    from datetime import date
+
+    from abacus.db import engine
+    from abacus.imports import validate_rows
+    from abacus.models import Transaction
+    from sqlalchemy import event
+
+    db.add(
+        Transaction(
+            date=date(2026, 1, 2),
+            description="Literal 100%_Store",
+            amount=100,
+            kind="purchase",
+            category_id=category_id,
+            account_id=account_id,
+        )
+    )
+    db.commit()
+    statements = []
+
+    def count(connection, cursor, statement, parameters, context, many):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        rows = validate_rows(
+            db,
+            [
+                dict(
+                    date="2026-01-02",
+                    description="literal 100%_store",
+                    amount=100,
+                    kind="purchase",
+                    category_id=category_id,
+                )
+                for _ in range(5000)
+            ],
+            account_id,
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+    assert rows[0]["duplicate"]
+    assert all(row["duplicate"] for row in rows)
+    assert len(statements) <= 4

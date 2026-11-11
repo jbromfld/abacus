@@ -62,7 +62,7 @@ def funding_coverage(row, source, inputs, start, today):
     while period <= last and target >= today:
         if period != last or target.day > 1:
             amount = (
-                scheduled_amount(source, inputs.changes, period)
+                scheduled_amount(source, inputs.changes_by_schedule[source.id], period)
                 if source.distribute_annual
                 else 0
             )
@@ -72,7 +72,9 @@ def funding_coverage(row, source, inputs, start, today):
     expected = sum(c["amount"] for c in contributions)
     projected = row["set_aside"] + expected if row["set_aside"] is not None else None
     return dict(
-        monthly_allocation=scheduled_amount(source, inputs.changes, first)
+        monthly_allocation=scheduled_amount(
+            source, inputs.changes_by_schedule[source.id], first
+        )
         if source.distribute_annual
         else 0,
         projected_contributions=expected,
@@ -108,7 +110,9 @@ def cash_projection(inputs, setting, plans, start, months):
             if (source.id, period[:4]) in linked:
                 original, _, _ = cash_timing(
                     period,
-                    scheduled_amount(source, inputs.changes, period),
+                    scheduled_amount(
+                        source, inputs.changes_by_schedule[source.id], period
+                    ),
                     [source],
                     inputs.changes,
                 )

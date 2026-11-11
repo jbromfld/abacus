@@ -859,7 +859,11 @@ def forecast_window(
     actuals = ActualWindow(db, start, last)
     setting = db.get(Settings, 1)
     savings = setting.savings_balance if include_savings else None
-    funding = planning_summary(db, inputs=inputs) if include_savings else None
+    funding = (
+        planning_summary(db, inputs=inputs, include_projection=False)
+        if include_savings
+        else None
+    )
     running = (
         cash_projection(inputs, setting, funding["plans"], start, months)
         if funding

@@ -168,7 +168,7 @@ def plan_row(item, categories, schedules):
     )
 
 
-def planning_summary(db, inputs=None, projection_start=None):
+def planning_summary(db, inputs=None, projection_start=None, include_projection=True):
     today = local_today()
     setting = db.get(Settings, 1)
     categories = {
@@ -298,7 +298,7 @@ def planning_summary(db, inputs=None, projection_start=None):
                 )
             )
     projection = None
-    if known and setting.savings_month:
+    if include_projection and known and setting.savings_month:
         start = projection_start or setting.savings_month
         months = min(24, (9998 - int(start[:4])) * 12 + 13 - int(start[5:]))
         projection = cash_projection(inputs, setting, rows, start, months)

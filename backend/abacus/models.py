@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -268,9 +269,11 @@ class Transaction(Base):
     category_id: Mapped[str | None] = mapped_column(ForeignKey("categories.id"))
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"))
     import_id: Mapped[str | None] = mapped_column(ForeignKey("imports.id"), index=True)
+    csv_fingerprint: Mapped[str | None] = mapped_column(String(64))
     provenance: Mapped[dict] = mapped_column(JSON, default=dict)
     __table_args__ = (
         Index("ix_transactions_account_date", "account_id", "date"),
+        Index("ix_transactions_account_csv", "account_id", "csv_fingerprint"),
         CheckConstraint("amount > 0"),
         CheckConstraint("kind IN ('purchase','refund','fee','payment','transfer')"),
         CheckConstraint("kind IN ('payment','transfer') OR category_id IS NOT NULL"),
@@ -336,3 +339,12 @@ class PayeeRule(Base):
         UniqueConstraint("payee", "kind"),
         CheckConstraint("kind IN ('purchase','refund','fee')"),
     )
+
+
+@event.listens_for(Transaction, "before_insert")
+@event.listens_for(Transaction, "before_update")
+def update_csv_fingerprint(mapper, connection, target):
+    from .source_keys import csv_fields_key, fingerprint
+
+    key = csv_fields_key((target.provenance or {}).get("source"))
+    target.csv_fingerprint = fingerprint(key) if key is not None else None

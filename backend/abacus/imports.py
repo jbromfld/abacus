@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from .classification import apply_description_defaults, apply_payee_rules
 from .db import Session
 from .local_model import ask_model
+from .model_tracing import model_workflow
 from .models import Category, Settings, StatementImport, Transaction
 from .schemas import Kind, TransactionIn
 from .source_keys import csv_fields_key, fingerprint
@@ -282,6 +283,7 @@ def validate_rows(db, rows, account_id):
     return result
 
 
+@model_workflow("statement_import")
 def process_import(import_id, token=None):
     # Release the database connection while the local model works.
     with Session() as db:

@@ -12,6 +12,7 @@ from .budget import ActualWindow, ForecastInputs, forecast, shift_month
 from .category_planning import category_averages
 from .clock import local_today
 from .local_model import chat_with_model
+from .model_tracing import model_workflow
 from .models import Category, Settings
 from .research import PublicResearchRequest, gather_research
 from .savings import advisor_savings_projection
@@ -596,6 +597,7 @@ def model_snapshot(context, question=""):
     return formatted_tree(model_context)
 
 
+@model_workflow("budget_advisor")
 def answer_question(model, request, context):
     # Do not pass chat, history, budget context, or model output to web research.
     public_request = PublicResearchRequest(

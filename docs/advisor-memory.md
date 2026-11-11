@@ -189,3 +189,8 @@ The example with specific Entertainment/Dining cuts and a later broader savings
 question becomes a review item, retaining mortgage/car constraints and dated
 amounts in the sources. Neither a question nor an advisor recommendation becomes
 an accepted commitment or achieved savings automatically.
+
+Optional [LangSmith content capture](operations.md#optional-langsmith-model-tracing)
+also applies to memory-drafting and dreaming model calls. It is off by default;
+enabling it exports model inputs/outputs, including recalled notes or retained
+sources present in those prompts. Babar's MCP subprocess remains untraced.

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from .db import Session, session
 from .local_model import ModelReplyLimitError, chat_with_model
+from .model_tracing import model_workflow
 from .models import Category, PayeeGroup, PayeeReview, PayeeRule, Settings, uid
 from .payee_matching import candidate_batches
 from .schemas import Name
@@ -139,6 +140,7 @@ def consolidate(proposals, records):
     return result
 
 
+@model_workflow("payee_review")
 def suggest_batch(model, batch):
     proposals = []
     # Compact per-batch IDs reduce output tokens and cannot address any

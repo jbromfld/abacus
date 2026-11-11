@@ -56,6 +56,7 @@ from .funding import cash_projection
 from .import_api import router as import_router
 from .local_model import available_models
 from .memory_api import router as memory_router
+from .model_tracing import flush_model_traces
 from .models import (
     Account,
     AmountChange,
@@ -144,6 +145,7 @@ async def lifespan(app):
         with suppress(asyncio.CancelledError):
             await task
         await asyncio.to_thread(close_memory)
+        await asyncio.to_thread(flush_model_traces)
 
 
 def record_due_in_session():

@@ -11,6 +11,7 @@ A local personal budget app: recurring income and bills, purchase estimates, act
 - [Setup, configuration, upgrades, backups, and troubleshooting](docs/operations.md)
 - [Complete API reference](docs/api.md)
 - [Remembered payee groups, local-model review, and classification](training/README.md)
+- [Optional LangSmith model tracing](docs/operations.md#optional-langsmith-model-tracing)
 - [Optional local advisor memory and dreaming with Memora](docs/advisor-memory.md)
 - [Unified Planning: annual bill funding, savings goals, sliders, and advisor research](docs/reserve-redesign.md)
 

@@ -15,6 +15,7 @@ from .db import Session
 from .local_model import chat_with_model
 from .memory_types import MemoryNoteIn
 from .model_activity import background_model
+from .model_tracing import model_workflow
 from .models import MemoryDream, Settings
 
 # Every manual memory/settings mutation shares this gate with the short commit
@@ -173,6 +174,7 @@ def tick():
         _running.release()
 
 
+@model_workflow("memory_dreaming")
 def run_pass():
     with Session() as db:
         with gate:

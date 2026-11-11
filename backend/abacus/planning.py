@@ -19,6 +19,7 @@ from .clock import local_today
 from .db import session
 from .funding import annual_occurrence, cash_projection, funding_coverage
 from .local_model import chat_with_model
+from .model_tracing import model_workflow
 from .models import BillPayment, Plan, PlanCategory, Recurring, Settings
 from .responses import PlanningOut
 from .schemas import BillDate, CategoryIn, Money, Month, Name
@@ -43,6 +44,7 @@ class DraftRequest(BaseModel):
 
 
 @router.post("/draft")
+@model_workflow("planning_draft")
 def draft_plan(data: DraftRequest, db: DB):
     setting = db.get(Settings, 1)
     if not setting.advisor_enabled or not setting.model:

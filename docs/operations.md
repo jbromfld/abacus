@@ -553,3 +553,46 @@ Current Planning goals, savings balances, recurring bills, imports, and transact
 are preserved. Downgrade recreates empty legacy tables; deleted records require
 a database backup to recover. The retired endpoints return 404 and removed
 request fields return validation errors. Rebuild the UI with the backend update.
+
+## Optional LangSmith model tracing
+
+Abacus can export one LangSmith `llm` run per local model call. Generation still
+uses loopback Ollama. Traces are tagged by workflow: Budget advisor, statement
+extraction, payee review, Planning drafts, memory drafts, and memory dreaming.
+Model discovery is not a generation and is not traced. Generation latency excludes
+time spent waiting for the local model slot. Token counts come from Ollama's final
+response when available; missing counts are not estimated. Truncated responses and
+error types are recorded. Tracing failures never retry a model call or change its
+result, exception, or structured-output validation.
+
+Set these values in the private project `.env`, then restart Abacus:
+
+```dotenv
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your-own-langsmith-api-key
+LANGSMITH_PROJECT=abacus
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_CAPTURE_CONTENT=false
+# LANGSMITH_WORKSPACE_ID=your-workspace-id
+```
+
+Tracing defaults off and requires both the explicit tracing flag and an API key.
+An inherited SDK tracing context or legacy `LANGCHAIN_TRACING_V2` flag does not
+opt Abacus in. Configure your region or self-hosted API with `LANGSMITH_ENDPOINT`;
+HTTPS is required except for a loopback HTTP endpoint. SDK exports are batched,
+use bounded network timeouts, and are flushed briefly during normal shutdown.
+
+With `LANGSMITH_CAPTURE_CONTENT=false`, only model/workflow identifiers, generation
+timing, token counts, truncation and exception class are exported. Exception
+messages and tracebacks are excluded because they can contain private information.
+Credentials and database/runtime configuration are never included in run inputs.
+
+Set `LANGSMITH_CAPTURE_CONTENT=true` only if you want LangSmith to receive full
+model prompts and outputs. These can contain budget figures, transaction/payee or
+statement data, approved memories and retained source evidence, chat history,
+research excerpts, and model-generated replies. This is a separate opt-in from
+web research and changes the otherwise local handling of model content. It does
+not change Babar's configuration or pass tracing credentials to its MCP child.
+No model downloads or cloud generation fallback are introduced.
+
+Implementation uses the official [LangSmith RunTree API](https://reference.langchain.com/python/langsmith/run_trees/RunTree).

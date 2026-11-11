@@ -8,6 +8,7 @@ import httpx
 
 from .config import local_config
 from .model_activity import interactive_model
+from .model_tracing import record_model_usage, traced_model
 
 
 def ollama_url():
@@ -40,6 +41,7 @@ def available_models():
 
 
 @interactive_model
+@traced_model("abacus.ollama.extract")
 def ask_model(model, prompt, schema):
     if not model:
         raise ValueError(
@@ -67,7 +69,9 @@ def ask_model(model, prompt, schema):
             },
         )
         response.raise_for_status()
-        return json.loads(response.json()["message"]["content"])
+        payload = response.json()
+        record_model_usage(payload)
+        return json.loads(payload["message"]["content"])
 
 
 class ModelReply(str):
@@ -82,6 +86,7 @@ class ModelReplyLimitError(ValueError):
 
 
 @interactive_model
+@traced_model("abacus.ollama.chat")
 def chat_with_model(model, messages, schema=None, *, max_tokens=None):
     if not model or model not in available_models():
         raise ValueError("Choose an installed local model in Settings.")
@@ -150,6 +155,7 @@ def chat_with_model(model, messages, schema=None, *, max_tokens=None):
                     )
                 parts.append(content)
                 if chunk.get("done"):
+                    record_model_usage(chunk)
                     truncated = chunk.get("done_reason") == "length"
                     complete = True
                     break

@@ -18,6 +18,7 @@ from .clock import local_today
 from .db import session
 from .local_model import chat_with_model
 from .memory_types import MemoryNoteIn
+from .model_tracing import model_workflow
 from .models import Settings
 
 router = APIRouter(prefix="/api/advisor/memory")
@@ -104,6 +105,7 @@ def status(db: DB):
 
 
 @router.post("/draft")
+@model_workflow("memory_draft")
 def draft(data: DraftIn, db: DB):
     model = enabled(db)
     source = data.user_message[:1000]

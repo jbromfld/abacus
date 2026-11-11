@@ -12,12 +12,14 @@ import SavingsSettings from './SavingsSettings';
 import Modal from './Modal';
 
 export type PlanDraft = {
+  id?: string;
   warning?: string;
   name?: string;
   amount?: number | null;
   target_date?: string | null;
   category_id?: string | null;
   recurring_id?: string | null;
+  date_from_bill?: boolean;
 };
 export type PlanItem = {
   id: string;
@@ -33,6 +35,10 @@ export type PlanItem = {
   monthly_needed: number | null;
   status: string;
   contribution_count: number;
+  monthly_allocation?: number;
+  projected_contributions?: number;
+  projected_funding?: number | null;
+  funding_gap?: number | null;
 };
 export type PlanningData = {
   savings: number | null;
@@ -49,11 +55,13 @@ export type PlanningData = {
     name: string;
     amount: number;
     target_date: string;
+    plan_id?: string | null;
+    date_from_bill?: boolean;
   }[];
   projection: null | {
     basis: string;
     income_complete: boolean;
-    months: { month: string; balance: number; plan_payments: number }[];
+    months: { month: string; balance: number | null; plan_payments: number }[];
   };
 };
 const dateLabel = (date: string) =>
@@ -78,6 +86,7 @@ function PlanForm({
   onSave: () => void;
   chooseAnnual?: boolean;
 }) {
+  const [planId, setPlanId] = useState(initial.id);
   const [name, setName] = useState(initial.name ?? '');
   const [amount, setAmount] = useState(
     initial.amount ? inputAmount(initial.amount, currency) : '',
@@ -89,11 +98,14 @@ function PlanForm({
       '',
   );
   const [recurring, setRecurring] = useState(initial.recurring_id ?? null);
+  const [dateFromBill, setDateFromBill] = useState(
+    initial.date_from_bill ?? !!initial.recurring_id,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const requestId = useRef(crypto.randomUUID());
   return (
-    <Modal title={initial.id ? 'Edit plan' : 'Add a plan'} onClose={onClose}>
+    <Modal title={planId ? 'Edit plan' : 'Add a plan'} onClose={onClose}>
       <form
         className="plan-form"
         onSubmit={async (e) => {
@@ -102,15 +114,15 @@ function PlanForm({
           setError('');
           try {
             await api(
-              '/planning' + (initial.id ? '/' + initial.id : ''),
-              initial.id ? 'PUT' : 'POST',
+              '/planning' + (planId ? '/' + planId : ''),
+              planId ? 'PUT' : 'POST',
               {
                 name,
                 amount: minor(amount, currency),
                 target_date: target,
                 category_id: category || null,
                 recurring_id: recurring,
-                ...(!initial.id ? { request_id: requestId.current } : {}),
+                ...(!planId ? { request_id: requestId.current } : {}),
               },
             );
             onSave();
@@ -123,7 +135,7 @@ function PlanForm({
         }}
       >
         {initial.warning && <p className="notice">{initial.warning}</p>}
-        {chooseAnnual && (
+        {(chooseAnnual || initial.id) && (
           <label>
             Use an annual expense
             <select
@@ -134,20 +146,43 @@ function PlanForm({
                 const source = data.annual_expenses.find(
                   (item) => item.id === e.target.value,
                 );
-                if (!source) return;
+                if (!source) {
+                  setRecurring(null);
+                  return;
+                }
+                const existing = data.plans.find(
+                  (p) => p.id === source.plan_id,
+                );
+                setPlanId(initial.id ?? existing?.id);
                 setRecurring(source.id);
-                setName(source.name);
+                setName(existing?.name ?? source.name);
                 setAmount(inputAmount(source.amount, currency));
-                setTarget(source.target_date);
+                setTarget(
+                  source.date_from_bill === false ? '' : source.target_date,
+                );
+                setDateFromBill(source.date_from_bill !== false);
                 setCategory(
                   data.categories.find((c) => c.id === 'tax')?.id ?? '',
                 );
               }}
             >
-              <option value="">Choose an expense</option>
+              <option value="">Independent plan</option>
+              {recurring &&
+                !data.annual_expenses.some((p) => p.id === recurring) && (
+                  <option value={recurring}>{initial.name} (linked)</option>
+                )}
               {data.annual_expenses.map((item) => (
-                <option key={item.id} value={item.id}>
+                <option
+                  key={item.id}
+                  value={item.id}
+                  disabled={
+                    !!initial.id &&
+                    !!item.plan_id &&
+                    item.plan_id !== initial.id
+                  }
+                >
                   {item.name}
+                  {item.plan_id ? ' · already tracked' : ''}
                 </option>
               ))}
             </select>
@@ -171,7 +206,7 @@ function PlanForm({
           currency={currency}
           value={amount}
           onChange={setAmount}
-          disabled={busy}
+          disabled={busy || !!recurring}
         />
         <div className="form-grid">
           <label>
@@ -183,7 +218,7 @@ function PlanForm({
               max="9998-12-31"
               required
               value={target}
-              disabled={busy}
+              disabled={busy || (!!recurring && dateFromBill)}
               onChange={(e) => setTarget(e.target.value)}
             />
           </label>
@@ -209,7 +244,10 @@ function PlanForm({
             Linked annual expense:{' '}
             {data.annual_expenses.find((item) => item.id === recurring)?.name ??
               initial.name}
-            . Its bill stays counted once.
+            . The amount follows the annual bill automatically.{' '}
+            {dateFromBill
+              ? 'The date also follows the bill. Edit them in Recurring accounts.'
+              : 'This bill has no due date; choose a target date here.'}
           </p>
         )}
         {error && (
@@ -418,7 +456,13 @@ export default function Planning({
                           ? 'Set savings to track funding'
                           : `${fmt(item.set_aside)} set aside · ${fmt(item.still_needed)} to go`}
                       </span>
-                      {item.status === 'funded' ? (
+                      {item.status === 'paid' || item.status === 'inactive' ? (
+                        <strong>
+                          {item.status === 'paid'
+                            ? 'Paid'
+                            : 'Bill no longer scheduled'}
+                        </strong>
+                      ) : item.status === 'funded' ? (
                         <strong>Funded</strong>
                       ) : item.status === 'overdue' ? (
                         <strong className="red">Past target date</strong>
@@ -428,11 +472,16 @@ export default function Planning({
                             {fmt(item.monthly_needed)}
                             {item.contribution_count === 0
                               ? ' needed now'
-                              : ' / month suggested'}
+                              : item.recurring_id
+                                ? ' extra / month needed'
+                                : ' / month suggested'}
                           </span>
                         )
                       )}
                     </div>
+                    {item.monthly_allocation !== undefined && (
+                      <AnnualFunding item={item} currency={currency} />
+                    )}
                     <div className="button-group">
                       <button
                         className="secondary small"
@@ -496,7 +545,13 @@ export default function Planning({
                       <tr key={row.month}>
                         <th>{row.month}</th>
                         <td>{fmt(row.plan_payments)}</td>
-                        <td className={row.balance < data.floor ? 'red' : ''}>
+                        <td
+                          className={
+                            row.balance !== null && row.balance < data.floor
+                              ? 'red'
+                              : ''
+                          }
+                        >
                           {fmt(row.balance)}
                         </td>
                       </tr>
@@ -644,43 +699,142 @@ export function PlanningCategories({
   );
 }
 
+export function AnnualFunding({
+  item,
+  currency,
+}: {
+  item: PlanItem;
+  currency: string;
+}) {
+  const fmt = (value: number | null | undefined) =>
+    value == null ? 'Not set' : money(value, currency);
+  return (
+    <div className="annual-funding">
+      <dl className="annual-funding-values">
+        <div>
+          <dt>Budgeted monthly</dt>
+          <dd>{fmt(item.monthly_allocation)}</dd>
+        </div>
+        <div>
+          <dt>Set aside now</dt>
+          <dd>{fmt(item.set_aside)}</dd>
+        </div>
+        <div>
+          <dt>Projected contributions</dt>
+          <dd>{fmt(item.projected_contributions)}</dd>
+        </div>
+        <div>
+          <dt>Projected by deadline</dt>
+          <dd>{fmt(item.projected_funding)}</dd>
+        </div>
+      </dl>
+      {item.funding_gap != null && (
+        <p className={item.funding_gap > 0 ? 'notice danger' : 'notice'}>
+          {item.funding_gap > 0
+            ? `${fmt(item.funding_gap)} additional funding needed by ${dateLabel(item.target_date)}`
+            : 'On track with budgeted contributions'}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function PlanningOverview({
   currency,
   revision,
+  month,
   onOpen,
+  onChanged,
 }: {
   currency: string;
   revision: number;
+  month: string;
   onOpen: () => void;
+  onChanged: () => void;
 }) {
-  const [data, setData] = useState<PlanningData | null>(null);
+  const [result, setResult] = useState<{
+    month: string;
+    data: PlanningData;
+  } | null>(null);
+  const data = result?.month === month ? result.data : null;
+  const [error, setError] = useState<{ month: string; message: string } | null>(
+    null,
+  );
   useEffect(() => {
     let active = true;
-    api<PlanningData>('/planning')
-      .then((value) => active && setData(value))
-      .catch(() => {});
+    api<PlanningData>(`/planning?month=${month}`)
+      .then((value) => {
+        if (active) {
+          setResult({ month, data: value });
+          setError(null);
+        }
+      })
+      .catch((e) => {
+        if (active) setError({ month, message: e.message });
+      });
     return () => {
       active = false;
     };
-  }, [revision]);
-  if (!data || !data.plans.length) return null;
+  }, [revision, month]);
+  if (error?.month === month)
+    return (
+      <p role="alert" className="notice danger">
+        Funding coverage unavailable: {error.message}
+      </p>
+    );
+  if (!data) return null;
+  const annual = data.plans.filter((p) => p.monthly_allocation !== undefined);
+  const point = data.projection?.months.find((p) => p.month === month);
   return (
-    <section className="panel planning-overview">
+    <details
+      className="panel planning-overview"
+      open={annual.some((p) => (p.funding_gap ?? 0) > 0) || undefined}
+    >
+      <summary>Annual expense funding & Planning</summary>
       <div className="section-head">
-        <div>
-          <h2>Planning</h2>
-          <p>
-            {data.plans.length} plans · {money(data.total_planned, currency)}{' '}
-            planned ·{' '}
-            {data.set_aside === null
-              ? 'Set savings to track funding'
-              : money(data.set_aside, currency) + ' set aside'}
-          </p>
-        </div>
+        <p>
+          {data.plans.length} plans · {money(data.total_planned, currency)}{' '}
+          planned ·{' '}
+          {data.set_aside === null
+            ? 'Set savings to track funding'
+            : money(data.set_aside, currency) + ' set aside'}
+        </p>
         <button className="secondary small" onClick={onOpen}>
           Open Planning
         </button>
       </div>
-    </section>
+      {annual.map((item) => (
+        <article key={item.id} className="plan-card">
+          <h3>
+            {item.name} · {money(item.amount, currency)} due{' '}
+            {dateLabel(item.target_date)}
+          </h3>
+          <AnnualFunding item={item} currency={currency} />
+        </article>
+      ))}
+      {!annual.length && (
+        <p>
+          Track annual bills in Planning to see their funding coverage and
+          upcoming shortfalls.
+        </p>
+      )}
+      {point?.balance != null && (
+        <p className={point.balance < data.floor ? 'notice danger' : 'notice'}>
+          Projected end-of-month cash: {money(point.balance, currency)}
+          {!data.projection?.income_complete
+            ? ' · incomplete income forecast'
+            : ''}
+          .
+        </p>
+      )}
+      <p className="planning-note">
+        Assumes future contributions arrive before payment and are not already
+        in your recorded balance. Other categories are not reassigned.
+      </p>
+      <details>
+        <summary>Update actual savings</summary>
+        <SavingsSettings currency={currency} onChanged={onChanged} />
+      </details>
+    </details>
   );
 }

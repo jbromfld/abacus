@@ -29,21 +29,23 @@ def aliases(db, category_id, monkeypatch):
 
     def model(_model, messages, **kwargs):
         records = json.loads(messages[-1]["content"])
+        schema = kwargs["schema"]["properties"]["assignments"]
+        assert (
+            set(schema["properties"])
+            == set(schema["required"])
+            == {row["id"] for row in records}
+        )
+        assert schema["additionalProperties"] is False
+        assert kwargs["max_tokens"] == 2048
         assert all(
             set(row) == {"id", "payee", "kind", "category_id", "category", "group_name"}
             for row in records
         )
         return json.dumps(
-            {
-                "groups": [
-                    dict(
-                        name="Whole Foods",
-                        member_ids=[row["id"] for row in records],
-                        category_id=None,
-                        reason="Shared merchant spelling and location variants.",
-                    )
-                ]
-            }
+            dict(
+                assignments={row["id"]: "Whole Foods" for row in records},
+                reason="Shared merchant spelling and location variants.",
+            )
         )
 
     monkeypatch.setattr(payee_review, "chat_with_model", model)
@@ -212,7 +214,7 @@ def test_review_can_exclude_members_rename_and_ungroup_without_forgetting_aliase
 
 
 @pytest.mark.parametrize(
-    "invalid", ["invented", "duplicate", "category", "regex", "mixed_kind"]
+    "invalid", ["invented", "missing", "duplicate", "category", "regex", "mixed_kind"]
 )
 def test_invalid_model_proposals_never_change_memory(
     client, db, aliases, monkeypatch, invalid
@@ -228,20 +230,25 @@ def test_invalid_model_proposals_never_change_memory(
     def bad_model(_model, messages, **kwargs):
         ids = [row["id"] for row in json.loads(messages[-1]["content"])]
         result = dict(
-            name="Invalid",
-            member_ids=ids,
-            category_id=None,
-            reason="Untrusted proposal",
+            assignments={key: "Invalid" for key in ids}, reason="Untrusted proposal"
         )
         if invalid == "invented":
-            result["member_ids"] = ["invented", ids[0]]
+            result["assignments"]["invented"] = "Invalid"
+        if invalid == "missing":
+            del result["assignments"][ids[0]]
         if invalid == "duplicate":
-            result["member_ids"] = [ids[0], ids[0]]
+            return (
+                '{"assignments":{'
+                + ",".join(json.dumps(key) + ':"Invalid"' for key in ids)
+                + ","
+                + json.dumps(ids[0])
+                + ':"Invalid"},"reason":"duplicate"}'
+            )
         if invalid == "category":
             result["category_id"] = "missing-category"
         if invalid == "regex":
             result["regex"] = ".*"
-        return json.dumps({"groups": [result]})
+        return json.dumps(result)
 
     monkeypatch.setattr(payee_review, "chat_with_model", bad_model)
     started = client.post("/api/payee-review/reviews").json()
@@ -293,8 +300,166 @@ def test_candidates_are_bounded_and_do_not_mix_transaction_types():
         for n in range(100)
     ]
     batches = candidate_batches(rows)
-    assert batches and all(len(batch) <= 24 for batch in batches)
+    assert batches and all(len(batch) <= 8 for batch in batches)
     assert all(len({row["kind"] for row in batch}) == 1 for batch in batches)
     assert {row["id"] for batch in batches for row in batch} == {
         row["id"] for row in rows
     }
+
+
+def test_reply_limit_retries_smaller_batches_without_applying_changes(
+    client, db, aliases, monkeypatch
+):
+    from abacus.local_model import ModelReplyLimitError
+
+    db.add_all(
+        [
+            PayeeRule(
+                payee=f"whole foods branch {n}",
+                kind="purchase",
+                category_id=aliases[0].category_id,
+            )
+            for n in range(6)
+        ]
+    )
+    db.commit()
+    calls = []
+    model = payee_review.chat_with_model
+
+    def limited(_model, messages, **kwargs):
+        records = json.loads(messages[-1]["content"])
+        calls.append(len(records))
+        assert kwargs["max_tokens"] == 2048
+        if len(records) > 5:
+            raise ModelReplyLimitError("truncated JSON")
+        return model(_model, messages, **kwargs)
+
+    monkeypatch.setattr(payee_review, "chat_with_model", limited)
+    result = preview(client)
+    assert calls[0] == 8 and len(calls) > 1
+    assert all(n <= 5 for n in calls[1:])
+    assert result["progress"] == result["total"]
+    assert len(result["suggestions"]) == 1
+    assert len(result["suggestions"][0]["member_ids"]) == 8
+    assert db.scalar(select(func.count()).select_from(PayeeGroup)) == 0
+
+
+@pytest.mark.parametrize("failure", ["timeout", "limit", "invalid", "connection"])
+def test_failure_reason_is_specific_and_keeps_successful_suggestions(
+    client, db, aliases, monkeypatch, failure
+):
+    import httpx
+    from abacus.local_model import ModelReplyLimitError
+
+    for n in range(2):
+        db.add(
+            PayeeRule(
+                payee=f"panera bread {n}",
+                kind="purchase",
+                category_id=aliases[0].category_id,
+            )
+        )
+    db.commit()
+    model = payee_review.chat_with_model
+    calls = 0
+
+    def failing(_model, messages, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return model(_model, messages, **kwargs)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("private detail must not be shown")
+        if failure == "limit":
+            raise ModelReplyLimitError("private detail must not be shown")
+        if failure == "connection":
+            raise httpx.ConnectError("private detail must not be shown")
+        return '{"groups": ["private malformed output"]}'
+
+    monkeypatch.setattr(payee_review, "chat_with_model", failing)
+    result = preview(client)
+    assert result["progress"] == 1 and result["total"] == 2
+    assert len(result["suggestions"]) == 1
+    assert "Partial review" in result["error"]
+    expected = {
+        "timeout": "timed out",
+        "limit": "reply limit",
+        "invalid": "invalid review",
+        "connection": "connection failed",
+    }
+    assert expected[failure] in result["error"]
+    assert "private" not in result["error"]
+    assert all(row.group_id is None for row in db.scalars(select(PayeeRule)))
+    response = client.post(
+        "/api/payee-review/reviews/" + result["id"] + "/apply", json=approval(result)
+    )
+    assert response.status_code == 200
+    assert response.json()["result"]["updated_rule_count"] == 2
+
+
+def test_repeated_bad_large_batch_has_bounded_retries(client, db, aliases, monkeypatch):
+    from abacus.local_model import ModelReplyLimitError
+
+    db.add_all(
+        [
+            PayeeRule(
+                payee=f"whole foods branch {n}",
+                kind="purchase",
+                category_id=aliases[0].category_id,
+            )
+            for n in range(6)
+        ]
+    )
+    db.commit()
+    calls = []
+
+    def always_fails(_model, messages, **kwargs):
+        calls.append(len(json.loads(messages[-1]["content"])))
+        raise ModelReplyLimitError("cut off")
+
+    monkeypatch.setattr(payee_review, "chat_with_model", always_fails)
+    started = client.post("/api/payee-review/reviews").json()
+    result = client.get("/api/payee-review/reviews/" + started["id"]).json()
+    assert result["status"] == "failed" and "reply limit" in result["error"]
+    assert len(calls) == 3
+    assert db.scalar(select(func.count()).select_from(PayeeGroup)) == 0
+
+
+def test_repeated_assignment_keys_fall_back_to_smaller_valid_proposals(
+    client, db, aliases, monkeypatch
+):
+    db.add_all(
+        [
+            PayeeRule(
+                payee=f"whole foods branch {n}",
+                kind="purchase",
+                category_id=aliases[0].category_id,
+            )
+            for n in range(6)
+        ]
+    )
+    db.commit()
+    original = payee_review.chat_with_model
+    sizes = []
+
+    def overlapping(_model, messages, **kwargs):
+        records = json.loads(messages[-1]["content"])
+        sizes.append(len(records))
+        if len(records) <= 2:
+            return original(_model, messages, **kwargs)
+        ids = [row["id"] for row in records]
+        return (
+            '{"assignments":{'
+            + ",".join(json.dumps(key) + ':"Whole Foods"' for key in ids)
+            + ","
+            + json.dumps(ids[0])
+            + ':"Repeated"},"reason":"invalid duplicate"}'
+        )
+
+    monkeypatch.setattr(payee_review, "chat_with_model", overlapping)
+    result = preview(client)
+    assert sizes[0] == 8 and 2 in sizes
+    assert result["error"] == "" and result["progress"] == result["total"]
+    assert len(result["suggestions"]) == 1
+    assert len(set(result["suggestions"][0]["member_ids"])) == 8
+    assert db.scalar(select(func.count()).select_from(PayeeGroup)) == 0

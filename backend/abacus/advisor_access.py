@@ -9,6 +9,7 @@ ADVISOR_TABLES = (
     "categories",
     "recurring",
     "amount_changes",
+    "bill_payments",
     "annual_income",
     "plans",
     "plan_categories",

@@ -188,6 +188,11 @@ def budget_context(db, request):
     history = spending_history(db, request.month, today, categories)
     comparison = spending_comparison(db, history)
     goals = planning_summary(db, inputs=inputs)
+    if savings_projection:
+        savings_projection["scope"] = (
+            "Baseline or explicit bill scenario, excluding saved Planning goals. "
+            "Use planning_goals.projection for running cash including all saved goals."
+        )
     selected = next(
         (row for row in goals["plans"] if row["id"] == request.plan_id), None
     )
@@ -245,6 +250,10 @@ def budget_context(db, request):
             "monthly_needed_minor": selected["monthly_needed"],
             "status": selected["status"],
             "updated_at": selected["updated_at"],
+            "budgeted_monthly_allocation_minor": selected.get("monthly_allocation"),
+            "projected_contributions_minor": selected.get("projected_contributions"),
+            "projected_funding_minor": selected.get("projected_funding"),
+            "funding_gap_minor": selected.get("funding_gap"),
         }
         if selected
         else None,
@@ -263,6 +272,10 @@ def budget_context(db, request):
                     "amount_minor": row["amount"],
                     "set_aside_minor": row["set_aside"],
                     "still_needed_minor": row["still_needed"],
+                    "budgeted_monthly_allocation_minor": row.get("monthly_allocation"),
+                    "projected_contributions_minor": row.get("projected_contributions"),
+                    "projected_funding_minor": row.get("projected_funding"),
+                    "funding_gap_minor": row.get("funding_gap"),
                 }
                 for row in goals["plans"][:20]
             ],

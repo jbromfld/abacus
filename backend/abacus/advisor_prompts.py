@@ -27,7 +27,7 @@ For what changed, prioritize spending_comparison (budget_impact uses planned inc
 
 SAVINGS_RULES = """
 Savings/bill scenarios:
-Use savings_projection, including annual payment timing, minimum/ending savings, floor breaches, and income completeness. Dated annual payments replace monthly allocations; never add them again. Its carry-forward is hypothetical only. Opening savings/floor are user-entered assumptions, not verified bank balances. Use display_summary for quoted amounts. Do not request travel funding inputs to assess this projection. If savings_known is false, discuss budget impact only. State the start month for inferred bills; if no bill scenario exists, request amount/timing in Planning. One-time purchases are separate from this projection. Conclusions cover only the supplied horizon/assumptions.
+For the saved budget including Planning goals, use planning_goals.projection. savings_projection is a separate baseline or hypothetical bill scenario that excludes saved goals; do not present it as the all-goal cash forecast. Use savings_projection for that scenario, including annual payment timing, minimum/ending savings, floor breaches, and income completeness. Dated annual payments replace monthly allocations; never add them again. Its carry-forward is hypothetical only. Opening savings/floor are user-entered assumptions, not verified bank balances. Use display_summary for quoted amounts. Do not request travel funding inputs to assess this projection. If savings_known is false, discuss budget impact only. State the start month for inferred bills; if no bill scenario exists, request amount/timing in Planning. One-time purchases are separate from this projection. Conclusions cover only the supplied horizon/assumptions.
 """
 
 TRAVEL_RULES = """
@@ -42,6 +42,8 @@ TRAVEL_TERMS = re.compile(
 )
 
 PLANNING_RULES = """
+Annual bill funding_gap is additional funding needed after earmarked savings and the bill's own projected monthly contributions. State it even if other budget categories could cover it; do not assume reallocation. Projected contributions are not confirmed deposits and are excluded from the recorded savings balance. Use planning_goals.projection for running cash including all saved plans; monthly budget remaining still includes distributed allocations, while cash pays the full bill once. Never add the funding gap as a second expense.
+
 Planning is the single home for savings goals. Use planning_goals and selected_plan for current earmarks, remaining need and conditional cash projections. Only free_savings is available for unrelated new spending. Planned contributions are not recorded savings. Linked annual bills are already counted. Offer Add to Planning for a reviewed goal; never claim to save it. Do not request separate trip funds or planner-context inputs.
 """
 

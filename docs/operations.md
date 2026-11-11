@@ -163,8 +163,9 @@ pool. Missing or invalid credentials or grants cause advisor requests to return
 fallback to the writable login.
 
 The account has `CONNECT`, schema `USAGE`, and `SELECT` only on `settings`,
-`categories`, `recurring`, `amount_changes`, `purchases`, `transactions`,
-`month_status`, and `bill_estimates`. For named account comparisons it also has
+`categories`, `recurring`, `amount_changes`, `bill_payments`, `annual_income`,
+`plans`, `plan_categories`, `payee_groups`, `payee_rules`, `purchases`,
+`transactions`, `month_status`, and `bill_estimates`. For named account comparisons it also has
 column-level `SELECT` on `accounts.id` and `accounts.name` only; account import
 mappings and monitoring configuration remain inaccessible. It cannot inherit or
 switch to other roles,
@@ -285,7 +286,16 @@ latency guarantee. The common spending/purchase instructions decreased from
 7,266 characters to 2,792; specialized questions include additional relevant rules.
 The runtime uses an 8,192-token context and a no-thinking request. Replies default
 to 768 generated tokens (`ADVISOR_MAX_TOKENS`, configurable from 256 to 4,096 in
-`.env`). The advisor requests concise Markdown and plain currency amounts; Python
+`.env`). Payee review uses its own 2,048-token reply allowance and batches of at
+most eight names; changing the advisor token setting does not shrink review
+replies. Its structured response requires one canonical-name assignment (or null)
+per supplied payee ID, with duplicate/missing/unknown keys rejected. The server
+builds group memberships; the model does not generate member-ID lists.
+It retries failed batches in smaller overlapping sets (at most two
+levels), retaining only complete validated suggestions for explicit approval.
+The same configured timeout applies to each call. Review diagnostics log the
+exception type and batch size without model output or payee text.
+The advisor requests concise Markdown and plain currency amounts; Python
 formats historical amounts and means before supplying them to the local model.
 A token-limit stop returns the available text with an explicit incomplete-answer
 warning; transport interruption still fails the request. Structured memory drafts

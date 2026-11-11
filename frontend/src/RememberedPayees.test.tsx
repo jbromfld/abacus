@@ -193,3 +193,25 @@ it('renders approved groups with their aliases and offers ungrouping without for
   expect(confirm).toHaveBeenCalled();
   expect(changed).toHaveBeenCalledOnce();
 });
+
+it('labels partial results as incomplete while allowing explicit approval of valid suggestions', async () => {
+  const message =
+    'Partial review: completed 1 of 2 batches. The local model timed out. Existing payees were not changed.';
+  vi.mocked(api).mockImplementation(async () => ({
+    ...summary,
+    review: { ...review, error: message, progress: 1, total: 2 },
+  }));
+  mount();
+  expect(await screen.findByRole('alert')).toHaveTextContent(message);
+  const results = await screen.findByRole('region', {
+    name: 'Suggested payee updates',
+  });
+  expect(
+    await within(results).findByRole('checkbox', {
+      name: 'Approve Whole Foods',
+    }),
+  ).not.toBeChecked();
+  expect(
+    within(results).getByRole('button', { name: 'Apply selected changes (0)' }),
+  ).toBeDisabled();
+});

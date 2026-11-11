@@ -51,7 +51,8 @@ it('never displays November totals under December after its request fails, and s
       };
     if (path === '/payee-review/payees')
       return { total: 0, groups: [], ungrouped: [], review: null };
-    if (path === '/planning') return { plans: [] };
+    if (path.startsWith('/planning'))
+      return { plans: [], total_planned: 0, set_aside: null };
     return [];
   });
   render(<App />);
@@ -149,7 +150,8 @@ it('keeps advisor messages, drafts and in-flight replies mounted while saving a 
       return { ...forecast, month: path.split('=')[1] };
     if (path === '/payee-review/payees')
       return { total: 0, groups: [], ungrouped: [], review: null };
-    if (path === '/planning') return { plans: [] };
+    if (path.startsWith('/planning'))
+      return { plans: [], total_planned: 0, set_aside: null };
     return [];
   });
   render(<App />);
@@ -273,7 +275,8 @@ it('keeps transactions mounted through minute timers and manual refreshes while 
     }
     if (path === '/payee-review/payees')
       return { total: 0, groups: [], ungrouped: [], review: null };
-    if (path === '/planning') return { plans: [] };
+    if (path.startsWith('/planning'))
+      return { plans: [], total_planned: 0, set_aside: null };
     return [];
   });
   render(<App />);

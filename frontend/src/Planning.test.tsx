@@ -139,3 +139,88 @@ it('reviews advisor suggestions before saving and keeps failed edits available',
   expect(within(dialog).getByLabelText('Target amount')).toHaveValue(1200);
   expect(props.onChanged).not.toHaveBeenCalled();
 });
+
+it('links an existing goal and keeps bill-owned values read-only', async () => {
+  const goal = {
+    id: 'goal',
+    name: 'Taxes',
+    amount: 150000,
+    target_date: '2026-12-31',
+    category_id: 'tax',
+    recurring_id: null,
+  };
+  render(<Planning {...props} initialDraft={{ key: 3, value: goal }} />);
+  const dialog = await screen.findByRole('dialog');
+  const form = within(dialog);
+  fireEvent.change(form.getByLabelText('Use an annual expense'), {
+    target: { value: 'winter' },
+  });
+  expect(form.getByLabelText('Target amount')).toBeDisabled();
+  expect(form.getByLabelText('Target date')).toBeDisabled();
+  fireEvent.click(form.getByRole('button', { name: 'Save plan' }));
+  await waitFor(() =>
+    expect(api).toHaveBeenCalledWith(
+      '/planning/goal',
+      'PUT',
+      expect.objectContaining({ recurring_id: 'winter', amount: 300000 }),
+    ),
+  );
+});
+
+it('shows annual funding separately from positive projected cash in December Overview', async () => {
+  const { PlanningOverview } = await import('./Planning');
+  const row = {
+    id: 'winter-plan',
+    name: 'Winter tax',
+    amount: 150000,
+    target_date: '2026-12-31',
+    category_id: 'tax',
+    category: 'tax',
+    recurring_id: 'winter',
+    recurring_name: 'Winter tax',
+    set_aside: 50000,
+    still_needed: 100000,
+    monthly_needed: 37500,
+    contribution_count: 2,
+    status: 'saving',
+    monthly_allocation: 12500,
+    projected_contributions: 25000,
+    projected_funding: 75000,
+    funding_gap: 75000,
+  };
+  vi.mocked(api).mockImplementation(async (path) =>
+    path.startsWith('/planning')
+      ? {
+          ...data,
+          plans: [row],
+          total_planned: 150000,
+          set_aside: 50000,
+          projection: {
+            income_complete: true,
+            basis: '',
+            months: [
+              { month: '2026-12', balance: 300000, plan_payments: 150000 },
+            ],
+          },
+        }
+      : { amount: 50000, month: '2026-11', floor: 0 },
+  );
+  const onOpen = vi.fn();
+  render(
+    <PlanningOverview
+      currency="USD"
+      revision={0}
+      month="2026-12"
+      onOpen={onOpen}
+      onChanged={props.onChanged}
+    />,
+  );
+  const warning = await screen.findByText(/\$750.00 additional funding needed/);
+  expect(warning.closest('details')).toHaveAttribute('open');
+  expect(
+    screen.getByText(/Projected end-of-month cash: \$3,000.00/),
+  ).toBeInTheDocument();
+  expect(screen.getByText('Projected contributions')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Open Planning' }));
+  expect(onOpen).toHaveBeenCalledOnce();
+});

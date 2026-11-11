@@ -289,11 +289,12 @@ export default function RememberedPayees({
             </button>
           </div>
         )}
-        {review && ['failed', 'interrupted'].includes(review.status) && (
-          <p className="notice danger" role="alert">
-            {review.error}
-          </p>
-        )}
+        {review?.error &&
+          ['failed', 'interrupted', 'ready'].includes(review.status) && (
+            <p className="notice danger" role="alert">
+              {review.error}
+            </p>
+          )}
         {review?.status === 'cancelled' && (
           <p role="status">
             Review discarded. Remembered payees were not changed.

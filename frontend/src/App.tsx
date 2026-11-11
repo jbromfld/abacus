@@ -855,6 +855,8 @@ export default function App() {
                       </div>
                     </div>
                     <PlanningOverview
+                      month={month}
+                      onChanged={refresh}
                       currency={currency}
                       revision={revision}
                       onOpen={() => setView('Planning')}
@@ -1115,6 +1117,31 @@ export default function App() {
                                     </small>
                                   )}
                                 </div>
+                                {r.kind === 'payable' &&
+                                  r.frequency === 'annual' &&
+                                  !!r.due_day && (
+                                    <button
+                                      className="secondary small"
+                                      onClick={async () => {
+                                        try {
+                                          const plan = await api<PlanDraft>(
+                                            `/planning/annual/${r.id}`,
+                                            'POST',
+                                          );
+                                          setPlanDraft({
+                                            key: Date.now(),
+                                            value: plan,
+                                          });
+                                          refresh();
+                                          setView('Planning');
+                                        } catch (e) {
+                                          setError((e as Error).message);
+                                        }
+                                      }}
+                                    >
+                                      Track in Planning
+                                    </button>
+                                  )}
                                 <button
                                   className="secondary small"
                                   onClick={() => adjustRecurring(r)}

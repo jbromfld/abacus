@@ -552,12 +552,13 @@ def test_due_month_only_overrides_and_midyear_rate_change(client, category_id):
         (None, -10000, True),
     ],
 )
-def test_forecast_window_flags_deficits_after_current_savings_without_carry_forward(
+def test_forecast_window_carries_cash_from_the_recorded_balance_month(
     client, db, category_id, savings, combined, deficit
 ):
     from abacus.models import Settings
 
     db.get(Settings, 1).savings_balance = savings
+    db.get(Settings, 1).savings_month = "2026-01"
     db.commit()
     for name, kind, amount in [
         ("Income", "receivable", 10000),
@@ -580,11 +581,17 @@ def test_forecast_window_flags_deficits_after_current_savings_without_carry_forw
         params={"start": "2026-01", "months": 12, "include_savings": True},
     ).json()
     assert len(rows) == 12
-    for row in rows:
+    for index, row in enumerate(rows):
         assert row["remaining"] == -10000 and row["deficit"] is True
         assert row["savings_balance"] == savings
-        assert row["remaining_with_savings"] == combined
-        assert row["savings_adjusted_deficit"] is deficit
+        expected = savings - 10000 * (index + 1) if savings is not None else None
+        assert row["projected_savings"] == row["remaining_with_savings"] == expected
+        assert row["savings_adjusted_deficit"] is (
+            expected < 0 if expected is not None else True
+        )
+    if savings is not None:
+        assert rows[0]["remaining_with_savings"] == combined
+    assert rows[0]["savings_adjusted_deficit"] is deficit
     # The ordinary monthly forecast and user-entered savings are untouched.
     assert client.get("/api/forecast?month=2026-01").json()["deficit"] is True
     assert db.get(Settings, 1).savings_balance == savings

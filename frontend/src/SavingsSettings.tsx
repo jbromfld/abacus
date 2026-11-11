@@ -82,7 +82,8 @@ export default function SavingsSettings({
         <div>
           <h2>Savings</h2>
           <p>
-            The shared savings balance used by your plans and Budget advisor.
+            The actual shared balance used by Planning and Budget advisor.
+            Saving replaces this balance; it does not add a deposit.
           </p>
         </div>
       </div>
@@ -146,9 +147,11 @@ export default function SavingsSettings({
           </label>
         </div>
         <p className="savings-hint">
-          Use the opening balance for this month. Plans share this savings pool;
-          it is separate from monthly income. The protected savings floor stays
-          available as your buffer.
+          Enter your actual balance before this month's projected contributions.
+          Move the balance month forward when you record a newer balance, so
+          earlier contributions are not projected again. Plans share this
+          savings pool; it is separate from monthly income. The protected
+          savings floor stays available as your buffer.
         </p>
         {error && (
           <p role="alert" className="notice danger">

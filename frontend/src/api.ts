@@ -87,7 +87,12 @@ export type Forecast = {
 };
 export type SavingsAwareForecast = Forecast & {
   savings_balance: number | null;
-  remaining_with_savings: number;
+  remaining_with_savings: number | null;
+  projected_savings?: number | null;
+  cash_expenses?: number | null;
+  funding_gap?: number;
+  projection_basis?: string;
+  income_complete?: boolean;
   savings_adjusted_deficit: boolean;
 };
 

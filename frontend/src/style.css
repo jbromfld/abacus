@@ -3600,3 +3600,29 @@ dialog:has(.batch-table) {
     flex: 1;
   }
 }
+
+.annual-funding-values {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+.annual-funding-values dt {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.annual-funding-values dd {
+  margin: 0.3rem 0 0;
+  font-weight: 600;
+}
+.planning-overview > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.planning-overview > .section-head {
+  margin-top: 1rem;
+}
+@media (max-width: 650px) {
+  .annual-funding-values {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

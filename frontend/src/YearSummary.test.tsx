@@ -66,8 +66,37 @@ it('flags only uncovered shortfalls, including the exact zero boundary, while pr
     .getByRole('button', { name: 'Jan 2026' })
     .closest('tr')!;
   expect(within(january).getByText('-$100.00')).toBeInTheDocument();
-  expect(january.lastElementChild).toHaveTextContent('$100.00');
-  expect(
-    screen.getByText(/checking each month independently/),
-  ).toBeInTheDocument();
+  expect(january.children[4]).toHaveTextContent('$100.00');
+  expect(screen.getByText(/Cash carries forward/)).toBeInTheDocument();
+});
+
+it('marks an annual funding gap even when the running cash forecast stays positive', async () => {
+  vi.mocked(api).mockResolvedValue([
+    {
+      month: '2026-12',
+      income: 200000,
+      expenses: 12500,
+      remaining: 187500,
+      deficit: false,
+      savings_balance: 50000,
+      remaining_with_savings: 300000,
+      savings_adjusted_deficit: false,
+      funding_gap: 75000,
+      income_complete: true,
+    },
+  ]);
+  render(
+    <YearSummary
+      year="2026"
+      currency="USD"
+      revision={0}
+      selectMonth={vi.fn()}
+    />,
+  );
+  const december = await screen.findByRole('button', {
+    name: /December 2026:.*annual bill funding gap \$750.00/,
+  });
+  expect(december).toHaveClass('over');
+  fireEvent.click(screen.getByText('View annual forecast table'));
+  expect(screen.getByText('$750.00')).toHaveClass('red');
 });

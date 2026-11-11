@@ -12,7 +12,7 @@ A local personal budget app: recurring income and bills, purchase estimates, act
 - [Complete API reference](docs/api.md)
 - [Remembered payee groups, local-model review, and classification](training/README.md)
 - [Optional local advisor memory with Memora](docs/advisor-memory.md)
-- [Unified Planning: savings goals, sliders, and advisor research](docs/reserve-redesign.md)
+- [Unified Planning: annual bill funding, savings goals, sliders, and advisor research](docs/reserve-redesign.md)
 
 Use the user guide for daily workflows and Operations for maintenance. Feature details live in those guides to keep one source of truth.
 

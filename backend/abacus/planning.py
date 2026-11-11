@@ -1,6 +1,5 @@
 """Simple saved goals and shared-savings funding. No transactions are created."""
 
-import calendar
 import json
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -14,17 +13,14 @@ from sqlalchemy.orm import Session
 
 from .budget import (
     ForecastInputs,
-    annual_due_month,
-    effective_change,
-    scheduled_amount,
     shift_month,
 )
 from .clock import local_today
 from .db import session
+from .funding import annual_occurrence, cash_projection, funding_coverage
 from .local_model import chat_with_model
-from .models import Plan, PlanCategory, Recurring, Settings
-from .savings import cash_timing, project_savings
-from .schemas import BillDate, CategoryIn, Money, Name, SavingsIn, SavingsProjectionIn
+from .models import BillPayment, Plan, PlanCategory, Recurring, Settings
+from .schemas import BillDate, CategoryIn, Money, Month, Name
 
 router = APIRouter(prefix="/api/planning")
 DB = Annotated[Session, Depends(session)]
@@ -125,9 +121,22 @@ def validate(db, data, id=None):
     if data.category_id and db.get(PlanCategory, data.category_id) is None:
         raise HTTPException(422, "Choose an existing planning category.")
     if data.recurring_id:
-        item = db.get(Recurring, data.recurring_id)
+        item = db.scalar(
+            select(Recurring).where(Recurring.id == data.recurring_id).with_for_update()
+        )
         if not item or item.kind != "payable" or item.frequency != "annual":
             raise HTTPException(422, "Choose an existing annual expense.")
+        source = annual_occurrence(
+            item, ForecastInputs(db).changes, data.target_date.year, data.target_date
+        )
+        if not source:
+            raise HTTPException(
+                422, "This annual expense is not scheduled in that year."
+            )
+        values.update(
+            amount=source["amount"],
+            target_date=date.fromisoformat(source["target_date"]),
+        )
         duplicate = db.scalar(
             select(Plan.id).where(
                 Plan.recurring_id == data.recurring_id,
@@ -139,7 +148,7 @@ def validate(db, data, id=None):
         if duplicate:
             raise HTTPException(
                 409,
-                "This annual expense already has a plan for that year. Edit that plan instead.",
+                "This annual expense already has a plan for that year. Open that plan instead.",
             )
     values["updated_at"] = datetime.now(UTC)
     return values
@@ -159,7 +168,7 @@ def plan_row(item, categories, schedules):
     )
 
 
-def planning_summary(db, inputs=None):
+def planning_summary(db, inputs=None, projection_start=None):
     today = local_today()
     setting = db.get(Settings, 1)
     categories = {
@@ -168,30 +177,55 @@ def planning_summary(db, inputs=None):
     }
     inputs = inputs or ForecastInputs(db)
     schedules = {r.id: r.name for r in inputs.schedules}
-    items = db.scalars(select(Plan).order_by(Plan.target_date, Plan.id)).all()
+    sources = {r.id: r for r in inputs.schedules}
+    paid = {
+        (p.recurring_id, p.period) for p in db.scalars(select(BillPayment)) if p.paid_on
+    }
+    items = db.scalars(select(Plan)).all()
+    resolved = []
+    for item in items:
+        row = plan_row(item, categories, schedules)
+        source = sources.get(item.recurring_id)
+        if source:
+            occurrence = annual_occurrence(
+                source, inputs.changes, item.target_date.year, item.target_date
+            )
+            row["source_active"] = bool(occurrence)
+            row["date_from_bill"] = bool(source.due_day)
+            if occurrence:
+                row.update(occurrence)
+        row["paid"] = (item.recurring_id, str(item.target_date.year)) in paid
+        resolved.append(row)
+    resolved.sort(key=lambda row: (row["target_date"], row["id"]))
     known = setting.savings_balance is not None
     available = (
         max(0, setting.savings_balance - setting.savings_floor) if known else None
     )
     remaining = available
     rows = []
-    for item in items:
-        allocated = min(item.amount, remaining) if remaining is not None else None
+    for item in resolved:
+        amount = (
+            item["amount"]
+            if not item["paid"] and item.get("source_active", True)
+            else 0
+        )
+        allocated = min(amount, remaining) if remaining is not None else None
         if remaining is not None:
             remaining -= allocated
-        needed = item.amount - allocated if allocated is not None else None
+        needed = amount - allocated if allocated is not None else None
         # Only future first-of-month contributions strictly before the deadline.
         first = shift_month(today.strftime("%Y-%m"), 1)
-        target_month = item.target_date.strftime("%Y-%m")
+        target = date.fromisoformat(item["target_date"])
+        target_month = target.strftime("%Y-%m")
         count = max(
             0,
             (int(target_month[:4]) - int(first[:4])) * 12
             + int(target_month[5:])
             - int(first[5:])
-            + (item.target_date.day > 1),
+            + (target.day > 1),
         )
         rows.append(
-            plan_row(item, categories, schedules)
+            item
             | dict(
                 set_aside=allocated,
                 still_needed=needed,
@@ -199,100 +233,75 @@ def planning_summary(db, inputs=None):
                 if needed is not None and count
                 else needed,
                 contribution_count=count,
-                status="update_savings"
+                status="paid"
+                if item["paid"]
+                else "inactive"
+                if not item.get("source_active", True)
+                else "update_savings"
                 if not known
                 else "funded"
                 if not needed
                 else "overdue"
-                if item.target_date < today
+                if target < today
                 else "saving",
             )
         )
+        source = sources.get(item["recurring_id"])
+        if source and not item["paid"] and item.get("source_active", True):
+            coverage = funding_coverage(
+                rows[-1], source, inputs, setting.savings_month, today
+            )
+            slots = len(coverage["contributions"])
+            gap = coverage["funding_gap"]
+            rows[-1].update(
+                coverage,
+                contribution_count=slots,
+                monthly_needed=(gap + slots - 1) // slots
+                if gap is not None and slots
+                else gap,
+            )
     annual = []
     for item in inputs.schedules:
         if item.kind != "payable" or item.frequency != "annual":
             continue
-        number = int(annual_due_month(item))
         year = max(today.year, int(item.start_month[:4]))
-        due = date(
-            year,
-            number,
-            min(
-                item.due_day or calendar.monthrange(year, number)[1],
-                calendar.monthrange(year, number)[1],
-            ),
-        )
-        if due < today:
-            if year == 9998:
-                continue
-            year += 1
-            due = date(
-                year,
-                number,
-                min(
-                    item.due_day or calendar.monthrange(year, number)[1],
-                    calendar.monthrange(year, number)[1],
-                ),
+        occurrence = annual_occurrence(item, inputs.changes, year)
+        # A passed deadline is not proof of payment. Keep unpaid bills visible.
+        if occurrence and (
+            (item.id, str(year)) in paid
+            or (
+                item.payment_tracking_start
+                and occurrence["target_date"] < item.payment_tracking_start.isoformat()
             )
-        period = due.strftime("%Y-%m")
-        if period < item.start_month or (item.end_month and period > item.end_month):
-            continue
-        change = effective_change(item, inputs.changes, period)
-        if change:
+        ):
+            year += 1
+            occurrence = (
+                annual_occurrence(item, inputs.changes, year) if year <= 9998 else None
+            )
+        if occurrence:
+            linked = next(
+                (
+                    r
+                    for r in rows
+                    if r["recurring_id"] == item.id
+                    and r["target_date"][:4] == str(year)
+                ),
+                None,
+            )
             annual.append(
                 dict(
                     id=item.id,
                     name=item.name,
-                    amount=change.amount,
-                    target_date=due.isoformat(),
+                    **occurrence,
+                    date_from_bill=bool(item.due_day),
+                    plan_id=linked["id"] if linked else None,
                 )
             )
     projection = None
-    if known and setting.savings_month and setting.savings_month <= "9997-01":
-        baseline = project_savings(
-            db,
-            SavingsProjectionIn(
-                savings=SavingsIn(
-                    amount=setting.savings_balance,
-                    month=setting.savings_month,
-                    floor=setting.savings_floor,
-                ),
-                months=24,
-            ),
-            inputs=inputs,
-        )
-        extra = restored = 0
-        linked = {
-            (row["recurring_id"], int(row["target_date"][:4]))
-            for row in rows
-            if row["recurring_id"]
-        }
-        points = []
-        for point in baseline["months"]:
-            period = point["month"]
-            payments = [row for row in rows if row["target_date"][:7] == period]
-            for source in inputs.schedules:
-                if (source.id, int(period[:4])) in linked:
-                    previous_cost, _, _ = cash_timing(
-                        period,
-                        scheduled_amount(source, inputs.changes, period),
-                        [source],
-                        inputs.changes,
-                    )
-                    restored += previous_cost
-            extra += sum(row["amount"] for row in payments)
-            points.append(
-                dict(
-                    month=period,
-                    balance=point["scenario_savings"] + restored - extra,
-                    plan_payments=sum(row["amount"] for row in payments),
-                )
-            )
-        projection = dict(
-            months=points,
-            income_complete=baseline["income_complete"],
-            basis="Conditional monthly projection using saved income and bills. Each plan is paid once in its target month. Linked annual costs replace that year's scheduled cash amounts in this projection; saved bills remain unchanged. Full-month income is assumed, so exact-day availability is unknown. Plans beyond the displayed 24 months are not projected.",
-        )
+    if known and setting.savings_month:
+        start = projection_start or setting.savings_month
+        months = min(24, (9998 - int(start[:4])) * 12 + 13 - int(start[5:]))
+        projection = cash_projection(inputs, setting, rows, start, months)
     return dict(
         today=today.isoformat(),
         savings=setting.savings_balance,
@@ -311,8 +320,8 @@ def planning_summary(db, inputs=None):
 
 
 @router.get("")
-def read_planning(db: DB):
-    return planning_summary(db)
+def read_planning(db: DB, month: Month | None = None):
+    return planning_summary(db, projection_start=month)
 
 
 @router.get("/categories")
@@ -370,6 +379,40 @@ def create_plan(data: PlanIn, db: DB):
     db.add(item)
     db.commit()
     return item
+
+
+@router.post("/annual/{recurring_id}")
+def track_annual(recurring_id: str, db: DB):
+    # Clicking Track again opens the same occurrence, rather than duplicating it.
+    db.scalar(select(Recurring).where(Recurring.id == recurring_id).with_for_update())
+    summary = planning_summary(db)
+    source = next(
+        (r for r in summary["annual_expenses"] if r["id"] == recurring_id), None
+    )
+    if not source:
+        raise HTTPException(422, "No active annual expense is available to track.")
+    if not source["date_from_bill"]:
+        raise HTTPException(
+            422,
+            "Set a due date on the annual bill first, or choose a target date using Planning → Use annual expense.",
+        )
+    if source["plan_id"]:
+        return next(r for r in summary["plans"] if r["id"] == source["plan_id"])
+    create_plan(
+        PlanIn(
+            name=source["name"],
+            amount=source["amount"],
+            target_date=source["target_date"],
+            recurring_id=recurring_id,
+        ),
+        db,
+    )
+    return next(
+        r
+        for r in planning_summary(db)["plans"]
+        if r["recurring_id"] == recurring_id
+        and r["target_date"] == source["target_date"]
+    )
 
 
 @router.get("/{id}")

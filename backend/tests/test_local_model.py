@@ -204,3 +204,27 @@ def test_invalid_advisor_token_limit(monkeypatch, value):
     )
     with pytest.raises(ValueError, match="ADVISOR_MAX_TOKENS"):
         local_model.chat_with_model("local", [])
+
+
+def test_review_reply_allowance_does_not_change_advisor_limits(monkeypatch):
+    monkeypatch.setattr(local_model, "available_models", lambda: ["local"])
+    monkeypatch.setattr(
+        local_model, "local_config", lambda: {"ADVISOR_MAX_TOKENS": "256"}
+    )
+    budgets = []
+    real_client = httpx.Client
+
+    def handler(request):
+        import json
+
+        budgets.append(json.loads(request.content)["options"]["num_predict"])
+        return httpx.Response(200, text='{"message":{"content":"{}"},"done":true}\n')
+
+    monkeypatch.setattr(
+        local_model.httpx,
+        "Client",
+        lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw),
+    )
+    local_model.chat_with_model("local", [], {"type": "object"}, max_tokens=2048)
+    local_model.chat_with_model("local", [])
+    assert budgets == [2048, 256]

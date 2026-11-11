@@ -56,6 +56,7 @@ from .dues import (
     upcoming_dues,
 )
 from .expenses import expense_breakdown, month_end, month_key
+from .funding import cash_projection
 from .imports import csv_rows, executor, prepare_file, process_import, validate_rows
 from .local_model import available_models
 from .memory_api import router as memory_router
@@ -79,6 +80,7 @@ from .models import (
     uid,
 )
 from .payee_review import router as payee_review_router
+from .planning import planning_summary
 from .planning import router as planning_router
 from .provenance import compact_pdf_rows, expanded_sources
 from .research import confirmation_for, plan_research, research_status
@@ -364,12 +366,20 @@ def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
             "Advisor memory changed while answering. Start a new conversation and retry.",
         )
     if data.plan_id:
-        current = db.execute(
-            select(Plan.updated_at).where(Plan.id == data.plan_id)
-        ).scalar_one_or_none()
-        if (
-            current is None
-            or current.isoformat() != context["selected_plan"]["updated_at"]
+        current = next(
+            (row for row in planning_summary(db)["plans"] if row["id"] == data.plan_id),
+            None,
+        )
+        selected = context["selected_plan"]
+        if current is None or any(
+            [
+                current["updated_at"] != selected["updated_at"],
+                current["amount"] != selected["amount_minor"],
+                current["target_date"] != selected["target_date"],
+                current.get("funding_gap") != selected.get("funding_gap_minor"),
+                current["status"] != selected["status"],
+                current["set_aside"] != selected["set_aside_minor"],
+            ]
         ):
             raise HTTPException(
                 409,
@@ -782,7 +792,16 @@ def delete_change(id: str, change_id: str, db: DB):
 
 @app.delete("/api/recurring/{id}")
 def delete_recurring(id: str, db: DB):
-    db.delete(get(db, Recurring, id))
+    item = get(db, Recurring, id)
+    # Retain the last resolved goal if its bill is removed and the FK unlinks it.
+    linked = db.scalars(select(Plan).where(Plan.recurring_id == id)).all()
+    if linked:
+        resolved = {r["id"]: r for r in planning_summary(db)["plans"]}
+        for plan in linked:
+            row = resolved[plan.id]
+            plan.amount = row["amount"]
+            plan.target_date = date.fromisoformat(row["target_date"])
+    db.delete(item)
     db.commit()
     return {"ok": True}
 
@@ -838,12 +857,29 @@ def forecast_window(
         raise HTTPException(422, "The forecast window must end by December 9998.")
     inputs = ForecastInputs(db)
     actuals = ActualWindow(db, start, last)
-    savings = db.get(Settings, 1).savings_balance if include_savings else None
+    setting = db.get(Settings, 1)
+    savings = setting.savings_balance if include_savings else None
+    funding = planning_summary(db, inputs=inputs) if include_savings else None
+    running = (
+        cash_projection(inputs, setting, funding["plans"], start, months)
+        if funding
+        else None
+    )
     result = []
     for offset in range(months):
         month = shift_month(start, offset)
         values = inputs.forecast(month)
         recorded = actuals.actual(month)
+        point = running["months"][offset] if running else None
+        due = (
+            [
+                r
+                for r in funding["plans"]
+                if r["target_date"][:7] == month and r.get("funding_gap") is not None
+            ]
+            if funding
+            else []
+        )
         result.append(
             {
                 **values,
@@ -852,9 +888,16 @@ def forecast_window(
                 **(
                     {
                         "savings_balance": savings,
-                        "remaining_with_savings": values["remaining"] + (savings or 0),
-                        "savings_adjusted_deficit": values["remaining"] + (savings or 0)
-                        < 0,
+                        "remaining_with_savings": point["balance"],
+                        "savings_adjusted_deficit": point["balance"] < 0
+                        if point["balance"] is not None
+                        else values["deficit"],
+                        "projected_savings": point["balance"],
+                        "cash_expenses": point["cash_expenses"],
+                        "funding_gap": sum(r["funding_gap"] for r in due),
+                        "annual_funding": due,
+                        "projection_basis": running["basis"],
+                        "income_complete": running["income_complete"],
                     }
                     if include_savings
                     else {}

@@ -9,7 +9,7 @@
 3. Add named bank/card accounts for statement imports, manual transactions, or ACH.
 4. In **Recurring accounts**, add income, recurring bills, and budget allowances.
 5. Save an opening savings snapshot if you want projected savings balances.
-6. Use **Planning → Current budget** to inspect the next 12 or 24 months.
+6. Use **Overview → The bigger picture** for the year, or **Planning → See the funding projection** for running cash.
 7. Enter actual transactions or import statements, then inspect **Spending**.
 8. Add Planning goals and optionally configure card freshness monitoring and Budget advisor.
 
@@ -85,17 +85,20 @@ annual expenses, payment history, or payment status.
 month?** card compares recorded spending in the latest two finished months,
 independently of the selected forecast month. It refreshes after changes and when
 you return to the app, without using a model or requiring the advisor to be enabled.
-Purchase planning is available from the main menu.
+Planning is available from the main menu.
 
-**The bigger picture** shows the selected year's income and expense bars. Deficit
-markers appear only when that month's forecast remaining plus your current
-manually entered savings is negative. Zero is covered. Each month is checked
-independently against the same current balance; this is not a running savings
-projection. Unset savings is treated as zero for markers. The table shows both
-monthly remaining and remaining plus current savings; income/expense bars and
-ordinary forecast-deficit alerts stay based on the original monthly forecast.
-Choose a bar or table month to change the selected forecast month. Reserve checks
-appear when enabled/configured; monitored card warnings appear across views.
+**The bigger picture** keeps the selected year's monthly budget bars and adds a
+running cash forecast from the saved balance month. Markers flag negative cash or
+an annual bill's funding gap, even when unrelated budget room could cover it.
+The table shows monthly remaining, projected cash, and annual funding gaps. Months
+before the balance (or beyond the ten-year projection limit) have no projected
+cash balance. Income/expense bars and ordinary monthly deficit alerts still use
+the monthly budget. Click a month to open its Overview.
+
+Below the three Overview cards, **Annual expense funding & Planning** shows
+tracked upcoming and overdue bills, selected-month projected cash, and an actual-savings
+slider. It opens automatically when a bill has a funding gap. Future contributions
+are assumptions, not deposits. No other category is silently used to fill a gap.
 
 ## Recurring accounts
 
@@ -209,7 +212,11 @@ or automatically advanced. Slider edits are temporary until saved.
 Planning and the advisor use this snapshot. Saving a current/past month
 also records that month's opening balance in savings history. Saving a future
 projection assumption does not create a current savings observation. Goal targets
-remain unchanged when the savings balance changes.
+remain unchanged when the savings balance changes. Saving replaces the absolute
+balance; it never adds the target or earmark to savings. The balance excludes
+that month's projected contributions. When recording a newer balance that already
+includes November's contribution, choose December as the next projection month
+so November is not counted again. There is no separate contribution ledger.
 
 ## Planning
 
@@ -223,17 +230,28 @@ and **Target date**. Category defaults to `purchase`; choose `tax`, `vacation`, 
 category managed in **Settings → Planning categories**. Saving a plan creates a
 funding goal, not an actual transaction or a second recurring bill.
 
-**Use annual expense** fills this same form from an existing annual bill. The
-linked bill remains intact. Only one goal per annual expense/year is allowed.
-The funding projection replaces that year's scheduled cash amount with the plan's
-amount/date, so it counts once even if the original annual bill was spread monthly
-or had no due day. Editing a goal does not edit the saved bill schedule.
+**Use annual expense** links a new goal to an annual bill; the same selector in
+**Edit** links an existing goal. **Track in Planning** on a dated annual bill opens
+its existing goal or creates one. Only one goal per bill/year is allowed. Linked
+amounts and dated deadlines always follow the bill, including later changes;
+edit those values in Recurring accounts. For an annual allowance without a due
+day, choose the goal's target date yourself. The running cash forecast replaces
+the bill with one linked payment. Passing a deadline does not mark it paid or
+silently roll it into next year; an explicit paid confirmation releases its earmark.
 
 Plans share the one savings balance in earliest-target-date order, preserving the
 savings floor. Each card shows set aside, still needed, and a suggested monthly
 amount. Suggestions are not recorded transfers or proof of affordability. Without
-savings, funding is shown as unknown. No baseline, checkpoint, inclusion switch,
-or separate trip-funding input is required.
+savings, funding is shown as unknown. Annual cards also show their budgeted monthly
+allocation, projected contributions, projected funding at the deadline, and any
+additional funding gap. Their suggested monthly amount is the extra needed above
+the existing allocation. Contributions are assigned to one annual cycle only.
+
+For example: $1,500 winter taxes due December 31, $500 recorded in November, and
+$125 budgeted each month gives $750 projected funding and a $750 gap after the
+November and December contributions. Both contributions are assumed to arrive
+before payment and neither is included in the $500. The gap is a funding warning,
+not another expense. The cash forecast pays the $1,500 once.
 
 **See the funding projection** shows conditional month-end balances over 24 months
 from the saved balance month. It uses planned income and bills, includes each goal
@@ -406,7 +424,11 @@ types, original descriptions and CSV duplicate identities.
 In **Settings → Remembered payees**, choose **Review similar payees**. An installed
 local model proposes merchant groups from remembered names and categories. Review
 runs in the background with progress and cancellation; leaving Settings and coming
-back resumes the same review. Only names, transaction types, category labels and
+back resumes the same review. Calls use up to eight names with a dedicated reply
+allowance. A failed batch retries in smaller overlapping sets. If a later call
+fails, valid earlier suggestions remain available with an explicit **Partial
+review** warning; approve those or start a new review. Errors distinguish a
+timeout, reply limit, invalid output, and connection failure. Only names, transaction types, category labels and
 local review IDs go to Ollama, never statements, amounts, dates or bank accounts.
 
 No rule changes during preview. Select the proposed groups you want, edit their
@@ -456,8 +478,8 @@ the answer. Web search requires `BRAVE_SEARCH_API_KEY`.
 amount, target date, and category. It opens the normal Planning form for review.
 Unknown dates or amounts remain blank. Nothing is saved until **Save plan**.
 
-The advisor's database login has SELECT-only access, including `plans` and
-`plan_categories`. Setup/update maintains the explicit allowlist. All monetary
+The advisor's database login has SELECT-only access, including `plans`,
+`plan_categories`, and annual bill paid confirmations in `bill_payments`. Setup/update maintains the explicit allowlist. All monetary
 figures passed to the model are Python-formatted currency amounts; funding totals
 are calculated by Python, not the model. Predictions are conditional, not bank
 verification. Local-model responses can still be mistaken.

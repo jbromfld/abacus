@@ -10,8 +10,14 @@ categories so existing imported classification is preserved.
 
 The page shows shared savings, total planned and unassigned savings. Funds are
 earmarked by earliest deadline after protecting the savings floor. Each goal has
-Edit, Discuss, and permanent Delete actions. Annual bills can prefill linked goals.
-The conditional monthly funding projection counts each linked bill/goal once.
+Edit, Discuss, and permanent Delete actions. Annual bills link to goals whose amount and dated deadline follow the bill.
+The conditional running cash projection counts each linked bill/goal once and is
+shared by Planning, Overview, Bigger picture, and advisor context. A separate
+funding-coverage check compares each tracked annual bill with its earmark plus its
+own budgeted future contributions. It warns before savings becomes negative and
+does not assume other categories will cover the gap. Recorded savings excludes
+projected contributions; updating the absolute balance replaces it. No extra
+contribution ledger or duplicated expense is introduced.
 
 The advisor has one chat card. Web search controls and explicit public-query
 approval live beside the composer. Discuss passes a saved goal ID, never a copied

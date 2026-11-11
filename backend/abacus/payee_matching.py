@@ -25,7 +25,7 @@ STOP_WORDS = {
 }
 
 
-def candidate_batches(records, size=24, overlap=6):
+def candidate_batches(records, size=8, overlap=2):
     """Shared text finds candidates only. It never authorizes an alias or category."""
     parents = {row["id"]: row["id"] for row in records}
 

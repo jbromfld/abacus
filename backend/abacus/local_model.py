@@ -75,7 +75,11 @@ class ModelReply(str):
         return value
 
 
-def chat_with_model(model, messages, schema=None):
+class ModelReplyLimitError(ValueError):
+    """A structured reply was cut off; none of it can be safely consumed."""
+
+
+def chat_with_model(model, messages, schema=None, *, max_tokens=None):
     if not model or model not in available_models():
         raise ValueError("Choose an installed local model in Settings.")
     try:
@@ -85,7 +89,11 @@ def chat_with_model(model, messages, schema=None):
     except (TypeError, ValueError):
         raise ValueError("ADVISOR_TIMEOUT_SECONDS must be between 30 and 1800 seconds.")
     try:
-        max_tokens = int(local_config().get("ADVISOR_MAX_TOKENS", "768"))
+        max_tokens = (
+            int(local_config().get("ADVISOR_MAX_TOKENS", "768"))
+            if max_tokens is None
+            else max_tokens
+        )
         if not 256 <= max_tokens <= 4096:
             raise ValueError()
     except (TypeError, ValueError):
@@ -152,7 +160,7 @@ def chat_with_model(model, messages, schema=None):
                 "The local model returned an empty reply. Try another question or model."
             )
         if truncated and schema:
-            raise ValueError(
-                "The local model reached its reply limit. Retry the draft or enter it manually."
+            raise ModelReplyLimitError(
+                "The local model reached its reply limit before completing the structured result."
             )
         return ModelReply(content, truncated=truncated)

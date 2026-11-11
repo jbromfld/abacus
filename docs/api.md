@@ -126,7 +126,14 @@ applying any group. An identical applied request returns the prior result; a
 different replay returns 409. Historical transactions are never recategorized.
 
 States are queued, running, ready, applied, cancelled, failed, or interrupted.
-Preview generation uses the configured local model and bounded candidate batches.
+Preview generation uses the configured local model, eight-name candidate batches,
+and a dedicated 2,048-token allowance. Model output supplies exactly one
+canonical name or null per provided payee ID. Unknown, missing, and duplicate
+keys are rejected; the server derives each group's membership. A failed batch retries in smaller sets,
+bounded to two subdivision levels. Complete validated suggestions are checkpointed
+after each batch. `ready` can carry a nonempty `error` describing an incomplete
+review; show that warning beside the still-reviewable suggestions. A failed call
+never turns truncated JSON into proposals. No payee changes occur until apply.
 Private jobs are excluded from the advisor's SELECT allowlist; approved groups and
 payee rules are readable solely for aggregate naming. The existing `/payee-rules`
 edit/forget endpoints continue to manage exact aliases.
@@ -135,7 +142,8 @@ edit/forget endpoints continue to manage exact aliases.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/planning` | Goals, shared-savings allocation, annual-expense shortcuts and conditional 24-month projection |
+| GET | `/api/planning` | Goals, live linked bill values, funding gaps, and shared cash projection; optional `month` chooses projection start |
+| POST | `/api/planning/annual/{recurring_id}` | Track the next open dated annual occurrence, reusing an existing goal |
 | POST | `/api/planning` | Save `{name,amount,target_date,category_id?,recurring_id?,request_id?}` |
 | GET | `/api/planning/{id}` | Current goal/funding; deleted IDs return 404 |
 | PUT | `/api/planning/{id}` | Replace the goal using the same input |
@@ -150,7 +158,19 @@ Planning categories are separate from transaction categories. Linked annual
 expenses must exist and have at most one plan per year. Savings remains a manual
 opening snapshot. New goals affect the Planning funding projection, not actual
 transactions. Linked annual cash amounts are replaced once in that projection;
-saved recurring bills are not edited.
+saved recurring bills are not edited. Linked amount and dated target derive from the
+annual occurrence on every read and save, rather than trusting copied fields.
+Undated annual allowances retain the goal's chosen date. Annual goal responses
+include `monthly_allocation`, `contributions`, `projected_contributions`,
+`projected_funding`, and `funding_gap`; unknown funding is null. Paid/inactive goals
+release earmarks and do not have active funding-gap fields.
+
+`GET /api/forecasts?...&include_savings=true` uses the same running cash engine,
+including saved goals. `projected_savings` and legacy `remaining_with_savings`
+now carry a running balance, or null before the saved balance month/beyond ten
+years. `cash_expenses` pays dated annual bills once instead of monthly allocations.
+`funding_gap` sums tracked annual goals due in that month; `annual_funding` gives
+those goal details. Monthly budget fields are unchanged.
 
 Advisor chat accepts optional `plan_id`. The server resolves it inside the fresh
 read-only snapshot and rejects a response if that plan was edited or deleted
@@ -476,11 +496,11 @@ months in `APP_TIMEZONE`, including account/category deltas and completeness. It
 never invokes Ollama or web research and does not depend on the selected forecast
 month. Refunds reduce spending; payments/transfers are excluded.
 
-`GET /api/forecasts?...&include_savings=true` adds `savings_balance` (nullable),
-`remaining_with_savings`, and `savings_adjusted_deficit` to each forecast. The last
-field tests `remaining + (savings_balance or 0) < 0` independently per month, with
-no carry-forward or changes to the original `remaining`/`deficit` fields. The
-parameter defaults false to preserve the standard forecast-window response.
+`GET /api/forecasts?...&include_savings=true` adds the running cash and annual
+funding fields described under [Planning](#planning). `savings_adjusted_deficit`
+flags a negative projected balance; if no cash estimate is available, it falls
+back to the monthly budget deficit. Funding gaps are independent warnings.
+Ordinary `remaining`/`deficit` fields are unchanged. The parameter defaults false.
 
 
 ### Permanent budget-alert acknowledgements

@@ -1,5 +1,3 @@
-# Abacus
-
 <img src="docs/assets/abacus-logo.png" alt="Abacus logo" width="240" />
 
 A local personal budget app: recurring income and bills, purchase estimates, actual spending, and 12-month category trends. React/TypeScript + FastAPI + PostgreSQL, with classification memory, an optional local Budget advisor, and optional Ollama PDF extraction.

@@ -96,6 +96,13 @@ never claims success. Check configuration ownership/permissions (`chmod 600`), l
 PostgreSQL, migrations, the Babar environment, and cached pinned weights. Broken
 transport connections are recreated on the next attempt.
 
+An unavailable-recall warning belongs to the answer that omitted memory; it is not
+a live connection indicator. In **Settings → Advisor memory**, use **Refresh memory**
+to check the current connection, then ask the question again. A successful status
+check also verifies the cached embedding model and memory database without changing
+saved notes. A later successful connection does not retroactively add recalled
+notes to an older answer.
+
 ## Maintenance, recovery, and backups
 
 Abacus's restart script maintains its own migrations/advisor permissions. Memora
@@ -132,3 +139,58 @@ read-only grants, and real subprocess lifecycle/environment isolation. Frontend
 tests cover approval, failed-save retention, and confirmed forgetting. Babar's
 synthetic PostgreSQL/stdio tests cover persistence, namespaces, lifecycle,
 idempotency, revisions, permissions, pagination, redaction, and atomic reindexing.
+
+
+## Optional dreaming
+
+Dreaming defaults off. Upgrade Babar first by rerunning its setup (or
+`uv run --no-sync python scripts/setup_memory.py`), which preserves its managed
+password and existing notes while migrating memory storage to schema 2 and
+refreshing grants. Apply Abacus migration 0020, rebuild, and restart normally.
+Do not turn it on until memory status advertises `dreaming-v1`.
+
+In Settings → Advisor memory → Memory dreaming, enable the toggle. Saving or
+editing a note queues a pass after a 60-second debounce. “Dream now” queues one
+immediate pass. Each pass considers at most five disjoint pairs drawn from 200
+recent active notes. Interactive local-model calls get priority between groups;
+a generation already in progress finishes before the next caller starts.
+
+The local model has no tools or web access. Compatible same-kind notes can consolidate automatically when their combined
+verbatim text fits 400 characters and amounts/periods/constraints agree. Conflicting
+details, question-like/missing evidence, unsupported numbers,
+and existing consolidated families go to review. This deliberately conservative
+first policy treats model confidence as a suggestion, never authorization. Review
+shows the proposed editable summary, originals, reasons and preserved facts;
+choose “Approve consolidation” or “Keep separate.” New source revisions invalidate
+stale proposals instead of silently overwriting them.
+
+One active canonical memory is recalled. Sources retain their own dates, exact
+text, excerpts and revisions; consolidation uses the earliest source date, not
+today. Relevant dated source details fit within the existing 1,500-character
+recall budget. A warning identifies omitted detail. Inspect retained sources when
+reasoning about specific amounts, periods, or constraints.
+
+Superseded records remain inspectable and cannot be edited. “Undo consolidation”
+restores unchanged originals; an edited or subsequently consolidated result
+requires manual review. Family-wide forgetting explicitly deletes source notes,
+all their revisions/embeddings, and Babar's content-bearing consolidation history.
+Abacus purges its pending/recent dreaming payloads before forwarding a forget
+request, including uncertain failures. Older backups can still retain copies.
+
+Jobs/proposals are persisted before external writes. On restart, operation keys
+reconcile a possibly completed write before resuming. Turning dreaming off cancels
+queued/review work and prevents later commits; stopping Abacus also prevents a
+running model result from committing after shutdown. No dreaming pass recursively
+schedules itself. Saving memories, consolidation, undo and forgetting invalidate
+advisor context; the memory management panel notices background changes on its
+next 15-second status refresh.
+
+The example with specific Entertainment/Dining cuts and a later broader savings
+question becomes a review item, retaining mortgage/car constraints and dated
+amounts in the sources. Neither a question nor an advisor recommendation becomes
+an accepted commitment or achieved savings automatically.
+
+Optional [LangSmith content capture](operations.md#optional-langsmith-model-tracing)
+also applies to memory-drafting and dreaming model calls. It is off by default;
+enabling it exports model inputs/outputs, including recalled notes or retained
+sources present in those prompts. Babar's MCP subprocess remains untraced.

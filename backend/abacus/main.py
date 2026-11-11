@@ -2,28 +2,24 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
 from datetime import date
-from hashlib import sha256
 from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import (
     Depends,
     FastAPI,
-    File,
-    Form,
     HTTPException,
     Query,
     Request,
-    UploadFile,
 )
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
-from sqlalchemy.orm import load_only
 
+from . import dreaming
 from .ach import record_due
 from .advisor import answer_question, budget_context
 from .advisor_history import latest_spending_comparison
@@ -34,6 +30,8 @@ from .advisor_memory import (
     recalled_memory,
 )
 from .alert_api import router as alert_router
+from .annual_income import router as annual_income_router
+from .api_helpers import category, get, save
 from .budget import (
     ActualWindow,
     ForecastInputs,
@@ -44,9 +42,8 @@ from .budget import (
 )
 from .card_alerts import account_information
 from .category_planning import category_averages
-from .classification import apply_payee_rules, learn_labels
-from .csv_profiles import apply_saved_mapping
 from .db import Session, read_only_session, session
+from .dreaming_api import router as dreaming_router
 from .dues import (
     automatic_occurrence,
     due_settings,
@@ -55,62 +52,65 @@ from .dues import (
     upcoming_dues,
 )
 from .expenses import expense_breakdown, month_end, month_key
-from .imports import csv_rows, executor, prepare_file, process_import, validate_rows
+from .funding import cash_projection
+from .import_api import router as import_router
 from .local_model import available_models
 from .memory_api import router as memory_router
+from .model_tracing import flush_model_traces
 from .models import (
     Account,
     AmountChange,
-    BillEstimate,
     BillPayment,
     Category,
     MonthStatus,
-    PayeeRule,
-    Purchase,
+    Plan,
     Recurring,
     RecurringDebit,
-    ReservePlan,
-    SavingsObservation,
     Settings,
     StatementImport,
     Transaction,
-    uid,
 )
-from .provenance import compact_pdf_rows, expanded_sources
+from .payee_review import router as payee_review_router
+from .planning import planning_summary
+from .planning import router as planning_router
+from .records_api import router as records_router
 from .research import confirmation_for, plan_research, research_status
-from .reserves import observe, reserve_check, schedule_snapshot
+from .responses import AccountOut, CategoryOut, ForecastOut, SettingsOut
 from .savings import project_savings, savings_settings
 from .schemas import (
     AccountIn,
     AdvisorIn,
-    BillEstimateIn,
     BillPaymentIn,
     CardMonitoringIn,
     CategoryGuideIn,
     CategoryIn,
     ChangeIn,
-    CommitIn,
     CompleteIn,
-    MappingIn,
     Month,
-    PayeeRuleIn,
-    ProcessImportIn,
-    PurchaseIn,
     RecurringCreate,
     RecurringIn,
     ResearchPreviewIn,
-    ReservePlanIn,
     SavingsIn,
-    SavingsObservationIn,
     SavingsProjectionIn,
     SettingsIn,
-    TransactionIn,
 )
+from .transaction_api import router as transaction_router
 
 
 @asynccontextmanager
 async def lifespan(app):
+    dreaming.start()
     with Session() as db:
+        from .models import PayeeReview
+
+        db.execute(
+            update(PayeeReview)
+            .where(PayeeReview.status.in_(["queued", "running"]))
+            .values(
+                status="interrupted",
+                error="Review interrupted by restart. Existing payees were not changed. Start another review.",
+            )
+        )
         db.execute(
             update(StatementImport)
             .where(StatementImport.status == "processing")
@@ -121,14 +121,31 @@ async def lifespan(app):
         )
         db.commit()
     await asyncio.to_thread(record_due_in_session)
+
+    async def dreaming_scheduler():
+        while True:
+            await asyncio.sleep(5)
+            try:
+                await asyncio.to_thread(dreaming.tick)
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Memory dreaming pass unavailable; will retry."
+                )
+
+    dream_task = asyncio.create_task(dreaming_scheduler())
     task = asyncio.create_task(ach_scheduler())
     try:
         yield
     finally:
+        dreaming.stop()
+        dream_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await dream_task
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
         await asyncio.to_thread(close_memory)
+        await asyncio.to_thread(flush_model_traces)
 
 
 def record_due_in_session():
@@ -148,8 +165,15 @@ async def ach_scheduler():
 
 
 app = FastAPI(title="Abacus", lifespan=lifespan)
+app.include_router(records_router)
+app.include_router(transaction_router)
+app.include_router(import_router)
 app.include_router(memory_router)
+app.include_router(dreaming_router)
 app.include_router(alert_router)
+app.include_router(annual_income_router)
+app.include_router(planning_router)
+app.include_router(payee_review_router)
 DB = Annotated[DBSession, Depends(session)]
 ReadOnlyDB = Annotated[DBSession, Depends(read_only_session)]
 
@@ -183,33 +207,13 @@ async def integrity_error(request, exc):
     )
 
 
-def get(db, model, id):
-    item = db.get(model, id)
-    if item is None:
-        raise HTTPException(404, "Record not found.")
-    return item
-
-
-def category(db, id):
-    if id:
-        get(db, Category, id)
-
-
-def save(db, item, data):
-    for key, value in data.items():
-        setattr(item, key, value)
-    db.add(item)
-    db.commit()
-    return item
-
-
 @app.get("/api/health")
 def health(db: DB):
     db.execute(select(Settings.id)).first()
     return {"status": "ok"}
 
 
-@app.get("/api/settings")
+@app.get("/api/settings", response_model=SettingsOut)
 def settings(db: DB):
     return get(db, Settings, 1)
 
@@ -226,12 +230,9 @@ def update_settings(data: SettingsIn, db: DB):
             db.scalar(select(func.count()).select_from(model))
             for model in (
                 Recurring,
-                Purchase,
+                Plan,
                 Transaction,
                 StatementImport,
-                BillEstimate,
-                ReservePlan,
-                SavingsObservation,
             )
         )
     ):
@@ -253,18 +254,14 @@ def update_settings(data: SettingsIn, db: DB):
             raise HTTPException(
                 503, "Cannot reach local Ollama. Start it and try again."
             )
-    if (
-        data.reserve_checkpoint_day is not None
-        and data.reserve_checkpoint_day != setting.reserve_checkpoint_day
-    ):
-        plan = db.get(ReservePlan, 1)
-        if plan:
-            plan.dismissed_until = None
     memory_changed = (
         data.advisor_memory_enabled is not None
         and data.advisor_memory_enabled != setting.advisor_memory_enabled
     )
-    result = save(db, setting, data.model_dump(exclude_none=True))
+    with dreaming.gate:
+        result = save(db, setting, data.model_dump(exclude_none=True))
+        if not dreaming.enabled(setting):
+            dreaming.cancel(db)
     if memory_changed:
         invalidate_memory()
         close_memory()
@@ -310,10 +307,8 @@ def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
         raise HTTPException(
             409, "Advisor memory changed. Start a new conversation before continuing."
         )
-    if data.purchase_id:
-        get(db, Purchase, data.purchase_id)
-    if data.bill_estimate_id:
-        get(db, BillEstimate, data.bill_estimate_id)
+    if data.plan_id:
+        get(db, Plan, data.plan_id)
     try:
         context = budget_context(db, data)
     except ValueError as exc:
@@ -343,6 +338,26 @@ def advisor_chat(data: AdvisorIn, db: ReadOnlyDB):
             409,
             "Advisor memory changed while answering. Start a new conversation and retry.",
         )
+    if data.plan_id:
+        current = next(
+            (row for row in planning_summary(db)["plans"] if row["id"] == data.plan_id),
+            None,
+        )
+        selected = context["selected_plan"]
+        if current is None or any(
+            [
+                current["updated_at"] != selected["updated_at"],
+                current["amount"] != selected["amount_minor"],
+                current["target_date"] != selected["target_date"],
+                current.get("funding_gap") != selected.get("funding_gap_minor"),
+                current["status"] != selected["status"],
+                current["set_aside"] != selected["set_aside_minor"],
+            ]
+        ):
+            raise HTTPException(
+                409,
+                "This plan changed or was deleted while answering. Ask again using the current Planning item.",
+            )
     return {
         "reply": reply,
         "reply_truncated": getattr(reply, "truncated", False),
@@ -363,59 +378,8 @@ def save_savings(data: SavingsIn, db: DB):
         data.month,
         data.floor,
     )
-    as_of = date.fromisoformat(data.month + "-01")
-    if as_of <= local_today():
-        observe(db, data.amount, as_of)
     db.commit()
     return savings_settings(db)
-
-
-@app.get("/api/reserve-check")
-def read_reserve_check(db: DB):
-    return reserve_check(db)
-
-
-@app.put("/api/reserve-check/plan")
-def set_reserve_plan(data: ReservePlanIn, db: DB):
-    start = date.fromisoformat(data.month + "-01")
-    if start > local_today():
-        raise HTTPException(
-            422, "Start the reserve plan in the current month or earlier."
-        )
-    schedules = schedule_snapshot(db)
-    if not schedules:
-        raise HTTPException(
-            422, "Configure at least one dated, distributed annual payable first."
-        )
-    item = db.get(ReservePlan, 1) or ReservePlan(id=1)
-    item.amount, item.start_date, item.schedules, item.dismissed_until = (
-        data.amount,
-        start,
-        schedules,
-        None,
-    )
-    db.add(item)
-    db.commit()
-    return reserve_check(db)
-
-
-@app.post("/api/reserve-check/balances")
-def record_savings_balance(data: SavingsObservationIn, db: DB):
-    try:
-        observe(db, data.amount, data.as_of)
-    except ValueError as exc:
-        raise HTTPException(422, str(exc))
-    db.commit()
-    return reserve_check(db)
-
-
-@app.post("/api/reserve-check/dismiss")
-def dismiss_reserve_check(db: DB):
-    result = reserve_check(db)
-    item = get(db, ReservePlan, 1)
-    item.dismissed_until = result["next_checkpoint"]
-    db.commit()
-    return reserve_check(db)
 
 
 @app.post("/api/savings/projection")
@@ -428,75 +392,7 @@ def preview_savings(data: SavingsProjectionIn, db: DB):
         raise HTTPException(422, str(exc))
 
 
-@app.get("/api/bill-estimates")
-def bill_estimates(db: DB):
-    return db.scalars(
-        select(BillEstimate).order_by(BillEstimate.start_month, BillEstimate.name)
-    ).all()
-
-
-@app.post("/api/bill-estimates", status_code=201)
-def create_bill_estimate(data: BillEstimateIn, db: DB):
-    get(db, Category, data.category_id)
-    return save(db, BillEstimate(), data.model_dump())
-
-
-@app.put("/api/bill-estimates/{id}")
-def edit_bill_estimate(id: str, data: BillEstimateIn, db: DB):
-    item = get(db, BillEstimate, id)
-    if item.included:
-        raise HTTPException(
-            409, "This estimate has been added. Edit its recurring bill instead."
-        )
-    get(db, Category, data.category_id)
-    return save(db, item, data.model_dump())
-
-
-@app.delete("/api/bill-estimates/{id}")
-def delete_bill_estimate(id: str, db: DB):
-    db.delete(get(db, BillEstimate, id))
-    db.commit()
-    return {"ok": True}
-
-
-@app.post("/api/bill-estimates/{id}/include")
-def include_bill_estimate(id: str, db: DB):
-    item = db.scalar(
-        select(BillEstimate).where(BillEstimate.id == id).with_for_update()
-    )
-    if item is None:
-        raise HTTPException(404, "Bill estimate not found.")
-    if item.included:
-        raise HTTPException(
-            409, "This estimate has already been added to recurring bills."
-        )
-    data = RecurringCreate(
-        name=item.name,
-        amount=item.amount,
-        kind="payable",
-        frequency="monthly",
-        category_id=item.category_id,
-        start_month=item.start_month,
-        end_month=item.end_month,
-        due_day=item.due_day,
-    )
-    recurring = Recurring(**due_settings(data))
-    db.add(recurring)
-    db.flush()
-    db.add(
-        AmountChange(
-            recurring_id=recurring.id,
-            month=recurring.start_month,
-            amount=item.amount,
-            override=False,
-        )
-    )
-    item.included, item.recurring_id = True, recurring.id
-    db.commit()
-    return item
-
-
-@app.get("/api/categories")
+@app.get("/api/categories", response_model=list[CategoryOut])
 def categories(db: DB):
     return db.scalars(select(Category).order_by(Category.name)).all()
 
@@ -535,7 +431,7 @@ def delete_category(id: str, db: DB):
     return {"ok": True}
 
 
-@app.get("/api/accounts")
+@app.get("/api/accounts", response_model=list[AccountOut])
 def accounts(db: DB):
     return account_information(db)
 
@@ -743,42 +639,23 @@ def delete_change(id: str, change_id: str, db: DB):
 
 @app.delete("/api/recurring/{id}")
 def delete_recurring(id: str, db: DB):
-    db.delete(get(db, Recurring, id))
+    item = get(db, Recurring, id)
+    # Retain the last resolved goal if its bill is removed and the FK unlinks it.
+    linked = db.scalars(select(Plan).where(Plan.recurring_id == id)).all()
+    if linked:
+        resolved = {r["id"]: r for r in planning_summary(db)["plans"]}
+        for plan in linked:
+            row = resolved[plan.id]
+            plan.amount = row["amount"]
+            plan.target_date = date.fromisoformat(row["target_date"])
+    db.delete(item)
     db.commit()
     return {"ok": True}
 
 
-@app.get("/api/purchases")
-def purchases(db: DB):
-    return db.scalars(select(Purchase).order_by(Purchase.month, Purchase.name)).all()
-
-
-@app.post("/api/purchases", status_code=201)
-def create_purchase(data: PurchaseIn, db: DB):
-    category(db, data.category_id)
-    return save(db, Purchase(), data.model_dump())
-
-
-@app.put("/api/purchases/{id}")
-def edit_purchase(id: str, data: PurchaseIn, db: DB):
-    category(db, data.category_id)
-    return save(db, get(db, Purchase, id), data.model_dump())
-
-
-@app.delete("/api/purchases/{id}")
-def delete_purchase(id: str, db: DB):
-    db.delete(get(db, Purchase, id))
-    db.commit()
-    return {"ok": True}
-
-
-@app.get("/api/forecast")
-def month_forecast(month: Month, db: DB, preview: str | None = None):
-    if preview:
-        p = get(db, Purchase, preview)
-        if p.month != month:
-            raise HTTPException(422, "Preview month must match the purchase.")
-    result = forecast(db, month, preview=preview)
+@app.get("/api/forecast", response_model=ForecastOut, response_model_exclude_unset=True)
+def month_forecast(month: Month, db: DB):
+    result = forecast(db, month)
     actuals = actual(db, month)
     return {
         **result,
@@ -799,12 +676,33 @@ def forecast_window(
         raise HTTPException(422, "The forecast window must end by December 9998.")
     inputs = ForecastInputs(db)
     actuals = ActualWindow(db, start, last)
-    savings = db.get(Settings, 1).savings_balance if include_savings else None
+    setting = db.get(Settings, 1)
+    savings = setting.savings_balance if include_savings else None
+    funding = (
+        planning_summary(db, inputs=inputs, include_projection=False)
+        if include_savings
+        else None
+    )
+    running = (
+        cash_projection(inputs, setting, funding["plans"], start, months)
+        if funding
+        else None
+    )
     result = []
     for offset in range(months):
         month = shift_month(start, offset)
         values = inputs.forecast(month)
         recorded = actuals.actual(month)
+        point = running["months"][offset] if running else None
+        due = (
+            [
+                r
+                for r in funding["plans"]
+                if r["target_date"][:7] == month and r.get("funding_gap") is not None
+            ]
+            if funding
+            else []
+        )
         result.append(
             {
                 **values,
@@ -813,9 +711,16 @@ def forecast_window(
                 **(
                     {
                         "savings_balance": savings,
-                        "remaining_with_savings": values["remaining"] + (savings or 0),
-                        "savings_adjusted_deficit": values["remaining"] + (savings or 0)
-                        < 0,
+                        "remaining_with_savings": point["balance"],
+                        "savings_adjusted_deficit": point["balance"] < 0
+                        if point["balance"] is not None
+                        else values["deficit"],
+                        "projected_savings": point["balance"],
+                        "cash_expenses": point["cash_expenses"],
+                        "funding_gap": sum(r["funding_gap"] for r in due),
+                        "annual_funding": due,
+                        "projection_basis": running["basis"],
+                        "income_complete": running["income_complete"],
                     }
                     if include_savings
                     else {}
@@ -913,426 +818,6 @@ def complete(month: Month, data: CompleteIn, db: DB):
     return save(
         db, db.get(MonthStatus, month) or MonthStatus(month=month), data.model_dump()
     )
-
-
-@app.get("/api/transactions")
-def transactions(
-    db: DB, month: Month | None = None, q: str = "", category_id: str | None = None
-):
-    query = (
-        select(Transaction, RecurringDebit.id)
-        .outerjoin(RecurringDebit, RecurringDebit.transaction_id == Transaction.id)
-        .options(
-            load_only(
-                Transaction.id,
-                Transaction.date,
-                Transaction.description,
-                Transaction.amount,
-                Transaction.kind,
-                Transaction.category_id,
-                Transaction.account_id,
-                Transaction.import_id,
-            )
-        )
-    )
-    if month:
-        query = query.where(
-            Transaction.date >= date.fromisoformat(month + "-01"),
-            Transaction.date < date.fromisoformat(shift_month(month, 1) + "-01"),
-        )
-    if q:
-        query = query.where(Transaction.description.icontains(q, autoescape=True))
-    if category_id:
-        query = query.where(Transaction.category_id == category_id)
-    rows = db.execute(query.order_by(Transaction.date.desc(), Transaction.id)).all()
-    # Large statement provenance is available only from the detail endpoint.
-    return [
-        dict(
-            id=r.id,
-            date=r.date,
-            description=r.description,
-            amount=r.amount,
-            kind=r.kind,
-            category_id=r.category_id,
-            account_id=r.account_id,
-            import_id=r.import_id,
-            provenance={"type": "scheduled_ach"} if debit_id else {},
-        )
-        for r, debit_id in rows
-    ]
-
-
-@app.get("/api/transactions/{id}")
-def transaction_details(id: str, db: DB):
-    item = get(db, Transaction, id)
-    data = jsonable_encoder(item)
-    value = dict(item.provenance)
-    if item.import_id and isinstance(value.get("source"), dict):
-        value["source"] = expanded_sources(db, item.import_id, [value["source"]])[0]
-    data["provenance"] = value
-    return data
-
-
-@app.post("/api/transactions", status_code=201)
-def create_transaction(data: TransactionIn, db: DB):
-    category(db, data.category_id)
-    get(db, Account, data.account_id)
-    item = Transaction(provenance={"manual": True}, **data.model_dump())
-    db.add(item)
-    learn_labels(db, [data.model_dump()])
-    db.commit()
-    return item
-
-
-@app.put("/api/transactions/{id}")
-def edit_transaction(id: str, data: TransactionIn, db: DB):
-    category(db, data.category_id)
-    get(db, Account, data.account_id)
-    item = get(db, Transaction, id)
-    for key, value in data.model_dump().items():
-        setattr(item, key, value)
-    learn_labels(db, [data.model_dump()])
-    db.commit()
-    return item
-
-
-@app.delete("/api/transactions/{id}")
-def delete_transaction(id: str, db: DB):
-    db.delete(get(db, Transaction, id))
-    db.commit()
-    return {"ok": True}
-
-
-def import_view(job, db=None):
-    source = job.source
-    data = jsonable_encoder(job)
-    if db is not None and source.get("type") == "pdf":
-        sources = expanded_sources(db, job.id, [r.get("source", {}) for r in job.rows])
-        data["rows"] = [
-            {**row, "source": item}
-            for row, item in zip(data["rows"], sources, strict=True)
-        ]
-    return {
-        **data,
-        "source": {
-            "type": source.get("type"),
-            "headers": source.get("headers", []),
-            "preview": source.get("records", [])[:5],
-            "mapping": source.get("mapping"),
-            "mapping_warning": source.get("mapping_warning"),
-        },
-        "commit_summary": source.get("commit_summary"),
-    }
-
-
-@app.get("/api/imports")
-def imports(db: DB):
-    return [
-        {
-            "id": j.id,
-            "filename": j.filename,
-            "status": j.status,
-            "period": j.period,
-            "account_id": j.account_id,
-            "error": j.error,
-        }
-        for j in db.scalars(
-            select(StatementImport)
-            .options(
-                load_only(
-                    StatementImport.id,
-                    StatementImport.filename,
-                    StatementImport.status,
-                    StatementImport.period,
-                    StatementImport.account_id,
-                    StatementImport.error,
-                )
-            )
-            .order_by(StatementImport.created_at.desc())
-        ).all()
-    ]
-
-
-@app.post("/api/imports", status_code=201)
-async def prepare_import(
-    db: DB,
-    account_id: Annotated[str, Form()],
-    period: Annotated[Month, Form()],
-    file: Annotated[UploadFile, File()],
-):
-    get(db, Account, account_id)
-    data = await file.read(15 * 1024 * 1024 + 1)
-    await file.close()
-    if len(data) > 15 * 1024 * 1024:
-        raise HTTPException(413, "Statements must be smaller than 15 MB.")
-    digest = sha256(data).hexdigest()
-    if db.scalar(
-        select(StatementImport.id).where(
-            StatementImport.account_id == account_id,
-            StatementImport.file_hash == digest,
-        )
-    ):
-        raise HTTPException(
-            409,
-            "This exact file was already uploaded for this account. Open its existing import to review or retry.",
-        )
-    try:
-        source = await asyncio.to_thread(prepare_file, file.filename or "", data)
-    except Exception as exc:
-        raise HTTPException(422, str(exc)[:1000])
-    job = StatementImport(
-        account_id=account_id,
-        period=period,
-        filename=Path(file.filename or "statement").name[:200],
-        file_hash=digest,
-        source=source,
-        rows=[],
-    )
-    db.add(job)
-    db.flush()
-    apply_saved_mapping(db, job)
-    db.commit()
-    return import_view(job, db)
-
-
-@app.get("/api/payee-rules")
-def payee_rules(db: DB):
-    return db.scalars(select(PayeeRule).order_by(PayeeRule.payee, PayeeRule.kind)).all()
-
-
-@app.put("/api/payee-rules/{id}")
-def edit_payee_rule(id: str, data: PayeeRuleIn, db: DB):
-    get(db, Category, data.category_id)
-    return save(db, get(db, PayeeRule, id), data.model_dump())
-
-
-@app.delete("/api/payee-rules/{id}")
-def forget_payee_rule(id: str, db: DB):
-    db.delete(get(db, PayeeRule, id))
-    db.commit()
-    return {"ok": True}
-
-
-@app.post("/api/imports/{id}/categorize")
-def categorize_from_payees(id: str, db: DB):
-    job = db.scalar(
-        select(StatementImport).where(StatementImport.id == id).with_for_update()
-    )
-    if not job:
-        raise HTTPException(404, "Import not found.")
-    if job.status in ("processing", "committed", "undone"):
-        raise HTTPException(409, "This import cannot be categorized now.")
-    from copy import deepcopy
-
-    job.rows = validate_rows(
-        db, apply_payee_rules(db, deepcopy(job.rows)), job.account_id
-    )
-    job.status, job.error = "review", ""
-    db.commit()
-    return import_view(job, db)
-
-
-@app.get("/api/imports/{id}")
-def get_import(id: str, db: DB):
-    return import_view(get(db, StatementImport, id), db)
-
-
-@app.post("/api/imports/{id}/mapping/default")
-def use_card_mapping(id: str, db: DB):
-    job = db.scalar(
-        select(StatementImport).where(StatementImport.id == id).with_for_update()
-    )
-    if not job:
-        raise HTTPException(404, "Import not found.")
-    apply_saved_mapping(db, job)
-    db.commit()
-    return import_view(job, db)
-
-
-@app.put("/api/imports/{id}/mapping")
-def mapping(id: str, data: MappingIn, db: DB):
-    job = db.scalar(
-        select(StatementImport).where(StatementImport.id == id).with_for_update()
-    )
-    if not job:
-        raise HTTPException(404, "Import not found.")
-    if (
-        job.status in ("processing", "committed", "undone")
-        or job.source.get("type") != "csv"
-    ):
-        raise HTTPException(409, "This import cannot be mapped now.")
-    try:
-        rows = csv_rows(
-            job.source, data.model_dump(), job.period, get(db, Settings, 1).currency
-        )
-    except ValueError as exc:
-        raise HTTPException(422, str(exc))
-    job.source = {
-        **{k: v for k, v in job.source.items() if k != "model_used"},
-        "mapping": data.model_dump(),
-        "mapping_warning": "",
-    }
-    get(db, Account, job.account_id).csv_mapping = data.model_dump()
-    job.rows = validate_rows(db, apply_payee_rules(db, rows), job.account_id)
-    job.status = "review"
-    job.error = ""
-    db.commit()
-    return import_view(job, db)
-
-
-@app.post("/api/imports/{id}/process")
-def start_processing(id: str, db: DB, data: ProcessImportIn | None = None):
-    job = db.scalar(
-        select(StatementImport).where(StatementImport.id == id).with_for_update()
-    )
-    if not job:
-        raise HTTPException(404, "Import not found.")
-    if job.status in ("processing", "committed", "undone"):
-        raise HTTPException(409, "This import cannot be processed now.")
-    if job.source.get("type") == "csv" and not job.source.get("mapping"):
-        raise HTTPException(422, "Map CSV columns first.")
-    if (
-        job.source.get("type") == "pdf"
-        and job.rows
-        and not (data and data.replace_review)
-    ):
-        raise HTTPException(
-            409,
-            "Re-extraction replaces reviewed PDF rows. Confirm replacement explicitly.",
-        )
-    job.processing_token = uid()
-    job.status, job.error = "processing", ""
-    db.commit()
-    executor.submit(process_import, id, job.processing_token)
-    return import_view(job, db)
-
-
-@app.put("/api/imports/{id}/review")
-def review(id: str, data: CommitIn, db: DB):
-    job = db.scalar(
-        select(StatementImport).where(StatementImport.id == id).with_for_update()
-    )
-    if not job:
-        raise HTTPException(404, "Import not found.")
-    if job.status in ("processing", "committed", "undone"):
-        raise HTTPException(409, "This import cannot be edited now.")
-    rows = []
-    for row in data.rows:
-        index = row.get("source_index")
-        source = (
-            job.rows[index].get("source", {})
-            if isinstance(index, int) and 0 <= index < len(job.rows)
-            else {"manual_review": True}
-        )
-        rows.append(
-            {
-                k: v
-                for k, v in row.items()
-                if k
-                in ("date", "description", "amount", "kind", "category_id", "selected")
-            }
-            | {
-                "source": source,
-                "classification": job.rows[index].get("classification")
-                if isinstance(index, int)
-                and 0 <= index < len(job.rows)
-                and row.get("category_id") == job.rows[index].get("category_id")
-                and row.get("kind") == job.rows[index].get("kind")
-                else "manual",
-            }
-        )
-    job.rows = validate_rows(db, rows, job.account_id)
-    job.status = "review"
-    db.commit()
-    return import_view(job, db)
-
-
-@app.post("/api/imports/{id}/commit")
-def commit_import(id: str, db: DB):
-    job = db.scalar(
-        select(StatementImport).where(StatementImport.id == id).with_for_update()
-    )
-    if not job:
-        raise HTTPException(404, "Import not found.")
-    if job.status not in ("review", "failed", "interrupted"):
-        raise HTTPException(409, "Review this import before saving.")
-    # Serialize commits for one card: a concurrent overlapping import must see
-    # the first commit's original CSV rows before it decides which rows to save.
-    db.scalar(select(Account).where(Account.id == job.account_id).with_for_update())
-    rows = validate_rows(db, job.rows, job.account_id)
-    selected = [
-        r for r in rows if r.get("selected", True) and not r.get("skip_duplicate")
-    ]
-    skipped = sum(bool(r.get("skip_duplicate")) for r in rows)
-    if (not selected and not skipped) or any(r["errors"] for r in selected):
-        raise HTTPException(
-            422, "Select at least one valid row and resolve all selected row errors."
-        )
-    rows = compact_pdf_rows(db, job, rows)
-    selected = [
-        r for r in rows if r.get("selected", True) and not r.get("skip_duplicate")
-    ]
-    for row in selected:
-        data = TransactionIn.model_validate({**row, "account_id": job.account_id})
-        db.add(
-            Transaction(
-                **data.model_dump(),
-                import_id=id,
-                provenance={
-                    "source": row.get("source", {}),
-                    "original_review": {
-                        key: value for key, value in row.items() if key != "source"
-                    },
-                    "model": job.source.get("model_used", ""),
-                },
-            )
-        )
-    learn_labels(db, selected)
-    job.rows = rows
-    job.source = {
-        "type": job.source["type"],
-        "mapping": job.source.get("mapping"),
-        "commit_summary": {"added": len(selected), "skipped": skipped},
-    }
-    job.status, job.error = "committed", ""
-    db.commit()
-    return import_view(job, db)
-
-
-@app.delete("/api/imports/{id}")
-def delete_import(id: str, db: DB):
-    job = db.scalar(
-        select(StatementImport).where(StatementImport.id == id).with_for_update()
-    )
-    if not job:
-        raise HTTPException(404, "Import not found.")
-    if job.status == "processing":
-        raise HTTPException(
-            409, "Wait for processing to finish before deleting this import."
-        )
-    if job.status == "committed" or db.scalar(
-        select(Transaction.id).where(Transaction.import_id == id).limit(1)
-    ):
-        raise HTTPException(
-            409,
-            "Undo this import before deleting it so its saved transactions are removed explicitly.",
-        )
-    db.delete(job)
-    db.commit()
-    return {"ok": True}
-
-
-@app.post("/api/imports/{id}/undo")
-def undo_import(id: str, db: DB):
-    job = db.scalar(
-        select(StatementImport).where(StatementImport.id == id).with_for_update()
-    )
-    if not job or job.status != "committed":
-        raise HTTPException(409, "Only committed imports can be undone.")
-    db.execute(delete(Transaction).where(Transaction.import_id == id))
-    job.status = "undone"
-    db.commit()
-    return import_view(job, db)
 
 
 FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "dist"

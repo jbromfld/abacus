@@ -1,36 +1,28 @@
-import AdvisorComparison from './AdvisorComparison';
-import type { SpendingComparison } from './AdvisorComparison';
-import AdvisorMarkdown from './AdvisorMarkdown';
-import AdvisorHistory from './AdvisorHistory';
-import { RememberExchange } from './AdvisorMemory';
-import type { MemoryRecall } from './AdvisorMemory';
 import { useEffect, useRef, useState } from 'react';
 import {
   MessageCircle,
   Send,
   RotateCcw,
   LoaderCircle,
-  Leaf,
-  AlertTriangle,
   Globe,
-  ExternalLink,
+  X,
+  Plus,
 } from 'lucide-react';
-import { api, minor, money, monthLabel, inputAmount } from './api';
-import type {
-  Purchase,
-  AdvisorBillPlan,
-  SavingsInputs,
-  SavingsProjection,
-  BillEstimate,
-  AdvisorSpendingHistory,
-} from './api';
+import { api, money } from './api';
+import AdvisorMarkdown from './AdvisorMarkdown';
+import AdvisorComparison from './AdvisorComparison';
+import type { SpendingComparison } from './AdvisorComparison';
+import AdvisorHistory from './AdvisorHistory';
+import { RememberExchange } from './AdvisorMemory';
+import type { MemoryRecall } from './AdvisorMemory';
+import type { AdvisorSpendingHistory } from './api';
+import type { PlanDraft, PlanItem } from './Planning';
 
 type Research = {
   status: string;
-  provider: string;
   queries: string[];
-  missing_details: string[];
   warnings: string[];
+  missing_details: string[];
   sources: {
     id: string;
     title: string;
@@ -39,179 +31,99 @@ type Research = {
     retrieved_at: string;
   }[];
 };
-type Message = {
-  role: 'user' | 'assistant';
-  content: string;
-  research?: Research;
-  truncated?: boolean;
-  failed?: boolean;
-  memory?: MemoryRecall;
-};
 type Context = {
   advisor_memory?: MemoryRecall;
+  web_research?: Research;
   spending_comparison?: SpendingComparison | null;
   spending_history?: AdvisorSpendingHistory;
-  currency: string;
-  selected_month: string;
-  current_date: string;
-  savings_projection?: SavingsProjection | null;
-  web_research?: Research;
-  planning_capacity: {
-    available_savings_minor: number | null;
-    monthly_buffer_minor: number | null;
-    assumptions_complete: boolean;
-    basis: string;
-    earliest_funded_month_for_selected_scenario: string | null;
-    buffer_shortfall_months: string[];
-    months: {
-      month: string;
-      forecast_remaining_minor: number;
-      potential_contribution_minor: number | null;
-      hypothetical_trip_fund_minor: number | null;
-    }[];
-  };
-  monthly_forecasts: {
+  monthly_forecasts?: {
     month: string;
     income_minor: number;
     expenses_minor: number;
     remaining_minor: number;
-    income_entries: number;
   }[];
-  recent_actuals: {
-    month: string;
-    status: string;
-    total_spending_minor: number | null;
-    categories: { name: string; spending_minor: number }[];
-  }[];
-  draft_purchases: { name: string; month: string; amount_minor: number }[];
-  additional_drafts_omitted: number;
-  purchase_scenario: null | {
-    name: string;
-    month: string;
-    amount_minor: number;
-    already_included: boolean;
-    baseline_remaining_minor: number;
-    remaining_after_purchase_minor: number;
-    would_exceed_forecast: boolean;
-  };
 };
-type Reply = { reply: string; reply_truncated?: boolean; context: Context };
+type Message = {
+  role: 'user' | 'assistant';
+  content: string;
+  failed?: boolean;
+  truncated?: boolean;
+  research?: Research;
+  memory?: MemoryRecall;
+};
+type Preview = {
+  topic: string;
+  queries: string[];
+  missing_details: string[];
+  confirmation: string;
+};
 
 export default function BudgetAdvisor({
   entry,
   month,
   currency,
-  purchases,
   model,
-  billPlan,
-  revision,
-  onOpenPlanner,
   memoryEnabled = false,
+  revision,
+  planId = null,
+  onClearPlan,
+  onCreatePlan,
 }: {
   entry: { question: string; key: number } | null;
-  onOpenPlanner: () => void;
-  memoryEnabled?: boolean;
   month: string;
   currency: string;
-  purchases: Purchase[];
   model: string;
-  billPlan: AdvisorBillPlan | null;
+  memoryEnabled?: boolean;
   revision: number;
+  planId?: string | null;
+  onClearPlan?: () => void;
+  onCreatePlan?: (draft: PlanDraft) => void;
 }) {
-  const researchPreference = useRef<boolean | null>(null);
-  const [webStatus, setWebStatus] = useState({
-    provider: 'brave',
-    available: false,
-    message: '',
-  });
-  const [useWeb, setUseWeb] = useState(false);
-  const [researchTopic, setResearchTopic] = useState('');
-  const [savings, setSavings] = useState('');
-  const [buffer, setBuffer] = useState('');
-  const refreshWeb = () =>
-    api<typeof webStatus>('/advisor/research-status')
-      .then((status) => {
-        setWebStatus(status);
-        setUseWeb(researchPreference.current ?? false);
-      })
-      .catch((e) => setError((e as Error).message));
-  const [researchPreview, setResearchPreview] = useState<{
-    topic: string;
-    queries: string[];
-    missing_details: string[];
-    confirmation: string;
-  } | null>(null);
-  const [researchConfirmed, setResearchConfirmed] = useState(false);
-  const [previewing, setPreviewing] = useState(false);
-  const previewResearch = async () => {
-    const topic = researchTopic.trim();
-    setResearchTopic(topic);
-    setPreviewing(true);
-    setError('');
-    setResearchPreview(null);
-    setResearchConfirmed(false);
-    try {
-      setResearchPreview(
-        await api('/advisor/research-preview', 'POST', {
-          topic,
-        }),
-      );
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setPreviewing(false);
-    }
-  };
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState('');
-  const [choice, setChoice] = useState('');
-  const [monthlyAmount, setMonthlyAmount] = useState('');
-  const [monthlyStart, setMonthlyStart] = useState(month);
-  const [monthlyEnd, setMonthlyEnd] = useState('');
-  const [handoffSavings, setHandoffSavings] = useState<SavingsInputs | null>(
-    null,
-  );
-  const [billEstimates, setBillEstimates] = useState<BillEstimate[]>([]);
-  useEffect(() => {
-    let active = true;
-    api<BillEstimate[]>('/bill-estimates')
-      .then((items) => active && setBillEstimates(items))
-      .catch((e) => active && setError(e.message));
-    return () => {
-      active = false;
-    };
-  }, [revision]);
   const [context, setContext] = useState<Context | null>(null);
   const [contextRevision, setContextRevision] = useState(revision);
+  const [plan, setPlan] = useState<PlanItem | null>(null);
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    setElapsed(0);
-    if (!busy) return;
-    const started = Date.now();
-    const timer = setInterval(
-      () => setElapsed(Math.floor((Date.now() - started) / 1000)),
-      1000,
-    );
-    return () => clearInterval(timer);
-  }, [busy]);
   const [error, setError] = useState('');
-  const request = useRef<AbortController | null>(null);
-  const end = useRef<HTMLDivElement>(null);
-  const pendingId = useRef(0);
+  const [useWeb, setUseWeb] = useState(false);
+  const [webStatus, setWebStatus] = useState({ available: false, message: '' });
+  const [topic, setTopic] = useState('');
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [approved, setApproved] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [drafting, setDrafting] = useState<number | null>(null);
+  const pending = useRef(0);
+  const controller = useRef<AbortController | null>(null);
   const memoryEpoch = useRef<string | null>(null);
-  useEffect(() => {
-    void refreshWeb();
-  }, []);
+  const end = useRef<HTMLDivElement>(null);
+  const clearPlan = useRef(onClearPlan);
+  clearPlan.current = onClearPlan;
   const reset = () => {
-    pendingId.current++;
-    request.current?.abort();
+    pending.current++;
+    controller.current?.abort();
     setMessages([]);
     setContext(null);
     setError('');
     setBusy(false);
     memoryEpoch.current = null;
   };
+  const refreshWeb = async () => {
+    try {
+      setWebStatus(await api('/advisor/research-status'));
+    } catch (e) {
+      setWebStatus({ available: false, message: (e as Error).message });
+    }
+  };
+  useEffect(() => {
+    void refreshWeb();
+  }, []);
+  useEffect(() => {
+    reset();
+    setQuestion('');
+  }, [month, currency, model, memoryEnabled]);
   useEffect(() => {
     const changed = () => {
       reset();
@@ -229,128 +141,140 @@ export default function BudgetAdvisor({
     };
   }, []);
   useEffect(() => {
-    reset();
-  }, [memoryEnabled]);
-  useEffect(() => {
-    reset();
-    setQuestion('');
-    setChoice('');
-    setMonthlyStart(month);
-    setHandoffSavings(null);
+    let active = true;
+    if (!planId) {
+      setPlan(null);
+      return;
+    }
+    const read = () =>
+      api<PlanItem>('/planning/' + planId)
+        .then((item) => {
+          if (active) {
+            setPlan(item);
+            setNotice('');
+          }
+        })
+        .catch((error: Error & { status?: number }) => {
+          if (active) {
+            if (error.status !== 404) {
+              setNotice(
+                'Could not refresh this plan. Try again before relying on its funding details.',
+              );
+              return;
+            }
+            pending.current++;
+            controller.current?.abort();
+            setBusy(false);
+            setPlan(null);
+            setNotice(
+              'This plan is no longer available. Choose a current item from Planning.',
+            );
+            clearPlan.current?.();
+          }
+        });
+    setPlan(null);
+    void read();
+    window.addEventListener('focus', read);
     return () => {
-      pendingId.current++;
-      request.current?.abort();
+      active = false;
+      window.removeEventListener('focus', read);
     };
-  }, [month, currency, model]);
+  }, [planId, revision]);
+  useEffect(() => {
+    pending.current++;
+    controller.current?.abort();
+    setBusy(false);
+  }, [planId]);
+  useEffect(() => {
+    if (entry) {
+      setQuestion(entry.question);
+      setUseWeb(false);
+      setPreview(null);
+      setApproved(false);
+    }
+  }, [entry]);
+  useEffect(() => {
+    setElapsed(0);
+    if (!busy) return;
+    const started = Date.now();
+    const timer = setInterval(
+      () => setElapsed(Math.floor((Date.now() - started) / 1000)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [busy]);
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'nearest' });
   }, [messages, busy, error]);
-  useEffect(() => {
-    if (!billPlan) return;
-    reset();
-    setQuestion(billPlan.question);
-    setChoice(
-      billPlan.estimate_id ? 'bill:' + billPlan.estimate_id : 'monthly-bill',
-    );
-    setMonthlyAmount(
-      billPlan.bill ? inputAmount(billPlan.bill.amount, currency) : '',
-    );
-    setMonthlyStart(billPlan.bill?.start_month ?? month);
-    setMonthlyEnd(billPlan.bill?.end_month ?? '');
-    setHandoffSavings(billPlan.savings);
-  }, [billPlan]);
-  useEffect(() => {
-    if (!entry) return;
-    reset();
-    setQuestion(entry.question);
-    setChoice('');
-    setHandoffSavings(null);
-    researchPreference.current = false;
-    setUseWeb(false);
-    setResearchTopic('');
-    requestAnimationFrame(() =>
-      document.getElementById('advisor-question')?.focus(),
-    );
-  }, [entry]);
-  const fmt = (n: number | null) =>
-    n === null ? 'Unknown' : money(n, currency);
+  useEffect(
+    () => () => {
+      pending.current++;
+      controller.current?.abort();
+    },
+    [],
+  );
+  const previewSearch = async () => {
+    setPreviewing(true);
+    setError('');
+    setApproved(false);
+    try {
+      setPreview(
+        await api('/advisor/research-preview', 'POST', { topic: topic.trim() }),
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPreviewing(false);
+    }
+  };
   const send = async () => {
     const text = question.trim();
     if (!text || busy) return;
+    if (planId && !plan) {
+      setError('Wait for the current Planning item to load, or clear it.');
+      return;
+    }
     if (
       useWeb &&
-      (!researchConfirmed ||
-        !researchPreview?.queries.length ||
-        researchPreview.topic !== researchTopic)
+      (!approved || !preview?.queries.length || preview.topic !== topic.trim())
     ) {
       setError(
-        'Preview and confirm the public search terms before asking with web research.',
+        'Preview and confirm the public search terms before asking with web search.',
       );
       return;
     }
-    let planning;
-    let monthlyBill;
-    const optionalMoney = (v: string) =>
-      v.trim() === '' ? null : Number(v) === 0 ? 0 : minor(v, currency);
-    try {
-      planning = {
-        available_savings: optionalMoney(savings),
-        monthly_buffer: optionalMoney(buffer),
-      };
-      if (choice === 'monthly-bill')
-        monthlyBill = {
-          name: 'Potential monthly bill',
-          amount: minor(monthlyAmount, currency),
-          start_month: monthlyStart,
-          end_month: monthlyEnd || null,
-        };
-    } catch (e) {
-      setError((e as Error).message);
-      return;
-    }
-    const conversation = messages.filter((message) => !message.failed);
-    const history = conversation
-      .slice(-12)
-      .map((m) => ({ role: m.role, content: m.content.slice(0, 2000) }));
-    const controller = new AbortController();
-    request.current = controller;
-    const id = ++pendingId.current;
+    const history = messages.filter((item) => !item.failed);
+    const id = ++pending.current;
+    const request = new AbortController();
+    controller.current = request;
     setBusy(true);
     setError('');
-    setMessages([...conversation, { role: 'user', content: text }]);
+    setMessages([...history, { role: 'user', content: text }]);
     setQuestion('');
     try {
-      const result = await api<Reply>(
+      const result = await api<{
+        reply: string;
+        reply_truncated?: boolean;
+        context: Context;
+      }>(
         '/advisor/chat',
         'POST',
         {
           month,
           message: text,
-          history,
+          history: history.slice(-12).map((item) => ({
+            role: item.role,
+            content: item.content.slice(0, 2000),
+          })),
           memory_epoch: memoryEpoch.current,
+          plan_id: planId,
           use_web: useWeb,
-          research_topic: researchTopic,
-          research_confirmation: useWeb
-            ? researchPreview?.confirmation
-            : undefined,
-          planning,
-          purchase_id:
-            choice &&
-            choice !== 'custom' &&
-            choice !== 'monthly-bill' &&
-            !choice.startsWith('bill:')
-              ? choice
-              : null,
-          monthly_bill: monthlyBill,
-          bill_estimate_id: choice.startsWith('bill:') ? choice.slice(5) : null,
-          savings:
-            choice === 'monthly-bill' || choice.startsWith('bill:')
-              ? handoffSavings
-              : null,
+          research_topic: useWeb ? topic.trim() : '',
+          research_confirmation: useWeb ? preview?.confirmation : undefined,
         },
-        controller.signal,
+        request.signal,
       );
-      if (id !== pendingId.current) return;
+      if (id !== pending.current) return;
       setMessages((previous) => [
         ...previous,
         {
@@ -365,19 +289,44 @@ export default function BudgetAdvisor({
       setContextRevision(revision);
       memoryEpoch.current = result.context.advisor_memory?.epoch ?? null;
     } catch (e) {
-      if (id !== pendingId.current) return;
-      setMessages([
-        ...conversation,
-        { role: 'user', content: text, failed: true },
-      ]);
+      if (id !== pending.current) return;
+      setMessages([...history, { role: 'user', content: text, failed: true }]);
       setQuestion(text);
       if ((e as Error).name !== 'AbortError') setError((e as Error).message);
+      if (
+        planId &&
+        [404, 409].includes((e as Error & { status: number }).status)
+      ) {
+        try {
+          setPlan(await api<PlanItem>('/planning/' + planId));
+        } catch (refreshError) {
+          if ((refreshError as Error & { status: number }).status === 404) {
+            setPlan(null);
+            clearPlan.current?.();
+          }
+        }
+      }
     } finally {
-      if (id === pendingId.current) setBusy(false);
+      if (id === pending.current) setBusy(false);
+    }
+  };
+  const draft = async (index: number) => {
+    setDrafting(index);
+    setError('');
+    try {
+      const value = await api<PlanDraft>('/planning/draft', 'POST', {
+        user_message: messages[index - 1]?.content ?? '',
+        assistant_message: messages[index].content,
+      });
+      onCreatePlan?.(value);
+    } catch {
+      onCreatePlan?.({});
+    } finally {
+      setDrafting(null);
     }
   };
   return (
-    <div className="advisor-layout">
+    <div className="advisor-layout advisor-simple">
       <div className="advisor-main">
         <section className="panel advisor-chat">
           <div className="section-head">
@@ -386,7 +335,7 @@ export default function BudgetAdvisor({
                 <MessageCircle size={18} />
                 Budget advisor
               </h2>
-              <p>Think through a purchase, or look ahead together.</p>
+              <p>Understand your spending. Research an idea. Make a plan.</p>
             </div>
             <button
               className="text-button"
@@ -397,6 +346,26 @@ export default function BudgetAdvisor({
               New conversation
             </button>
           </div>
+          {plan && (
+            <div className="advisor-plan-chip">
+              <span>
+                Discussing: <strong>{plan.name}</strong> ·{' '}
+                {money(plan.amount, currency)} · {plan.target_date}
+              </span>
+              <button
+                className="icon"
+                aria-label="Clear discussed plan"
+                onClick={() => clearPlan.current?.()}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+          {notice && (
+            <p className="notice" role="status">
+              {notice}
+            </p>
+          )}
           {context && contextRevision !== revision && (
             <p className="notice" role="status">
               Budget entries changed since this answer. Your conversation is
@@ -411,171 +380,133 @@ export default function BudgetAdvisor({
           >
             {!messages.length && !busy && (
               <div className="advisor-welcome">
-                <div className="empty-icon">
-                  <Leaf size={25} />
-                </div>
                 <h3>A little perspective before you decide.</h3>
                 <p>
-                  Ask about your plans using your budget’s recorded income,
-                  expenses, and estimates.
+                  Use your saved budget and Planning goals, or explore something
+                  new.
                 </p>
                 <div className="suggestions">
                   {[
                     'What could I do to increase my savings?',
-                    'Can I make this purchase without exceeding my budget?',
-                    'Plan a Friday-Sunday trip to western New York in July, including lodging and meals.',
-                    'What kind of Puerto Vallarta weekend next fall would fit my budget?',
-                  ].map((q) => (
+                    'Can I fund my plans by their target dates?',
+                    'Help me plan a vacation.',
+                    'Help me compare a planned purchase.',
+                  ].map((text) => (
                     <button
-                      key={q}
+                      key={text}
                       className="secondary"
-                      onClick={() => setQuestion(q)}
+                      onClick={() => setQuestion(text)}
                     >
-                      {q}
+                      {text}
                     </button>
                   ))}
                 </div>
               </div>
             )}
-            {messages.map((m, i) => (
-              <article key={i} className={'chat-message ' + m.role}>
-                <span>{m.role === 'user' ? 'You' : 'Budget advisor'}</span>
-                {m.role === 'assistant' ? (
+            {messages.map((item, index) => (
+              <article className={'chat-message ' + item.role} key={index}>
+                <span>{item.role === 'user' ? 'You' : 'Budget advisor'}</span>
+                {item.role === 'assistant' ? (
                   <AdvisorMarkdown
-                    content={m.content}
-                    sources={m.research?.sources}
+                    content={item.content}
+                    sources={item.research?.sources}
                   />
                 ) : (
-                  <p>{m.content}</p>
+                  <p>{item.content}</p>
                 )}
-                {m.truncated && (
-                  <p className="notice" role="status">
-                    This answer reached the local model’s reply limit and is
-                    incomplete. Ask a shorter follow-up for the remaining
-                    details, or increase ADVISOR_MAX_TOKENS in local
-                    configuration.
-                  </p>
-                )}
-                {m.failed && (
+                {item.failed && (
                   <p className="muted">
                     This question could not be completed. It is kept below so
                     you can retry.
                   </p>
                 )}
-                {m.memory && (
-                  <>
-                    {m.memory.warnings.map((warning) => (
-                      <p className="notice" role="status" key={warning}>
-                        {warning}
-                      </p>
-                    ))}
-                    {m.memory.notes.length > 0 && (
-                      <details>
-                        <summary>Memory used for this answer</summary>
-                        {m.memory.notes.map((note, index) => (
-                          <div className="memory-note" key={note.id}>
-                            <strong>
-                              [M{index + 1}] {note.title}
-                            </strong>
-                            <small>
-                              {note.source_date} · {note.kind}
-                            </small>
-                            <p>{note.text}</p>
-                          </div>
-                        ))}
-                      </details>
-                    )}
-                  </>
+                {item.truncated && (
+                  <p className="notice" role="status">
+                    This answer reached the local model’s reply limit and is
+                    incomplete. Ask a shorter follow-up for the remaining
+                    details.
+                  </p>
                 )}
-                {memoryEnabled &&
-                  m.role === 'assistant' &&
-                  messages[i - 1]?.role === 'user' && (
-                    <RememberExchange
-                      user={messages[i - 1].content}
-                      assistant={m.content}
-                    />
-                  )}
-                {m.research && m.research.status !== 'disabled' && (
-                  <div className="research-results">
-                    <small>Web research · {m.research.status}</small>
-                    {m.research.warnings.map((warning, j) => (
-                      <p className="research-warning" key={j}>
-                        {warning}
-                      </p>
+                {item.memory?.warnings.map((warning) => (
+                  <p className="notice" role="status" key={warning}>
+                    {warning}
+                  </p>
+                ))}
+                {!!item.memory?.notes.length && (
+                  <details>
+                    <summary>Memory used for this answer</summary>
+                    {item.memory.notes.map((note, i) => (
+                      <div className="memory-note" key={note.id}>
+                        <strong>
+                          [M{i + 1}] {note.title}
+                        </strong>
+                        <small>{note.source_date}</small>
+                        <p>{note.text}</p>
+                      </div>
                     ))}
-                    {m.research.missing_details.length > 0 && (
-                      <details open>
-                        <summary>Details to confirm</summary>
-                        <ul>
-                          {m.research.missing_details.map((detail, j) => (
-                            <li key={j}>{detail}</li>
-                          ))}
-                        </ul>
-                      </details>
-                    )}
-                    {m.research.sources.map((source) => (
+                  </details>
+                )}
+                {item.research && item.research.status !== 'disabled' && (
+                  <div className="research-results">
+                    <small>Web research · {item.research.status}</small>
+                    {item.research.warnings?.map((warning) => (
+                      <p key={warning}>{warning}</p>
+                    ))}
+                    {item.research.missing_details?.map((detail) => (
+                      <p key={detail}>{detail}</p>
+                    ))}
+                    {item.research.sources?.map((source) => (
                       <a
-                        className="source-link"
                         key={source.id}
+                        className="source-link"
                         href={source.url}
                         target="_blank"
                         rel="noreferrer"
                       >
-                        <span>
-                          [{source.id}] {source.title}
-                        </span>
-                        <ExternalLink size={12} />
-                        <small>
-                          {new URL(source.url).hostname} · retrieved{' '}
-                          {new Date(source.retrieved_at).toLocaleDateString()}
-                        </small>
+                        [{source.id}] {source.title}
+                        <small>{source.retrieved_at}</small>
                       </a>
                     ))}
-                    {m.research.queries.length > 0 && (
-                      <details>
-                        <summary>Search terms sent to Brave</summary>
-                        {m.research.queries.map((q, j) => (
-                          <small key={j}>{q}</small>
-                        ))}
-                      </details>
+                  </div>
+                )}
+                {item.role === 'assistant' && (
+                  <div className="advisor-message-actions">
+                    {onCreatePlan && (
+                      <button
+                        className="text-button"
+                        disabled={drafting !== null}
+                        onClick={() => void draft(index)}
+                      >
+                        <Plus size={14} />
+                        {drafting === index
+                          ? 'Preparing plan…'
+                          : 'Add to Planning'}
+                      </button>
+                    )}
+                    {memoryEnabled && messages[index - 1]?.role === 'user' && (
+                      <RememberExchange
+                        user={messages[index - 1].content}
+                        assistant={item.content}
+                      />
                     )}
                   </div>
                 )}
               </article>
             ))}
             {busy && (
-              <div className="chat-thinking" role="status">
-                <LoaderCircle className="spin" size={16} />
-                <span>
-                  {useWeb
-                    ? 'Researching sources and considering your budget…'
-                    : 'Thinking locally…'}{' '}
-                  {elapsed}s
-                  {elapsed >= 60 && (
-                    <small>
-                      Local models can take several minutes, especially while
-                      loading.
-                    </small>
-                  )}
-                </span>
+              <div className="chat-thinking">
+                <LoaderCircle className="spin" size={17} />
+                Thinking… {elapsed}s
                 <button
                   className="text-button"
                   onClick={() => {
-                    pendingId.current++;
-                    request.current?.abort();
+                    pending.current++;
+                    controller.current?.abort();
                     setBusy(false);
-                    setMessages(messages.slice(0, -1));
-                    setQuestion(messages.at(-1)?.content ?? '');
                   }}
                 >
                   Cancel
                 </button>
-              </div>
-            )}
-            {error && (
-              <div className="notice danger" role="alert">
-                <AlertTriangle size={17} />
-                {error}
               </div>
             )}
             <div ref={end} />
@@ -587,6 +518,11 @@ export default function BudgetAdvisor({
               void send();
             }}
           >
+            {error && (
+              <p className="notice danger" role="alert">
+                {error}
+              </p>
+            )}
             <label htmlFor="advisor-question" className="sr-only">
               Ask about your budget
             </label>
@@ -594,211 +530,93 @@ export default function BudgetAdvisor({
               id="advisor-question"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              maxLength={2000}
-              placeholder="Would this purchase fit my budget over the next few months?"
+              placeholder={
+                plan
+                  ? `Ask about ${plan.name}…`
+                  : 'Ask about your budget, a trip, or a purchase…'
+              }
               disabled={busy}
-              required
+              maxLength={2000}
             />
-            <div>
-              <small>
-                Local model · {model}
-                {useWeb ? ' · Brave web research' : ''}
-                <br />
-                Guidance based on forecasts. Your budget stays unchanged.
-              </small>
-              <button disabled={busy || !question.trim()}>
+            <div className="chat-compose-actions">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={useWeb}
+                  disabled={busy || !webStatus.available}
+                  onChange={(e) => {
+                    setUseWeb(e.target.checked);
+                    setApproved(false);
+                  }}
+                />
+                <Globe size={14} />
+                Enable web search
+              </label>
+              <button
+                disabled={busy || !question.trim() || (!!planId && !plan)}
+              >
                 <Send size={15} />
                 Ask
               </button>
             </div>
-          </form>
-        </section>
-        {context?.spending_comparison && (
-          <AdvisorComparison
-            comparison={context.spending_comparison}
-            currency={currency}
-          />
-        )}
-        {context?.savings_projection && (
-          <section className="panel">
-            <div className="section-head">
-              <div>
-                <h2>Future budget projection</h2>
-                <p>
-                  {context.savings_projection.horizon_months} full months ·
-                  forecast projection · starting{' '}
-                  {monthLabel(context.savings_projection.start_month)}
-                </p>
-              </div>
-            </div>
-            <div className="advisor-context">
-              {context.savings_projection.savings_known ? (
-                <>
-                  <p>
-                    Starting savings:{' '}
-                    {fmt(context.savings_projection.starting_savings)}. Savings
-                    floor: {fmt(context.savings_projection.savings_floor)}.
-                  </p>
-                  <p>
-                    Projected ending savings:{' '}
-                    <strong>
-                      {fmt(context.savings_projection.ending_savings)}
-                    </strong>
-                    . Lowest savings:{' '}
-                    <strong>
-                      {fmt(context.savings_projection.lowest_savings)}
-                    </strong>
-                    .
-                  </p>
-                </>
-              ) : (
-                <p>
-                  Savings is not set; this compares monthly budget room only.
-                </p>
-              )}
-              {context.savings_projection.first_bill_month_remaining !==
-                null && (
-                <p>
-                  Monthly room after the payment:{' '}
-                  <strong>
-                    {fmt(context.savings_projection.first_bill_month_remaining)}
-                  </strong>{' '}
-                  in the first active month.
-                </p>
-              )}
-              {context.savings_projection.bill && (
-                <p>
-                  {context.savings_projection.bill.name}:{' '}
-                  {fmt(context.savings_projection.bill.amount)}/month from{' '}
-                  {monthLabel(context.savings_projection.bill.start_month)}.
-                  {context.savings_projection.bill.already_included
-                    ? ' Already included; not deducted twice.'
-                    : ''}
-                </p>
-              )}
-              {context.savings_projection.bill_inferred_from_question && (
-                <p>
-                  Assumes the new bill starts in the selected budget month. Use
-                  Purchase planner for a different start or end.
-                </p>
-              )}
-              {context.savings_projection.first_below_floor_month && (
-                <p className="red">
-                  Below savings floor in{' '}
-                  {monthLabel(
-                    context.savings_projection.first_below_floor_month,
-                  )}
-                  .
-                </p>
-              )}
-              {context.savings_projection.first_negative_month && (
-                <p className="red">
-                  Below zero in{' '}
-                  {monthLabel(context.savings_projection.first_negative_month)}.
-                </p>
-              )}
-              {!context.savings_projection.income_complete && (
-                <p className="red">
-                  Income is missing in part of the forecast; affordability is
-                  incomplete.
-                </p>
-              )}
-              <p>
-                Future estimates use your saved budget, not recorded spending.
-                Budget edits are planning changes, not actual charges. Dated
-                annual bills replace monthly allocations with their full payment
-                when due. This is a planning projection, not a live bank
-                balance.
-              </p>
-            </div>
-          </section>
-        )}
-      </div>
-      <aside className="advisor-side">
-        <section className="panel">
-          <div className="section-head">
-            <div>
-              <h2>
-                <Globe size={17} />
-                Travel research
-              </h2>
-              <p>Sources, options, and a plan to fund it.</p>
-            </div>
-          </div>
-          <div className="advisor-controls">
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={useWeb}
-                disabled={busy || !webStatus.available}
-                onChange={(e) => {
-                  researchPreference.current = e.target.checked;
-                  setUseWeb(e.target.checked);
-                }}
-              />
-              Use current web research
-            </label>
             {!webStatus.available && (
-              <p className="muted">
-                {webStatus.message || 'Checking web research configuration…'}{' '}
+              <small>
+                {webStatus.message || 'Checking web search connection…'}{' '}
                 <button
+                  type="button"
                   className="text-button"
                   onClick={() => void refreshWeb()}
                 >
                   Refresh connection
                 </button>
-              </p>
-            )}
-            <label>
-              Public research topic (required for web research)
-              <input
-                value={researchTopic}
-                maxLength={1000}
-                disabled={busy}
-                onChange={(e) => {
-                  setResearchTopic(e.target.value);
-                  setResearchPreview(null);
-                  setResearchConfirmed(false);
-                }}
-                placeholder="Puerto Vallarta, fall 2027, weekend, flights from Detroit"
-              />
-              <small>
-                Only this public topic is used for searches. Keep financial and
-                identity details in the private chat. Preview and confirm the
-                exact searches before sending them to Brave.
               </small>
-            </label>
+            )}
             {useWeb && (
-              <div className="research-preview">
+              <div className="chat-web-controls">
+                <label>
+                  Public search topic
+                  <input
+                    aria-label="Public search topic"
+                    value={topic}
+                    maxLength={1000}
+                    disabled={busy}
+                    placeholder="Destination and dates, or a product and region"
+                    onChange={(e) => {
+                      setTopic(e.target.value);
+                      setPreview(null);
+                      setApproved(false);
+                    }}
+                  />
+                </label>
+                <small>
+                  Only the public topic and approved searches leave Abacus. Keep
+                  personal finances in the chat.
+                </small>
                 <button
                   type="button"
-                  className="secondary"
-                  disabled={busy || previewing || !researchTopic.trim()}
-                  onClick={() => void previewResearch()}
+                  className="secondary small"
+                  disabled={busy || previewing || !topic.trim()}
+                  onClick={() => void previewSearch()}
                 >
                   {previewing ? 'Preparing…' : 'Preview public searches'}
                 </button>
-                {researchPreview && (
+                {preview && (
                   <>
                     <ul>
-                      {researchPreview.queries.map((q) => (
-                        <li key={q}>{q}</li>
+                      {preview.queries.map((query) => (
+                        <li key={query}>{query}</li>
                       ))}
                     </ul>
-                    {researchPreview.missing_details.map((d) => (
-                      <p className="muted" key={d}>
-                        {d}
-                      </p>
+                    {preview.missing_details.map((detail) => (
+                      <p key={detail}>{detail}</p>
                     ))}
-                    {researchPreview.queries.length > 0 && (
+                    {!!preview.queries.length && (
                       <label className="checkbox">
                         <input
                           type="checkbox"
-                          checked={researchConfirmed}
+                          checked={approved}
+                          onChange={(e) => setApproved(e.target.checked)}
                           disabled={busy}
-                          onChange={(e) =>
-                            setResearchConfirmed(e.target.checked)
-                          }
                         />
                         I approve sending these search terms to Brave.
                       </label>
@@ -807,281 +625,64 @@ export default function BudgetAdvisor({
                 )}
               </div>
             )}
-            <label>
-              Funds already set aside ({currency}, optional)
-              <input
-                type="number"
-                min="0"
-                step={currency === 'JPY' ? '1' : '0.01'}
-                value={savings}
-                disabled={busy}
-                onChange={(e) => setSavings(e.target.value)}
-              />
-            </label>
-            <label>
-              Monthly breathing room to preserve ({currency}, optional)
-              <input
-                type="number"
-                min="0"
-                step={currency === 'JPY' ? '1' : '0.01'}
-                value={buffer}
-                disabled={busy}
-                onChange={(e) => setBuffer(e.target.value)}
-              />
-              <small>
-                Without both amounts, the advisor asks before estimating a
-                comfortable payment timeline.
-              </small>
-            </label>
-          </div>
+            <small>
+              Read-only guidance from your local model. Add to Planning opens a
+              draft for review.
+            </small>
+          </form>
         </section>
-        <section className="panel">
-          <div className="section-head">
-            <div>
-              <h2>Planner context</h2>
-              <p>Create and edit estimates in Purchase planner.</p>
-            </div>
-          </div>
-          <div className="advisor-controls">
-            <label>
-              Saved planning context
-              <select
-                value={choice}
-                disabled={busy}
-                onChange={(e) => {
-                  setChoice(e.target.value);
-                  setHandoffSavings(null);
-                  setContext(null);
-                }}
-              >
-                <option value="">General budget question</option>
-                {billPlan?.bill && (
-                  <option value="monthly-bill">
-                    Current Purchase planner preview
-                  </option>
-                )}
-                {billEstimates.map((e) => (
-                  <option key={e.id} value={'bill:' + e.id}>
-                    {e.name} · {fmt(e.amount)}/month ·{' '}
-                    {e.included ? 'added' : 'draft'}
-                  </option>
-                ))}
-                {purchases.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} · {fmt(p.amount)} ·{' '}
-                    {p.included ? 'included' : 'draft'}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {choice === 'monthly-bill' && billPlan?.bill && (
-              <p>
-                {billPlan.bill.name} · {fmt(billPlan.bill.amount)}/month from{' '}
-                {monthLabel(billPlan.bill.start_month)}
-              </p>
-            )}
-            <p className="muted">
-              Savings comes from Recurring accounts. Purchase planner owns
-              payment and purchase estimates; the advisor explains their
-              calculated results.
-            </p>
-            <button className="secondary" onClick={onOpenPlanner}>
-              Open Purchase planner
-            </button>
-            {context?.purchase_scenario && (
-              <div
-                className={
-                  'scenario-result ' +
-                  (context.purchase_scenario.would_exceed_forecast
-                    ? 'over'
-                    : '')
-                }
-              >
-                <small>
-                  {context.purchase_scenario.name} ·{' '}
-                  {monthLabel(context.purchase_scenario.month, true)}
-                </small>
-                <span>Remaining after purchase</span>
-                <strong>
-                  {fmt(
-                    context.purchase_scenario.remaining_after_purchase_minor,
-                  )}
-                </strong>
-                <small>
-                  {context.purchase_scenario.already_included
-                    ? 'Already included in the baseline.'
-                    : 'Draft estimate; excluded from your saved forecast.'}
-                </small>
+        {context?.spending_comparison && (
+          <AdvisorComparison
+            comparison={context.spending_comparison}
+            currency={currency}
+          />
+        )}
+        {context?.spending_history && (
+          <section className="panel advisor-evidence">
+            <div className="section-head">
+              <div>
+                <h2>Spending evidence</h2>
+                <p>Recorded categories and payees behind the advice.</p>
               </div>
-            )}
-          </div>
-        </section>
-        <section className="panel">
-          <div className="section-head">
-            <div>
-              <h2>Budget context</h2>
-              <p>Freshly read with every question.</p>
             </div>
-          </div>
-          <div className="advisor-context">
+            <AdvisorHistory
+              history={context.spending_history}
+              currency={currency}
+            />
+          </section>
+        )}
+        {context?.monthly_forecasts && (
+          <details className="panel advisor-snapshot">
+            <summary>Budget snapshot used for the last answer</summary>
             <p>
-              {monthLabel(month)} and the following {useWeb ? 23 : 11} months of
-              forecasts; up to 12 past months of category and normalized payee
-              spending, with calculated 2- and 3-month changes; upcoming draft
-              purchases; and your selected scenario.
+              Financial context and approved memories stay local. Forecasts are
+              estimates; recorded savings is manually entered.
             </p>
-            <p>
-              Budget context and normalized payee summaries go only to your
-              local Ollama model, through a read-only database snapshot. Account
-              names stay local. Raw statements, card/account IDs, and statement
-              provenance are excluded. Brave receives only the separately
-              previewed and approved public travel search terms; never this
-              financial context, chat history, model replies, or approved
-              memories. Full chat stays in this tab’s memory. If advisor memory
-              is enabled, only notes you explicitly approve and their displayed
-              source excerpts persist in local Memora.
-            </p>
-            {context && (
-              <details>
-                <summary>View the snapshot used for the last answer</summary>
-                <div className="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Month</th>
-                        <th>Income</th>
-                        <th>Expenses</th>
-                        <th>Remaining</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {context.monthly_forecasts.map((f) => (
-                        <tr key={f.month}>
-                          <th>{monthLabel(f.month, true)}</th>
-                          <td>{fmt(f.income_minor)}</td>
-                          <td>{fmt(f.expenses_minor)}</td>
-                          <td className={f.remaining_minor < 0 ? 'red' : ''}>
-                            {fmt(f.remaining_minor)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="snapshot-actuals">
-                  <h3>Hypothetical trip funding</h3>
-                  <p>{context.planning_capacity.basis}</p>
-                  <p>
-                    Starting trip funds:{' '}
-                    {context.planning_capacity.available_savings_minor === null
-                      ? 'unknown'
-                      : fmt(context.planning_capacity.available_savings_minor)}
-                    . Monthly buffer:{' '}
-                    {context.planning_capacity.monthly_buffer_minor === null
-                      ? 'unknown'
-                      : fmt(context.planning_capacity.monthly_buffer_minor)}
-                    .
-                  </p>
-                  {context.planning_capacity
-                    .earliest_funded_month_for_selected_scenario && (
-                    <p>
-                      Selected estimate could be funded by{' '}
-                      {monthLabel(
-                        context.planning_capacity
-                          .earliest_funded_month_for_selected_scenario,
-                      )}{' '}
-                      under these assumptions; this is not a cash-balance
-                      guarantee.
-                    </p>
-                  )}
-                  {context.planning_capacity.buffer_shortfall_months.length >
-                    0 && (
-                    <p className="red">
-                      Buffer shortfalls:{' '}
-                      {context.planning_capacity.buffer_shortfall_months.join(
-                        ', ',
-                      )}
-                      .
-                    </p>
-                  )}
-                  <div className="table-scroll">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Month</th>
-                          <th>Potential contribution</th>
-                          <th>Hypothetical trip fund</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {context.planning_capacity.months.map((p) => (
-                          <tr key={p.month}>
-                            <th>{monthLabel(p.month, true)}</th>
-                            <td>
-                              {p.potential_contribution_minor === null
-                                ? 'Unknown'
-                                : fmt(p.potential_contribution_minor)}
-                            </td>
-                            <td>
-                              {p.hypothetical_trip_fund_minor === null
-                                ? 'Unknown'
-                                : fmt(p.hypothetical_trip_fund_minor)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {context.recent_actuals.map((a) => (
-                    <div key={a.month}>
-                      <strong>
-                        {monthLabel(a.month, true)} · {a.status}
-                      </strong>
-                      <p>
-                        {a.total_spending_minor === null
-                          ? 'Missing actuals'
-                          : fmt(a.total_spending_minor) + ' recorded spending'}
-                      </p>
-                      {a.categories.map((c) => (
-                        <small key={c.name}>
-                          {c.name}: {fmt(c.spending_minor)}
-                        </small>
-                      ))}
-                    </div>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>Income</th>
+                    <th>Expenses</th>
+                    <th>Remaining</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {context.monthly_forecasts.map((row) => (
+                    <tr key={row.month}>
+                      <th>{row.month}</th>
+                      <td>{money(row.income_minor, currency)}</td>
+                      <td>{money(row.expenses_minor, currency)}</td>
+                      <td>{money(row.remaining_minor, currency)}</td>
+                    </tr>
                   ))}
-                  {context.spending_history && (
-                    <AdvisorHistory
-                      history={context.spending_history}
-                      currency={currency}
-                    />
-                  )}
-                  <h3>Draft estimates excluded from forecast</h3>
-                  {context.draft_purchases.length ? (
-                    context.draft_purchases.map((p, i) => (
-                      <p key={i}>
-                        {p.name} · {p.month} · {fmt(p.amount_minor)}
-                      </p>
-                    ))
-                  ) : (
-                    <p>No upcoming drafts.</p>
-                  )}
-                  {context.additional_drafts_omitted > 0 && (
-                    <p>
-                      {context.additional_drafts_omitted} additional drafts
-                      omitted.
-                    </p>
-                  )}
-                  <p>
-                    Each forecast month stands on its own. Savings projections
-                    use your manually entered assumptions, not a verified bank
-                    balance.
-                  </p>
-                </div>
-              </details>
-            )}
-          </div>
-        </section>
-      </aside>
+                </tbody>
+              </table>
+            </div>
+          </details>
+        )}
+      </div>
     </div>
   );
 }

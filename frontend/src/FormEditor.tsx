@@ -35,8 +35,18 @@ export default function FormEditor({
       editor.fields.map((f) => [f.name, String(f.value ?? '')]),
     ),
   );
+  const initialValues = Object.fromEntries(
+    editor.fields.map((f) => [f.name, String(f.value ?? '')]),
+  );
+  const dirty = Object.keys(values).some(
+    (name) => values[name] !== initialValues[name],
+  );
+  const close = () => {
+    if (!busy && (!dirty || window.confirm('Discard unsaved changes?')))
+      onClose();
+  };
   return (
-    <Modal title={editor.title} onClose={onClose}>
+    <Modal title={editor.title} onClose={close}>
       <form
         onChange={(e) => {
           const target = e.target;
@@ -86,7 +96,8 @@ export default function FormEditor({
                   <input
                     type="checkbox"
                     name={f.name}
-                    defaultChecked={values[f.name] === 'true'}
+                    checked={values[f.name] === 'true'}
+                    onChange={() => {}}
                   />
                   <span>
                     {f.label}
@@ -102,7 +113,8 @@ export default function FormEditor({
                   {f.options ? (
                     <select
                       name={f.name}
-                      defaultValue={f.value ?? ''}
+                      value={values[f.name] ?? ''}
+                      onChange={() => {}}
                       required={f.required !== false}
                       disabled={f.disabled}
                     >
@@ -113,12 +125,17 @@ export default function FormEditor({
                       ))}
                     </select>
                   ) : f.type === 'textarea' ? (
-                    <textarea name={f.name} defaultValue={f.value} />
+                    <textarea
+                      name={f.name}
+                      value={values[f.name] ?? ''}
+                      onChange={() => {}}
+                    />
                   ) : (
                     <input
                       name={f.name}
                       type={f.type ?? 'text'}
-                      defaultValue={f.value}
+                      value={values[f.name] ?? ''}
+                      onChange={() => {}}
                       required={f.required !== false}
                       disabled={f.disabled}
                       step={f.type === 'number' ? 'any' : undefined}
@@ -137,7 +154,7 @@ export default function FormEditor({
           </p>
         )}
         <div className="modal-actions">
-          <button type="button" className="secondary" onClick={onClose}>
+          <button type="button" className="secondary" onClick={close}>
             Cancel
           </button>
           <button disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>

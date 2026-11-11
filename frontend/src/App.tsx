@@ -35,9 +35,7 @@ import {
 import type {
   Category,
   Account,
-  PayeeRule,
   Recurring,
-  Purchase,
   Transaction,
   Forecast,
   ImportJob,
@@ -50,11 +48,11 @@ const AdvisorMemory = lazy(() => import('./AdvisorMemory'));
 const ExpenseBreakdown = lazy(() => import('./ExpenseBreakdown'));
 const BatchUploadDialog = lazy(() => import('./BatchUploadDialog'));
 import { importStage } from './batchStatus';
-import Modal from './Modal';
 import UpcomingBills from './UpcomingBills';
-const BudgetImpactPlanner = lazy(() => import('./BudgetImpactPlanner'));
-import SavingsSettings from './SavingsSettings';
-import ReserveMonitor from './ReserveMonitor';
+import AnnualExpectedIncome from './AnnualExpectedIncome';
+import Planning, { PlanningCategories, PlanningOverview } from './Planning';
+import type { PlanDraft } from './Planning';
+import RememberedPayees from './RememberedPayees';
 const HistoricalSpending = lazy(() => import('./HistoricalSpending'));
 const ImportReview = lazy(() => import('./ImportReview'));
 import FormEditor from './FormEditor';
@@ -62,7 +60,10 @@ import type { Field, Editor } from './FormEditor';
 import OverviewComparison from './OverviewComparison';
 import YearSummary from './YearSummary';
 import { useWorkspace } from './useWorkspace';
-import type { AdvisorBillPlan } from './api';
+import { useCardFreshness } from './useCardFreshness';
+import { invalidateResources, useResourceRevision } from './resourceCache';
+import { usePagedRecords } from './usePagedRecords';
+import type { ImportSummary } from './api';
 
 const colors = [
   '#548574',
@@ -107,8 +108,11 @@ export default function App() {
     question: string;
     key: number;
   } | null>(null);
-  const [advisorBillPlan, setAdvisorBillPlan] =
-    useState<AdvisorBillPlan | null>(null);
+  const [advisorPlanId, setAdvisorPlanId] = useState<string | null>(null);
+  const [planDraft, setPlanDraft] = useState<{
+    key: number;
+    value: PlanDraft;
+  } | null>(null);
   const [month, setMonth] = useState(monthNow());
   const [spendingMode, setSpendingMode] = useState<
     'breakdown' | 'entries' | 'transactions' | 'historical'
@@ -121,20 +125,28 @@ export default function App() {
   const actualMonth = actualMonthFor(month, currentActual);
   const [actualReport, setActualReport] = useState<Forecast | null>(null);
   const [actualLoading, setActualLoading] = useState(true);
-  const [revision, setRevision] = useState(0);
+  const [actualError, setActualError] = useState('');
+  const revision = useResourceRevision([
+    'settings',
+    'categories',
+    'accounts',
+    'recurring',
+    'forecast',
+    'planning',
+    'imports',
+  ]);
+  const transactionRevision = useResourceRevision(['transactions']);
+  const importRevision = useResourceRevision(['imports']);
   const {
     settings,
     categories,
     accounts,
     setAccounts,
     recurring,
-    purchases,
     forecast,
-    imports,
     loading,
     error: loadError,
-  } = useWorkspace(month, revision);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  } = useWorkspace(month);
   const [error, setError] = useState('');
   const [editor, setEditor] = useState<Editor | null>(null);
   const [importJob, setImportJob] = useState<ImportJob | null>(null);
@@ -143,14 +155,21 @@ export default function App() {
   const [uploadAccount, setUploadAccount] = useState('');
   const [uploadPeriod, setUploadPeriod] = useState<string | null>(null);
   const [monitoring, setMonitoring] = useState<string | null>(null);
-  const [preview, setPreview] = useState<{
-    purchase: Purchase;
-    result: Forecast;
-  } | null>(null);
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [overlay, setOverlay] = useState(true);
   const [query, setQuery] = useState('');
-  const [payeeRules, setPayeeRules] = useState<PayeeRule[]>([]);
+  const transactionPage = usePagedRecords<Transaction>(
+    `/transactions?month=${actualMonth}&q=${encodeURIComponent(query)}`,
+    view === 'Spending' && spendingMode === 'transactions',
+    transactionRevision,
+  );
+  const transactions = transactionPage.items;
+  const importPage = usePagedRecords<ImportSummary>(
+    '/imports',
+    view === 'Statement imports',
+    importRevision,
+  );
+  const imports = importPage.items;
   const [models, setModels] = useState<{ models: string[]; error: string }>({
     models: [],
     error: '',
@@ -173,7 +192,12 @@ export default function App() {
       setScrollToBreakdown(false);
     }
   }, [scrollToBreakdown, view, spendingMode]);
-  const refresh = () => setRevision((n) => n + 1);
+  const refresh = () => invalidateResources('/transactions');
+  const openOverview = () => {
+    setMonth(monthNow());
+    setView('Overview');
+    refresh();
+  };
   const currency = settings.currency;
   const fmt = (n: number) => money(n, currency);
   const catName = (id: string | null) =>
@@ -192,29 +216,19 @@ export default function App() {
     let active = true;
     const controller = new AbortController();
     setActualLoading(true);
-    Promise.all([
-      api<Forecast>(
-        `/forecast?month=${actualMonth}`,
-        'GET',
-        undefined,
-        controller.signal,
-      ),
-      api<Transaction[]>(
-        `/transactions?month=${actualMonth}`,
-        'GET',
-        undefined,
-        controller.signal,
-      ),
-    ])
-      .then(([report, rows]) => {
-        if (active) {
-          setActualReport(report);
-          setTransactions(rows);
-        }
+    setActualError('');
+    api<Forecast>(
+      `/forecast?month=${actualMonth}`,
+      'GET',
+      undefined,
+      controller.signal,
+    )
+      .then((report) => {
+        if (active) setActualReport(report);
       })
       .catch((e) => {
         if (active && (e as Error).name !== 'AbortError')
-          setError((e as Error).message);
+          setActualError((e as Error).message);
       })
       .finally(() => {
         if (active) setActualLoading(false);
@@ -231,40 +245,13 @@ export default function App() {
         api<typeof models>('/models')
           .then(setModels)
           .catch((e) => setError(e.message));
-      api<PayeeRule[]>('/payee-rules')
-        .then(setPayeeRules)
-        .catch((e) => setError(e.message));
     }
-  }, [view, revision]);
+  }, [view, revision, settings.advisor_enabled]);
   useEffect(() => {
     if (view === 'Budget advisor' && !settings.advisor_enabled)
       setView('Settings');
   }, [view, settings.advisor_enabled]);
-  useEffect(() => {
-    let active = true;
-    const updateCards = () => {
-      api<Account[]>('/accounts')
-        .then((cards) => {
-          if (active) setAccounts(cards);
-        })
-        .catch(() => {
-          if (active)
-            setError(
-              'Could not refresh card freshness alerts. Check the local server.',
-            );
-        });
-    };
-    const timer = setInterval(updateCards, 60000);
-    const onVisible = () => {
-      if (!document.hidden) updateCards();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      active = false;
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, []);
+  const cardFreshness = useCardFreshness(setAccounts);
   const monitorCard = async (id: string, enabled: boolean) => {
     setMonitoring(id);
     setError('');
@@ -498,42 +485,6 @@ export default function App() {
         });
       },
     });
-  const openPurchase = (p?: Purchase) =>
-    setEditor({
-      title: p ? 'Edit purchase' : 'Plan a purchase',
-      description:
-        'Save an estimate first. Include it when you are ready for it to count toward your forecast.',
-      fields: [
-        { name: 'name', label: 'What are you planning?', value: p?.name },
-        amountField(p?.amount),
-        {
-          name: 'month',
-          label: 'Target month',
-          type: 'month',
-          value: p?.month ?? month,
-        },
-        {
-          name: 'category_id',
-          label: 'Category',
-          value: p?.category_id ?? '',
-          options: categoryOptions,
-        },
-        {
-          name: 'notes',
-          label: 'Notes (optional)',
-          type: 'textarea',
-          value: p?.notes,
-          required: false,
-        },
-      ],
-      submit: async (d) => {
-        await api(p ? `/purchases/${p.id}` : '/purchases', p ? 'PUT' : 'POST', {
-          ...d,
-          amount: minor(d.amount, currency),
-          included: p?.included ?? false,
-        });
-      },
-    });
   const openTransaction = (t?: Transaction) =>
     setEditor({
       title: t ? 'Edit transaction' : 'Record a transaction',
@@ -615,7 +566,7 @@ export default function App() {
     { name: 'Overview', icon: LayoutDashboard },
     { name: 'Spending', icon: ChartNoAxesCombined },
     { name: 'Recurring accounts', icon: Repeat2 },
-    { name: 'Purchase planner', icon: ShoppingBag },
+    { name: 'Planning', icon: ShoppingBag },
     { name: 'Statement imports', icon: Upload },
     ...(settings.advisor_enabled
       ? [{ name: 'Budget advisor', icon: MessageCircle }]
@@ -630,7 +581,7 @@ export default function App() {
             href="#"
             onClick={(e) => {
               e.preventDefault();
-              setView('Overview');
+              openOverview();
             }}
           >
             <span className="brand-mark">
@@ -649,7 +600,9 @@ export default function App() {
               <button
                 key={n.name}
                 className={'nav-item ' + (view === n.name ? 'active' : '')}
-                onClick={() => setView(n.name)}
+                onClick={() =>
+                  n.name === 'Overview' ? openOverview() : setView(n.name)
+                }
               >
                 <n.icon size={19} />
                 {n.name}
@@ -700,7 +653,7 @@ export default function App() {
                     ? 'Make room for what matters.'
                     : view === 'Recurring accounts'
                       ? 'The regular things.'
-                      : view === 'Purchase planner'
+                      : view === 'Planning'
                         ? 'A little looking ahead.'
                         : view === 'Spending'
                           ? 'See where it goes.'
@@ -715,8 +668,8 @@ export default function App() {
                     ? 'Your month, thoughtfully laid out. One less thing on your mind.'
                     : view === 'Recurring accounts'
                       ? 'Give your bills and income a predictable place.'
-                      : view === 'Purchase planner'
-                        ? 'Estimate purchases and recurring payment changes before adjusting your budget.'
+                      : view === 'Planning'
+                        ? 'A name, an amount, and a date. Make room for what matters.'
                         : view === 'Spending'
                           ? 'Small details, a clearer picture. Explore your spending over time.'
                           : view === 'Statement imports'
@@ -796,10 +749,21 @@ export default function App() {
                 {budgetAlerts.error}
               </p>
             )}
-            {(error || loadError) && (
+            {cardFreshness.error && (
+              <div className="notice danger" role="alert">
+                <span>{cardFreshness.error}</span>
+                <button
+                  className="text-button"
+                  onClick={() => void cardFreshness.refresh()}
+                >
+                  Retry card alerts
+                </button>
+              </div>
+            )}
+            {(error || loadError || actualError) && (
               <div className="notice danger" role="alert">
                 <AlertTriangle size={18} />
-                <span>{error || loadError}</span>
+                <span>{error || loadError || actualError}</span>
                 <button
                   className="text-button"
                   onClick={() => {
@@ -834,12 +798,6 @@ export default function App() {
               <>
                 {view === 'Overview' && forecast && (
                   <>
-                    <ReserveMonitor
-                      currency={currency}
-                      revision={revision}
-                      onConfigure={() => setView('Recurring accounts')}
-                      onChanged={refresh}
-                    />
                     <div className="stats overview-stats">
                       <div className="stat">
                         <span className="stat-label">
@@ -905,6 +863,13 @@ export default function App() {
                         </button>
                       </div>
                     </div>
+                    <PlanningOverview
+                      month={month}
+                      onChanged={refresh}
+                      currency={currency}
+                      revision={revision}
+                      onOpen={() => setView('Planning')}
+                    />
                     {budgetAlerts.ready &&
                       forecast.deficit &&
                       !budgetAlerts.isDismissed('forecast_deficit', month) && (
@@ -1053,29 +1018,22 @@ export default function App() {
                               <span className="stat-icon income">
                                 <ArrowDownLeft size={17} />
                               </span>
-                              Expected income
+                              Monthly expected income
                             </span>
                             <strong>
                               {forecast && forecast.month === month
                                 ? fmt(forecast.income)
                                 : '…'}
                             </strong>
-                            <small>
-                              {monthLabel(month)} · scheduled income
-                            </small>
+                            <small>{monthLabel(month)} · forecast income</small>
                           </div>
                         </div>
                       </section>
-                      <SavingsSettings
-                        currency={currency}
-                        onChanged={refresh}
-                      />
                     </div>
-                    <ReserveMonitor
-                      manage
+                    <AnnualExpectedIncome
+                      year={Number(month.slice(0, 4))}
                       currency={currency}
                       revision={revision}
-                      onConfigure={() => setView('Settings')}
                       onChanged={refresh}
                     />
                     <section className="panel">
@@ -1168,6 +1126,31 @@ export default function App() {
                                     </small>
                                   )}
                                 </div>
+                                {r.kind === 'payable' &&
+                                  r.frequency === 'annual' &&
+                                  !!r.due_day && (
+                                    <button
+                                      className="secondary small"
+                                      onClick={async () => {
+                                        try {
+                                          const plan = await api<PlanDraft>(
+                                            `/planning/annual/${r.id}`,
+                                            'POST',
+                                          );
+                                          setPlanDraft({
+                                            key: Date.now(),
+                                            value: plan,
+                                          });
+                                          refresh();
+                                          setView('Planning');
+                                        } catch (e) {
+                                          setError((e as Error).message);
+                                        }
+                                      }}
+                                    >
+                                      Track in Planning
+                                    </button>
+                                  )}
                                 <button
                                   className="secondary small"
                                   onClick={() => adjustRecurring(r)}
@@ -1237,135 +1220,26 @@ export default function App() {
                     </section>
                   </>
                 )}
-                {view === 'Purchase planner' && (
-                  <>
-                    <ReserveMonitor
-                      currency={currency}
-                      revision={revision}
-                      onConfigure={() => setView('Recurring accounts')}
-                      onChanged={refresh}
-                    />
-                    <BudgetImpactPlanner
-                      currency={currency}
-                      categories={categories}
-                      recurring={recurring}
-                      month={month}
-                      revision={revision}
-                      onChanged={refresh}
-                      onConfigure={() => setView('Recurring accounts')}
-                      onDiscuss={
-                        settings.advisor_enabled
-                          ? (plan) => {
-                              setAdvisorBillPlan(plan);
-                              setView('Budget advisor');
-                            }
-                          : undefined
+                {view === 'Planning' && (
+                  <Planning
+                    advisorEnabled={settings.advisor_enabled}
+                    currency={currency}
+                    revision={revision}
+                    onChanged={refresh}
+                    onDiscuss={(id) => {
+                      if (!settings.advisor_enabled) {
+                        setView('Settings');
+                        return;
                       }
-                    />
-                    <div className="section-head outside">
-                      <div>
-                        <h2>One-time purchases</h2>
-                        <p>
-                          Drafts are possibilities. Included purchases count
-                          toward your forecast.
-                        </p>
-                      </div>
-                      <button onClick={() => openPurchase()}>
-                        <Plus size={17} />
-                        Plan a purchase
-                      </button>
-                    </div>
-                    {!purchases.length ? (
-                      <section className="panel">
-                        <Empty
-                          title="What would you like to make room for?"
-                          action={
-                            <button onClick={() => openPurchase()}>
-                              Add an estimate
-                            </button>
-                          }
-                        >
-                          A trip, a new laptop, or something small. Try it out
-                          here first.
-                        </Empty>
-                      </section>
-                    ) : (
-                      <div className="purchase-grid">
-                        {purchases.map((p) => (
-                          <article className="panel purchase-card" key={p.id}>
-                            <div className="row-top">
-                              <span
-                                className={
-                                  'pill ' + (p.included ? 'included' : '')
-                                }
-                              >
-                                {p.included
-                                  ? 'Included in budget'
-                                  : 'Draft estimate'}
-                              </span>
-                              <div className="grow" />
-                              <button
-                                className="icon"
-                                aria-label={`Edit ${p.name}`}
-                                onClick={() => openPurchase(p)}
-                              >
-                                <Pencil size={16} />
-                              </button>
-                              <button
-                                className="icon"
-                                aria-label={`Delete ${p.name}`}
-                                onClick={() =>
-                                  remove('/purchases/' + p.id, p.name)
-                                }
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                            <h2>{p.name}</h2>
-                            <p>
-                              {catName(p.category_id)} ·{' '}
-                              {monthLabel(p.month, true)}
-                            </p>
-                            <strong className="purchase-amount">
-                              {fmt(p.amount)}
-                            </strong>
-                            {p.notes && <p>{p.notes}</p>}
-                            <div className="purchase-actions">
-                              <button
-                                className="secondary"
-                                onClick={() =>
-                                  void act(async () => {
-                                    setPreview({
-                                      purchase: p,
-                                      result: await api<Forecast>(
-                                        `/forecast?month=${p.month}&preview=${p.id}`,
-                                      ),
-                                    });
-                                  })
-                                }
-                              >
-                                Preview impact
-                              </button>
-                              <button
-                                onClick={() =>
-                                  void act(() =>
-                                    api('/purchases/' + p.id, 'PUT', {
-                                      ...p,
-                                      included: !p.included,
-                                    }),
-                                  )
-                                }
-                              >
-                                {p.included
-                                  ? 'Return to draft'
-                                  : 'Include in budget'}
-                              </button>
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                  </>
+                      setAdvisorPlanId(id);
+                      setView('Budget advisor');
+                    }}
+                    onDeleted={(id) => {
+                      if (advisorPlanId === id) setAdvisorPlanId(null);
+                    }}
+                    initialDraft={planDraft}
+                    onDraftUsed={() => setPlanDraft(null)}
+                  />
                 )}
                 {view === 'Spending' && (
                   <>
@@ -1418,6 +1292,7 @@ export default function App() {
                             spendingMode === 'entries'
                           }
                           onShowEntries={() => setSpendingMode('entries')}
+                          onShowBreakdown={() => setSpendingMode('breakdown')}
                         />
                       </div>
                     )}
@@ -1451,6 +1326,32 @@ export default function App() {
                               Add transaction
                             </button>
                           </div>
+                        </div>
+                        {transactionPage.error && (
+                          <p role="alert">{transactionPage.error}</p>
+                        )}
+                        <div
+                          className="button-group"
+                          aria-label="Transaction pages"
+                        >
+                          <button
+                            disabled={
+                              !transactionPage.hasPrevious ||
+                              transactionPage.loading
+                            }
+                            onClick={transactionPage.first}
+                          >
+                            First page
+                          </button>
+                          <button
+                            disabled={
+                              !transactionPage.next_cursor ||
+                              transactionPage.loading
+                            }
+                            onClick={transactionPage.next}
+                          >
+                            Next page
+                          </button>
                         </div>
                         <div className="transaction-toolbar">
                           <input
@@ -1646,6 +1547,24 @@ export default function App() {
                         Import statements
                       </button>
                     </div>
+                    {importPage.error && <p role="alert">{importPage.error}</p>}
+                    <div
+                      className="button-group pagination"
+                      aria-label="Import pages"
+                    >
+                      <button
+                        disabled={!importPage.hasPrevious || importPage.loading}
+                        onClick={importPage.first}
+                      >
+                        First page
+                      </button>
+                      <button
+                        disabled={!importPage.next_cursor || importPage.loading}
+                        onClick={importPage.next}
+                      >
+                        Next page
+                      </button>
+                    </div>
                     {imports.length ? (
                       imports.map((j) => (
                         <button
@@ -1698,6 +1617,10 @@ export default function App() {
                 {view === 'Settings' && (
                   <div className="settings-grid">
                     <div className="settings-column">
+                      <PlanningCategories
+                        revision={revision}
+                        onChanged={refresh}
+                      />
                       <section className="panel">
                         <div className="section-head">
                           <div>
@@ -1718,11 +1641,6 @@ export default function App() {
                                   data.get('advisor_enabled') === 'on',
                                 advisor_memory_enabled:
                                   data.get('advisor_memory_enabled') === 'on',
-                                reserve_alerts_enabled:
-                                  data.get('reserve_alerts_enabled') === 'on',
-                                reserve_checkpoint_day: Number(
-                                  data.get('reserve_checkpoint_day'),
-                                ),
                               }),
                             );
                           }}
@@ -1797,36 +1715,6 @@ export default function App() {
                               }
                             />
                             Enable optional local advisor memory (Memora)
-                          </label>
-                          <label className="checkbox">
-                            <input
-                              type="checkbox"
-                              name="reserve_alerts_enabled"
-                              defaultChecked={settings.reserve_alerts_enabled}
-                              key={
-                                'reserve' +
-                                String(settings.reserve_alerts_enabled)
-                              }
-                            />
-                            Annual bill reserve alerts
-                          </label>
-                          <label>
-                            Reserve checkpoint day
-                            <input
-                              name="reserve_checkpoint_day"
-                              aria-label="Reserve checkpoint day"
-                              type="number"
-                              min="1"
-                              max="31"
-                              required
-                              defaultValue={settings.reserve_checkpoint_day}
-                              key={'day' + settings.reserve_checkpoint_day}
-                            />
-                            <small>
-                              Previous month’s allocations should reach savings
-                              by this day. Short months use their last day.
-                              Alerts appear only inside the app.
-                            </small>
                           </label>
                           {models.error && (
                             <p className="notice">{models.error}</p>
@@ -1982,80 +1870,12 @@ export default function App() {
                           </div>
                         ))}
                       </section>
-                      <details className="panel remembered-payees">
-                        <summary className="section-head">
-                          <div>
-                            <h2>
-                              Remembered payees{' '}
-                              <span className="settings-count">
-                                {payeeRules.length}
-                              </span>
-                            </h2>
-                            <p>
-                              Saved labels also match store-number and year/date
-                              variants. Conflicting categories stay for review.
-                            </p>
-                          </div>
-                          <ChevronRight size={18} aria-hidden="true" />
-                        </summary>
-                        {payeeRules.length ? (
-                          payeeRules.map((r) => (
-                            <div className="name-row" key={r.id}>
-                              <div className="grow">
-                                <strong>{r.payee}</strong>
-                                <small>
-                                  {r.kind} · {catName(r.category_id)}
-                                </small>
-                              </div>
-                              <button
-                                className="icon"
-                                aria-label={`Edit remembered category for ${r.payee}`}
-                                onClick={() =>
-                                  setEditor({
-                                    title: 'Edit remembered category',
-                                    description: r.payee + ' · ' + r.kind,
-                                    fields: [
-                                      {
-                                        name: 'category_id',
-                                        label: 'Category',
-                                        value: r.category_id,
-                                        options: categoryOptions,
-                                      },
-                                    ],
-                                    submit: async (d) => {
-                                      await api(
-                                        '/payee-rules/' + r.id,
-                                        'PUT',
-                                        d,
-                                      );
-                                    },
-                                  })
-                                }
-                              >
-                                <Pencil size={16} />
-                              </button>
-                              <button
-                                className="icon"
-                                aria-label={`Forget ${r.payee}`}
-                                onClick={() =>
-                                  remove(
-                                    '/payee-rules/' + r.id,
-                                    'this remembered payee rule',
-                                  )
-                                }
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="muted pad">
-                            Save a categorized transaction or commit a reviewed
-                            import to remember its payee. Uncertain matches stay
-                            for manual review.
-                          </p>
-                        )}
-                      </details>
+                      <RememberedPayees
+                        categories={categories}
+                        model={settings.model}
+                        revision={revision}
+                        onChanged={refresh}
+                      />
                       <div className="quiet-note">
                         <Leaf size={22} />
                         <h3>A private little workspace.</h3>
@@ -2075,12 +1895,15 @@ export default function App() {
                 <div hidden={view !== 'Budget advisor'}>
                   <BudgetAdvisor
                     entry={advisorEntry}
-                    onOpenPlanner={() => setView('Purchase planner')}
-                    billPlan={advisorBillPlan}
+                    planId={advisorPlanId}
+                    onClearPlan={() => setAdvisorPlanId(null)}
+                    onCreatePlan={(value) => {
+                      setPlanDraft({ key: Date.now(), value });
+                      setView('Planning');
+                    }}
                     revision={revision}
                     month={month}
                     currency={currency}
-                    purchases={purchases}
                     model={settings.model}
                     memoryEnabled={settings.advisor_memory_enabled ?? false}
                   />
@@ -2132,34 +1955,6 @@ export default function App() {
               refresh();
             }}
           />
-        )}
-        {preview && (
-          <Modal
-            title="A little room for this?"
-            onClose={() => setPreview(null)}
-          >
-            <p className="muted">
-              {preview.purchase.name} · {monthLabel(preview.purchase.month)}
-            </p>
-            <div className="preview-total">
-              <span>Remaining budget with this purchase</span>
-              <strong className={preview.result.deficit ? 'red' : 'green'}>
-                {fmt(preview.result.remaining)}
-              </strong>
-            </div>
-            <p>
-              {preview.result.deficit
-                ? `This would put the month over budget by ${fmt(-preview.result.remaining)}.`
-                : 'This fits within the current month’s forecast income.'}
-            </p>
-            <p className="muted">
-              The preview counts this purchase once and doesn’t change its
-              status.
-            </p>
-            <div className="modal-actions">
-              <button onClick={() => setPreview(null)}>Done</button>
-            </div>
-          </Modal>
         )}
       </div>
     </Suspense>

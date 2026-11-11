@@ -35,7 +35,7 @@ retries preserve that override. The same default applies after PDF extraction.
   for one payee/type within a single commit remove the rule and require review.
 - Existing saved transactions seed rules during migration only when their
   payee/type has one unambiguous category.
-- Settings lists remembered payees so you can correct or forget a rule. Forgetting
+- Settings lists approved groups and individual payees so you can correct or forget a rule. Forgetting
   a rule does not rewrite prior transactions. Undo/deleting an import removes
   its transactions; remembered labels persist until forgotten in Settings.
 - Rules fill empty categories; they do not overwrite an existing review edit.
@@ -47,50 +47,44 @@ PDF extraction still uses the local model to propose transaction rows and types;
 category suggestions come from memory and manual review only. The optional Budget
 advisor is separate from statement classification.
 
-## Active merchant patterns and similarity
+## Approved merchant groups and local review
 
-[`payee_matching.json`](../backend/abacus/payee_matching.json) controls optional
-case-insensitive Python regex replacements, then similarity thresholds. Patterns
-run after Unicode/case/whitespace cleanup and before generic store/date/punctuation
-cleanup. The file is read on each classification pass; changing it does not rewrite
-saved descriptions, category labels, or CSV duplicate identities.
+Merchant-specific JSON normalization and automatic fuzzy category assignment were
+replaced in migration 0017. There is no `payee_matching.json` to maintain. Existing
+exact rules and transaction categories are retained. Generic normalization still
+handles Unicode/case/whitespace, punctuation, explicit #store metadata and leading
+years/dates; meaningful unmarked numbers remain significant.
 
-Current named patterns remove Amazon order codes while keeping Amazon.com,
-Marketplace, and Prime separate. A2 PCI Parking, Panera Bread, PetSmart, and REI
-group store/location variants under their merchant names. ActBlue groups all
-recipient suffixes after `*` under ActBlue. This is deliberate merchant-level
-grouping, not a claim that every purchase at a merchant has the same category.
-Exact labels and ambiguous-group abstention still protect specific corrections.
+The explicit **Review similar payees** action starts one background local-model
+job. Generic token/prefix overlap finds candidates only, never categorizes them.
+Batches contain at most 24 aliases, overlap to bridge boundaries, and keep kinds
+separate. Approved group members are included when proposing an extension. Reviews
+support up to 2,000 remembered variants and run independently of import jobs.
 
-JSON replacements such as `"\\1"` retain capture group 1. A literal replacement
-makes a canonical name. For example, this groups a hypothetical merchant's suffixes:
+Only names, kinds, current category labels/IDs and existing group names enter the
+model. Compact per-batch member IDs reduce token usage. Structured output is
+validated against exactly those IDs and categories. Unknown IDs, repeated members,
+extra executable/regex fields, and mixed kinds fail the review without changing
+memory. The model suggests identities; the user approves membership and any category
+changes separately. Model confidence is not treated as a calibrated probability.
 
-```json
-{
-  "pattern": "^example merchant\\b.*$",
-  "replacement": "example merchant"
-}
-```
+`payee_groups` stores canonical names and kinds. Existing `payee_rules` keep exact
+aliases/categories plus nullable group membership. `payee_reviews` retains the
+preview snapshot and proposed/applied decisions. Applying selected changes locks
+and checks current rows against that snapshot before writing all approved groups
+in one transaction. Replays are idempotent. Individual category corrections keep
+priority and may make a group's canonical-name match ambiguous; ambiguous matches
+abstain. Saved transactions and import provenance are not rewritten.
 
-A regex requiring `\*` only matches an actual asterisk; it does not strip an
-ordinary `#store`/location suffix. Match the full varying portion rather than only
-an alphanumeric fragment of a punctuated suffix. Anchor specific merchant names,
-retain meaningful unrelated numbers, and add examples/nonmatches to
-[`test_classification.py`](../backend/tests/test_classification.py) before expanding rules.
+The advisor's aggregate display uses approved exact aliases by kind. Its restricted
+login can SELECT groups and remembered rules, but cannot access private review jobs
+or approve changes. Runtime matching remains model-free. New unknown variants need
+manual review; approved groups do not authorize arbitrary regex/prefix matching.
 
-When no exact or normalized group exists, `similar_category` uses Python
-`SequenceMatcher` with `fuzzy_threshold=0.94` and `fuzzy_margin=0.05`. It requires
-names of at least 12 characters, the same first word, identical numeric components,
-and the same transaction type. It picks a category only when both score and gap
-from competing categories qualify. Setting the threshold to `1` disables similarity.
-A conflicting normalized group does not fall through to a fuzzy guess. Review rows
-mark these suggestions **Similar payee · check category**.
-
-Settings lists exact-description rules, not canonical merchant groups, so repeated
-merchant variants remain visible even when classification groups them. Forgetting
-or consolidating records is separate maintenance. Any manual consolidation should
-keep transaction types separate and preserve category conflicts; later imports
-still learn exact variants, so a one-time cleanup does not prevent list growth.
+Cancel stops future batches and discards proposals. Restart marks unfinished jobs
+interrupted without resuming them automatically. Rename/Ungroup operate on groups;
+Ungroup preserves aliases and their individual categories. A new review can be
+started after a cancelled, failed, interrupted or completed job.
 
 ## Export reviewed examples
 

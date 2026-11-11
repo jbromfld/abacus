@@ -32,66 +32,6 @@ def test_month_shift_year_boundary():
     assert shift_month("2025-12", 1) == "2026-01"
 
 
-def test_forecast_no_carry_drafts_preview_and_overrides(client, category_id):
-    def recurring(name, kind, amount):
-        response = client.post(
-            "/api/recurring",
-            json=dict(
-                name=name,
-                kind=kind,
-                frequency="monthly",
-                amount=amount,
-                category_id=category_id if kind == "payable" else None,
-                start_month="2025-01",
-            ),
-        )
-        assert response.status_code == 201, response.text
-        return response.json()["id"]
-
-    recurring("Income", "receivable", 10000)
-    bill = recurring("Groceries", "payable", 4000)
-    draft = client.post(
-        "/api/purchases",
-        json=dict(name="Trip", amount=7000, month="2025-02", category_id=category_id),
-    ).json()
-    assert not draft["included"]
-    f = client.get("/api/forecast?month=2025-02").json()
-    assert f["remaining"] == 6000 and not f["deficit"]
-    preview = client.get(
-        "/api/forecast", params={"month": "2025-02", "preview": draft["id"]}
-    ).json()
-    assert preview["remaining"] == -1000 and preview["deficit"]
-    client.put("/api/purchases/" + draft["id"], json={**draft, "included": True})
-    assert (
-        client.get(
-            "/api/forecast", params={"month": "2025-02", "preview": draft["id"]}
-        ).json()["expenses"]
-        == 11000
-    )
-    assert client.get("/api/forecast?month=2025-03").json()["remaining"] == 6000
-    assert (
-        client.put(
-            f"/api/recurring/{bill}/amount", json={"month": "2025-03", "amount": 5000}
-        ).status_code
-        == 200
-    )
-    client.put(
-        f"/api/recurring/{bill}/amount",
-        json={"month": "2025-04", "amount": 10000, "override": True},
-    )
-    assert client.get("/api/forecast?month=2025-02").json()["expenses"] == 11000
-    assert client.get("/api/forecast?month=2025-03").json()["expenses"] == 5000
-    exact = client.get("/api/forecast?month=2025-04").json()
-    assert exact["remaining"] == 0 and not exact["deficit"]
-    assert client.get("/api/forecast?month=2025-05").json()["expenses"] == 5000
-    assert (
-        client.put(
-            f"/api/recurring/{bill}/amount", json={"month": "2024-12", "amount": 100}
-        ).status_code
-        == 422
-    )
-
-
 def test_actuals_refunds_payments_categories_and_missing(
     client, category_id, account_id
 ):
@@ -139,37 +79,6 @@ def test_actuals_refunds_payments_categories_and_missing(
         ]
         == "partial"
     )
-
-
-@pytest.mark.parametrize("amount", [0, -1, 1.5, "10"])
-def test_money_validation(client, category_id, amount):
-    assert (
-        client.post(
-            "/api/purchases",
-            json=dict(
-                name="Invalid", amount=amount, month="2026-01", category_id=category_id
-            ),
-        ).status_code
-        == 422
-    )
-
-
-def test_settings_currency_locked_and_foreign_keys(client, category_id):
-    assert (
-        client.put("/api/settings", json={"currency": "JPY", "model": ""}).status_code
-        == 200
-    )
-    p = client.post(
-        "/api/purchases",
-        json=dict(name="Book", amount=300, month="2026-01", category_id=category_id),
-    )
-    assert p.status_code == 201
-    assert (
-        client.put("/api/settings", json={"currency": "USD", "model": ""}).status_code
-        == 409
-    )
-    assert client.delete("/api/categories/" + category_id).status_code == 409
-    assert client.get("/api/categories").status_code == 200
 
 
 def test_cross_origin_rejected(client):
@@ -468,7 +377,7 @@ def test_annual_distribution_toggle_forecast_breakdown_trends_and_actuals(
     assert (
         client.get("/api/forecast?month=2025-03").json()["actual"]["expenses"] == 12000
     )
-    assert client.get("/api/transactions").json()[0]["id"] == actual["id"]
+    assert client.get("/api/transactions").json()["items"][0]["id"] == actual["id"]
 
 
 def test_annual_distribution_defaults_true_and_is_ignored_for_income_and_monthly(
@@ -552,12 +461,13 @@ def test_due_month_only_overrides_and_midyear_rate_change(client, category_id):
         (None, -10000, True),
     ],
 )
-def test_forecast_window_flags_deficits_after_current_savings_without_carry_forward(
+def test_forecast_window_carries_cash_from_the_recorded_balance_month(
     client, db, category_id, savings, combined, deficit
 ):
     from abacus.models import Settings
 
     db.get(Settings, 1).savings_balance = savings
+    db.get(Settings, 1).savings_month = "2026-01"
     db.commit()
     for name, kind, amount in [
         ("Income", "receivable", 10000),
@@ -580,11 +490,17 @@ def test_forecast_window_flags_deficits_after_current_savings_without_carry_forw
         params={"start": "2026-01", "months": 12, "include_savings": True},
     ).json()
     assert len(rows) == 12
-    for row in rows:
+    for index, row in enumerate(rows):
         assert row["remaining"] == -10000 and row["deficit"] is True
         assert row["savings_balance"] == savings
-        assert row["remaining_with_savings"] == combined
-        assert row["savings_adjusted_deficit"] is deficit
+        expected = savings - 10000 * (index + 1) if savings is not None else None
+        assert row["projected_savings"] == row["remaining_with_savings"] == expected
+        assert row["savings_adjusted_deficit"] is (
+            expected < 0 if expected is not None else True
+        )
+    if savings is not None:
+        assert rows[0]["remaining_with_savings"] == combined
+    assert rows[0]["savings_adjusted_deficit"] is deficit
     # The ordinary monthly forecast and user-entered savings are untouched.
     assert client.get("/api/forecast?month=2026-01").json()["deficit"] is True
     assert db.get(Settings, 1).savings_balance == savings

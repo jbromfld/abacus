@@ -12,7 +12,8 @@ from .budget import ActualWindow, ForecastInputs, forecast, shift_month
 from .category_planning import category_averages
 from .clock import local_today
 from .local_model import chat_with_model
-from .models import Category, Purchase, Settings
+from .model_tracing import model_workflow
+from .models import Category, Settings
 from .research import PublicResearchRequest, gather_research
 from .savings import advisor_savings_projection
 
@@ -46,7 +47,7 @@ def forecast_comparison(db, month, inputs=None, categories=None):
                 "name": line["name"],
                 "kind": line["kind"],
                 "category": categories.get(line["category_id"]),
-                "source": "recurring" if schedule else "included_purchase",
+                "source": line.get("source") or "recurring",
                 "frequency": schedule.frequency if schedule else None,
                 "annual_distributed": schedule.distribute_annual
                 if schedule and schedule.frequency == "annual"
@@ -78,6 +79,7 @@ def forecast_comparison(db, month, inputs=None, categories=None):
         }
 
     return {
+        "basis": "Saved forecast changes from previous_month to month, already included in current totals. These are historical edits, not proposed additional savings or evidence of actual spending reductions. Use current_expense_categories as the planned expense baseline for any further cuts.",
         "previous_month": previous_month,
         "month": month,
         "previous": totals(previous),
@@ -109,6 +111,8 @@ def forecast_comparison(db, month, inputs=None, categories=None):
 
 
 def budget_context(db, request):
+    from .planning import planning_summary
+
     currency = db.get(Settings, 1).currency
     today = local_today()
     inputs = ForecastInputs(db)
@@ -129,17 +133,15 @@ def budget_context(db, request):
             }
         )
     scenario = None
-    purchase = db.get(Purchase, request.purchase_id) if request.purchase_id else None
-    if purchase or request.scenario:
-        item = purchase or request.scenario
-        included = bool(purchase and purchase.included)
+    if request.scenario:
+        item = request.scenario
         baseline = forecast(db, item.month, inputs=inputs)
-        after = baseline["remaining"] - (0 if included else item.amount)
+        after = baseline["remaining"] - item.amount
         scenario = {
             "name": item.name,
             "month": item.month,
             "amount_minor": item.amount,
-            "already_included": included,
+            "already_included": False,
             "baseline_remaining_minor": baseline["remaining"],
             "remaining_after_purchase_minor": after,
             "would_exceed_forecast": after < 0,
@@ -165,15 +167,6 @@ def budget_context(db, request):
                 ],
             }
         )
-    drafts = db.scalars(
-        select(Purchase)
-        .where(
-            Purchase.included == False,
-            Purchase.month >= months[0],
-            Purchase.month <= months[-1],
-        )
-        .order_by(Purchase.month, Purchase.name)
-    ).all()
     savings_projection = advisor_savings_projection(db, request, inputs=inputs)
     guide_end = shift_month(request.month, -1)
     guide_stats = (
@@ -183,6 +176,19 @@ def budget_context(db, request):
     )
     history = spending_history(db, request.month, today, categories)
     comparison = spending_comparison(db, history)
+    goals = planning_summary(db, inputs=inputs)
+    if savings_projection:
+        savings_projection["scope"] = (
+            "Baseline or explicit bill scenario, excluding saved Planning goals. "
+            "Use planning_goals.projection for running cash including all saved goals."
+        )
+    selected = next(
+        (row for row in goals["plans"] if row["id"] == request.plan_id), None
+    )
+    if request.plan_id and selected is None:
+        raise ValueError(
+            "The selected plan is no longer available. Open Planning to choose a current plan."
+        )
     if comparison:
         comparison["budget_impact"] = []
         for period, key in (
@@ -219,20 +225,81 @@ def budget_context(db, request):
             "category_guides_are_informational_not_expenses": True,
             "bank_balances_and_savings_are_unknown": savings_projection is None
             or not savings_projection["savings_known"],
-            "draft_purchases_are_excluded_unless_selected_as_scenario": True,
         },
         "monthly_forecasts": projections,
+        "selected_plan": {
+            "id": selected["id"],
+            "name": selected["name"],
+            "target_date": selected["target_date"],
+            "category": selected["category"],
+            "amount_minor": selected["amount"],
+            "set_aside_minor": selected["set_aside"],
+            "still_needed_minor": selected["still_needed"],
+            "monthly_needed_minor": selected["monthly_needed"],
+            "status": selected["status"],
+            "updated_at": selected["updated_at"],
+            "budgeted_monthly_allocation_minor": selected.get("monthly_allocation"),
+            "projected_contributions_minor": selected.get("projected_contributions"),
+            "projected_funding_minor": selected.get("projected_funding"),
+            "funding_gap_minor": selected.get("funding_gap"),
+        }
+        if selected
+        else None,
+        "planning_goals": {
+            "basis": goals["basis"],
+            "savings_month": goals["savings_month"],
+            "saved_savings_minor": goals["savings"],
+            "set_aside_minor": goals["set_aside"],
+            "free_savings_minor": goals["free_savings"],
+            "total_planned_minor": goals["total_planned"],
+            "plans": [
+                {
+                    "name": row["name"],
+                    "target_date": row["target_date"],
+                    "category": row["category"],
+                    "amount_minor": row["amount"],
+                    "set_aside_minor": row["set_aside"],
+                    "still_needed_minor": row["still_needed"],
+                    "budgeted_monthly_allocation_minor": row.get("monthly_allocation"),
+                    "projected_contributions_minor": row.get("projected_contributions"),
+                    "projected_funding_minor": row.get("projected_funding"),
+                    "funding_gap_minor": row.get("funding_gap"),
+                }
+                for row in goals["plans"][:20]
+            ],
+            "additional_plans_omitted": max(0, len(goals["plans"]) - 20),
+            "projection": {
+                "basis": goals["projection"]["basis"],
+                "income_complete": goals["projection"]["income_complete"],
+                "months": [
+                    {
+                        "month": row["month"],
+                        "balance_minor": row["balance"],
+                        "plan_payments_minor": row["plan_payments"],
+                    }
+                    for row in goals["projection"]["months"]
+                ],
+            }
+            if goals["projection"]
+            else None,
+        },
+        "annual_income_estimates": [
+            {
+                "name": item.name,
+                "year": item.year,
+                "amount_minor": item.amount,
+                "included": item.included,
+                "basis": "Estimated extra income allocated over this calendar year when included; not verified receipts or a monthly deposit schedule.",
+            }
+            for item in inputs.annual_income
+            if int(months[0][:4]) <= item.year <= int(months[-1][:4])
+        ],
         "recent_actuals": recent,
         "spending_history": history,
         "spending_comparison": comparison,
         "forecast_comparison": forecast_comparison(
             db, request.month, inputs=inputs, categories=categories
         ),
-        "draft_purchases": [
-            {"name": p.name, "month": p.month, "amount_minor": p.amount}
-            for p in drafts[:20]
-        ],
-        "additional_drafts_omitted": max(0, len(drafts) - 20),
         "purchase_scenario": scenario,
         "planning_capacity": planning_capacity(
             db, request, today, scenario, inputs=inputs
@@ -272,13 +339,7 @@ def planning_capacity(db, request, today, scenario, inputs=None):
         month = shift_month(start, offset)
         f = forecast(db, month, inputs=inputs)
         recorded = any(line["kind"] == "receivable" for line in f["lines"])
-        # A saved included purchase is already an expense. Restore it only for
-        # this hypothetical earmarking calculation, so its cost is not counted twice.
-        room = f["remaining"] + (
-            scenario["amount_minor"]
-            if scenario and scenario["already_included"] and scenario["month"] == month
-            else 0
-        )
+        room = f["remaining"]
         if buffer is not None and room < buffer:
             shortfalls.append(month)
         contribution = (
@@ -536,6 +597,7 @@ def model_snapshot(context, question=""):
     return formatted_tree(model_context)
 
 
+@model_workflow("budget_advisor")
 def answer_question(model, request, context):
     # Do not pass chat, history, budget context, or model output to web research.
     public_request = PublicResearchRequest(

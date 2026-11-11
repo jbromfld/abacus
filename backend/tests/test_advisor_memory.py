@@ -72,6 +72,8 @@ def test_memory_unavailable_chat_survives_and_has_no_budget_effect(
     result = client.post("/api/advisor/chat", json=request.model_dump()).json()
     assert result["context"]["advisor_memory"]["status"] == "unavailable"
     assert result["context"]["advisor_memory"]["warnings"]
+    assert "for this answer" in result["context"]["advisor_memory"]["warnings"][0]
+    assert "Refresh memory" in result["context"]["advisor_memory"]["warnings"][0]
     assert budget_context(db, request) == before
     assert client.get("/api/advisor/memory").status_code == 503
 

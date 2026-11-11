@@ -8,8 +8,7 @@ from collections import defaultdict
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 
-from .models import PayeeRule, Transaction
-from .payee_matching import load_matching_config, similar_category
+from .models import PayeeGroup, PayeeRule, Transaction
 
 
 def exact_payee(description: str) -> str:
@@ -18,13 +17,9 @@ def exact_payee(description: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def normalize_payee(description: str, patterns=None) -> str:
+def normalize_payee(description: str) -> str:
     """Group merchant variants without changing original transaction/CSV data."""
     text = exact_payee(description)
-    if patterns is None:
-        patterns = load_matching_config()[0]
-    for pattern, replacement in patterns:
-        text = pattern.sub(replacement, text)
     # Dates and years at the beginning commonly label annual events, not payees.
     text = re.sub(
         r"^(?:(?:19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/](?:19|20)\d{2})[\s:|_-]+(?=\S)",
@@ -89,14 +84,20 @@ def apply_description_defaults(rows):
 
 def apply_payee_rules(db, rows):
     apply_description_defaults(rows)
-    patterns, threshold, margin = load_matching_config()
     remembered = db.scalars(select(PayeeRule)).all()
     rules = {(exact_payee(r.payee), r.kind): r.category_id for r in remembered}
     groups = defaultdict(set)
     for rule in remembered:
-        key = normalize_payee(rule.payee, patterns)
+        key = normalize_payee(rule.payee)
         if key:
             groups[(key, rule.kind)].add(rule.category_id)
+    # Canonical labels are explicit user-approved aliases. Mixed-category groups
+    # abstain for new canonical-name matches; exact corrections retain priority.
+    approved = {group.id: group for group in db.scalars(select(PayeeGroup))}
+    for rule in remembered:
+        group = approved.get(rule.group_id)
+        if group and group.kind == rule.kind:
+            groups[(normalize_payee(group.name), rule.kind)].add(rule.category_id)
     for row in rows:
         # Preserve explicit edits, CSV sign mapping, and the row's transaction type.
         if row.get("category_id"):
@@ -107,17 +108,22 @@ def apply_payee_rules(db, rows):
             row["category_id"] = rules[key]
             row["classification"] = "remembered_payee"
             continue
-        normalized = normalize_payee(row.get("description", ""), patterns)
+        normalized = normalize_payee(row.get("description", ""))
         candidates = groups.get((normalized, kind), set())
         if len(candidates) == 1:
             row["category_id"] = next(iter(candidates))
             row["classification"] = "normalized_payee"
-        elif not candidates:
-            category = similar_category(normalized, kind, groups, threshold, margin)
-            if category:
-                row["category_id"] = category
-                row["classification"] = "similar_payee"
     return rows
+
+
+def approved_payee_names(db):
+    """Display-only aggregation aliases, respecting exact per-kind variants."""
+    rows = db.execute(
+        select(PayeeRule.payee, PayeeRule.kind, PayeeGroup.name)
+        .join(PayeeGroup, PayeeRule.group_id == PayeeGroup.id)
+        .where(PayeeRule.kind == PayeeGroup.kind)
+    )
+    return {(exact_payee(payee), kind): name for payee, kind, name in rows}
 
 
 def predict_unknown(description: str, kind: str) -> str | None:

@@ -39,6 +39,7 @@ jobs:
       - run: uv sync --locked
       - run: uv run alembic upgrade head
       - run: uv run alembic check
+      - run: uv run python scripts/generate_api_types.py --check
       - run: uv run ruff check backend migrations scripts
       - run: uv run ruff format --check backend migrations scripts
       - run: uv run pytest -q

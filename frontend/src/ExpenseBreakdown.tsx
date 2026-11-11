@@ -85,6 +85,7 @@ export default function ExpenseBreakdown({
   view = 'breakdown',
   active = true,
   onShowEntries,
+  onShowBreakdown,
 }: {
   month: string;
   actualMonth: string;
@@ -93,6 +94,7 @@ export default function ExpenseBreakdown({
   onMonthChange: (month: string, basis: 'actual' | 'forecast') => void;
   currency: string;
   revision: number;
+  onShowBreakdown?: () => void;
   view?: 'breakdown' | 'entries';
   active?: boolean;
   onShowEntries?: () => void;
@@ -577,6 +579,7 @@ export default function ExpenseBreakdown({
                         onClick={() => {
                           setFocus(undefined);
                           setLimit(50);
+                          onShowBreakdown?.();
                         }}
                       >
                         <ArrowLeft size={14} />

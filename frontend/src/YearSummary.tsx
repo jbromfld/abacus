@@ -34,6 +34,8 @@ export default function YearSummary({
       active = false;
     };
   }, [year, revision]);
+  const fmt = (n: number | null | undefined) =>
+    n == null ? 'Not projected' : money(n, currency);
   const max = Math.max(1, ...data.flatMap((d) => [d.income, d.expenses]));
   return (
     <>
@@ -47,11 +49,14 @@ export default function YearSummary({
           <button
             key={d.month}
             className={
-              'year-month ' + (d.savings_adjusted_deficit ? 'over' : '')
+              'year-month ' +
+              (d.savings_adjusted_deficit || (d.funding_gap ?? 0) > 0
+                ? 'over'
+                : '')
             }
-            aria-label={`${monthLabel(d.month)}: income ${money(d.income, currency)}, expenses ${money(d.expenses, currency)}${d.savings_adjusted_deficit ? ', deficit after savings' : d.deficit ? ', monthly shortfall covered by current savings' : ''}; remaining plus savings ${money(d.remaining_with_savings, currency)}`}
+            aria-label={`${monthLabel(d.month)}: income ${money(d.income, currency)}, expenses ${money(d.expenses, currency)}; projected cash ${fmt(d.remaining_with_savings)}${d.savings_adjusted_deficit ? (d.remaining_with_savings === null ? ', monthly budget deficit; cash not projected' : ', projected cash deficit') : ''}${(d.funding_gap ?? 0) > 0 ? `, annual bill funding gap ${fmt(d.funding_gap)}` : ''}`}
             onClick={() => selectMonth(d.month)}
-            title={`Income ${money(d.income, currency)} · Expenses ${money(d.expenses, currency)} · Monthly remaining + current savings ${money(d.remaining_with_savings, currency)}`}
+            title={`Income ${money(d.income, currency)} · Budget expenses ${money(d.expenses, currency)} · Projected cash ${fmt(d.remaining_with_savings)} · Annual funding gap ${fmt(d.funding_gap ?? 0)}`}
           >
             <div className="bars">
               <i
@@ -66,18 +71,22 @@ export default function YearSummary({
                 month: 'short',
               })}
             </span>
-            {d.savings_adjusted_deficit && <span className="red">!</span>}
+            {(d.savings_adjusted_deficit || (d.funding_gap ?? 0) > 0) && (
+              <span className="red">!</span>
+            )}
           </button>
         ))}
       </div>
       <p className="chart-note">
-        Deficit markers use monthly forecast remaining plus your current
-        manually entered savings, checking each month independently. This does
-        not project a running savings balance.{' '}
-        {data.length > 0 &&
-          (data[0].savings_balance === null
-            ? 'Savings is not set, so markers use the monthly budget alone.'
-            : `Current savings: ${money(data[0].savings_balance, currency)}.`)}
+        Markers flag a projected cash deficit or an annual bill funding gap.
+        Cash carries forward from your recorded balance month, paying annual
+        bills once at their due date. Bill funding uses only earmarked savings
+        and that bill's planned contributions; other budget room is not
+        automatically assigned. Months before the recorded balance are not
+        projected. Without a cash estimate, markers use monthly budget deficits.
+        Projected contributions are excluded from that balance.
+        {data.some((d) => d.income_complete === false) &&
+          ' Income is missing in some months; cash projections are incomplete.'}
       </p>
       <details>
         <summary>View annual forecast table</summary>
@@ -89,7 +98,8 @@ export default function YearSummary({
                 <th>Income</th>
                 <th>Expenses</th>
                 <th>Monthly remaining</th>
-                <th>Remaining + current savings</th>
+                <th>Projected cash</th>
+                <th>Annual funding gap</th>
               </tr>
             </thead>
             <tbody>
@@ -107,7 +117,10 @@ export default function YearSummary({
                   <td>{money(d.expenses, currency)}</td>
                   <td>{money(d.remaining, currency)}</td>
                   <td className={d.savings_adjusted_deficit ? 'red' : ''}>
-                    {money(d.remaining_with_savings, currency)}
+                    {fmt(d.remaining_with_savings)}
+                  </td>
+                  <td className={(d.funding_gap ?? 0) > 0 ? 'red' : ''}>
+                    {fmt(d.funding_gap ?? 0)}
                   </td>
                 </tr>
               ))}

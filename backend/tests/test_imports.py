@@ -40,7 +40,7 @@ def test_csv_review_atomic_commit_duplicates_undo(client, account_id, category_i
     assert job["rows"][0]["source"]["original"]["Description"] == "Grocer"
     id = job["id"]
     assert client.post(f"/api/imports/{id}/commit").status_code == 422
-    assert client.get("/api/transactions").json() == []
+    assert client.get("/api/transactions").json()["items"] == []
     rows = [
         {**r, "source_index": i, "category_id": category_id}
         for i, r in enumerate(job["rows"])
@@ -51,7 +51,7 @@ def test_csv_review_atomic_commit_duplicates_undo(client, account_id, category_i
     assert not any(r["errors"] for r in reviewed.json()["rows"])
     committed = client.post(f"/api/imports/{id}/commit")
     assert committed.status_code == 200, committed.text
-    assert len(client.get("/api/transactions").json()) == 3
+    assert len(client.get("/api/transactions").json()["items"]) == 3
     assert (
         client.get("/api/forecast?month=2025-12").json()["actual"]["expenses"] == 1050
     )
@@ -75,7 +75,7 @@ def test_csv_review_atomic_commit_duplicates_undo(client, account_id, category_i
     ).json()
     assert reviewed2["rows"][0]["duplicate"] and reviewed2["rows"][1]["duplicate"]
     assert client.post(f"/api/imports/{id}/undo").status_code == 200
-    assert client.get("/api/transactions").json() == []
+    assert client.get("/api/transactions").json()["items"] == []
     assert client.post(f"/api/imports/{id}/undo").status_code == 409
 
 
@@ -92,7 +92,7 @@ def test_deselected_invalid_rows_do_not_block(client, account_id, category_id):
     ]
     client.put("/api/imports/" + job["id"] + "/review", json={"rows": rows})
     assert client.post("/api/imports/" + job["id"] + "/commit").status_code == 200
-    assert len(client.get("/api/transactions").json()) == 1
+    assert len(client.get("/api/transactions").json()["items"]) == 1
 
 
 def test_csv_invalid_dates_and_amounts_remain_reviewable(client, account_id):
@@ -119,7 +119,7 @@ def test_csv_processing_never_calls_model(client, account_id, db, monkeypatch):
     assert [r["amount"] for r in result["rows"]] == [1250, 200, 1050]
     assert [r["kind"] for r in result["rows"]] == ["purchase", "refund", "refund"]
     assert all(r["category_id"] is None for r in result["rows"])
-    assert client.get("/api/transactions").json() == []
+    assert client.get("/api/transactions").json()["items"] == []
 
 
 @pytest.mark.parametrize(
@@ -141,7 +141,7 @@ def test_invalid_pdf_model_output_safe(client, account_id, db, monkeypatch, resp
     result = client.get("/api/imports/" + job["id"]).json()
     assert result["status"] == "failed" and result["error"]
     assert result["rows"] == []
-    assert client.get("/api/transactions").json() == []
+    assert client.get("/api/transactions").json()["items"] == []
 
 
 def test_pdf_model_unavailable_manual_recovery(client, account_id, db, monkeypatch):
@@ -284,7 +284,7 @@ def test_background_pdf_retry_and_manual_category(
         def submit(self, fn, *args):
             fn(*args)
 
-    monkeypatch.setattr("abacus.main.executor", InlineExecutor())
+    monkeypatch.setattr("abacus.import_api.executor", InlineExecutor())
     monkeypatch.setattr("abacus.imports.ask_model", lambda *args: {"rows": "invalid"})
     assert client.post("/api/imports/" + job["id"] + "/process").status_code == 200
     assert client.get("/api/imports/" + job["id"]).json()["status"] == "failed"
@@ -306,7 +306,7 @@ def test_background_pdf_retry_and_manual_category(
     assert client.post("/api/imports/" + job["id"] + "/process").status_code == 200
     result = client.get("/api/imports/" + job["id"]).json()
     assert result["status"] == "review" and result["rows"][0]["category_id"] is None
-    assert client.get("/api/transactions").json() == []
+    assert client.get("/api/transactions").json()["items"] == []
     assert client.post("/api/imports/" + job["id"] + "/commit").status_code == 422
 
 
@@ -358,7 +358,7 @@ def test_delete_import_allows_starting_over(client, account_id, db, status):
     response = client.delete("/api/imports/" + job["id"])
     assert response.status_code == 200, response.text
     assert client.get("/api/imports/" + job["id"]).status_code == 404
-    assert client.get("/api/imports").json() == []
+    assert client.get("/api/imports").json()["items"] == []
     replacement = prepare(client, account_id)
     assert replacement["id"] != job["id"]
 
@@ -391,10 +391,10 @@ def test_delete_import_requires_undo_and_preserves_unrelated_transactions(
     assert client.post("/api/imports/" + job["id"] + "/commit").status_code == 200
     response = client.delete("/api/imports/" + job["id"])
     assert response.status_code == 409 and "Undo" in response.json()["detail"]
-    assert len(client.get("/api/transactions").json()) == 4
+    assert len(client.get("/api/transactions").json()["items"]) == 4
     assert client.post("/api/imports/" + job["id"] + "/undo").status_code == 200
     assert client.delete("/api/imports/" + job["id"]).status_code == 200
-    assert [t["id"] for t in client.get("/api/transactions").json()] == [
+    assert [t["id"] for t in client.get("/api/transactions").json()["items"]] == [
         unrelated["id"]
     ]
     replacement = prepare(client, account_id)
@@ -437,7 +437,7 @@ def test_csv_zero_amount_defaults_unselected_and_does_not_block_commit(
         == 200
     )
     assert client.post("/api/imports/" + job["id"] + "/commit").status_code == 200
-    transactions = client.get("/api/transactions").json()
+    transactions = client.get("/api/transactions").json()["items"]
     assert len(transactions) == 1 and transactions[0]["amount"] == 1250
 
 
@@ -498,7 +498,7 @@ def test_pdf_zero_amount_keeps_statement_reviewable(
     ]
     client.put("/api/imports/" + job["id"] + "/review", json={"rows": rows})
     assert client.post("/api/imports/" + job["id"] + "/commit").status_code == 200
-    assert len(client.get("/api/transactions").json()) == 1
+    assert len(client.get("/api/transactions").json()["items"]) == 1
 
 
 def test_zero_row_can_be_corrected_and_selected(client, account_id, category_id):
@@ -517,4 +517,4 @@ def test_zero_row_can_be_corrected_and_selected(client, account_id, category_id)
     row["amount"] = 500
     client.put("/api/imports/" + job["id"] + "/review", json={"rows": [row]})
     assert client.post("/api/imports/" + job["id"] + "/commit").status_code == 200
-    assert client.get("/api/transactions").json()[0]["amount"] == 500
+    assert client.get("/api/transactions").json()["items"][0]["amount"] == 500

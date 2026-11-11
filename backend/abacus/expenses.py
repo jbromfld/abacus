@@ -37,7 +37,6 @@ def expense_breakdown(db, start, end, basis):
     entries = []
     months = []
     current = first
-    purchase_ids = {p.id for p in inputs.purchases} if inputs else set()
     while current <= last:
         if basis == "forecast":
             for line in inputs.forecast(current)["lines"]:
@@ -53,9 +52,7 @@ def expense_breakdown(db, start, end, basis):
                             "category_name": categories.get(
                                 line["category_id"], "Uncategorized"
                             ),
-                            "kind": "planned_purchase"
-                            if line["id"] in purchase_ids
-                            else "recurring",
+                            "kind": "recurring",
                             "amount": line["amount"],
                             "signed_amount": line["amount"],
                             "account_name": None,

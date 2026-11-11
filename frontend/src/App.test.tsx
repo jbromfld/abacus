@@ -15,10 +15,13 @@ vi.mock('./api', async (importOriginal) => ({
   monthNow: () => '2026-11',
 }));
 vi.mock('./UpcomingBills', () => ({ default: () => null }));
-vi.mock('./ReserveMonitor', () => ({ default: () => null }));
+
 vi.mock('./ExpenseBreakdown', () => ({ default: () => null }));
 it('never displays November totals under December after its request fails, and skips hidden trend reads', async () => {
   vi.mocked(api).mockImplementation(async (path) => {
+    if (path === '/savings')
+      return { amount: null, month: '2026-11', floor: 0 };
+    if (path.startsWith('/imports?')) return { items: [], next_cursor: null };
     if (path === '/settings')
       return {
         currency: 'USD',
@@ -46,10 +49,20 @@ it('never displays November totals under December after its request fails, and s
         },
         actual_deficit: false,
       };
+    if (path === '/payee-review/payees')
+      return { total: 0, groups: [], ungrouped: [], review: null };
+    if (path === '/planning/categories') return [];
+    if (path.startsWith('/planning'))
+      return { plans: [], total_planned: 0, set_aside: null };
     return [];
   });
   render(<App />);
   expect(await screen.findByText('$1,050.00')).toBeInTheDocument();
+  const stats = screen
+    .getByText('Planned expenses')
+    .closest('.overview-stats')!;
+  expect(stats.children).toHaveLength(3);
+  expect(screen.getByRole('button', { name: 'Planning' })).toBeInTheDocument();
   await waitFor(() =>
     expect(vi.mocked(api).mock.calls.some(([p]) => p === '/settings')).toBe(
       true,
@@ -68,6 +81,26 @@ it('never displays November totals under December after its request fails, and s
   expect(
     screen.queryByText(/Forecast expenses exceed income/),
   ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Overview' }));
+  expect(screen.getByLabelText('Selected month', { exact: true })).toHaveValue(
+    '2026-11',
+  );
+  expect(await screen.findByText('$1,050.00')).toBeInTheDocument();
+  expect(
+    screen.queryByText('Synthetic December failure'),
+  ).not.toBeInTheDocument();
+  const previousReads = vi
+    .mocked(api)
+    .mock.calls.filter(([path]) => path === '/forecast?month=2026-11').length;
+  fireEvent.click(screen.getByRole('button', { name: 'Overview' }));
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(([path]) => path === '/forecast?month=2026-11')
+        .length,
+    ).toBeGreaterThan(previousReads),
+  );
 });
 
 it('keeps advisor messages, drafts and in-flight replies mounted while saving a recurring bill refreshes the workspace', async () => {
@@ -136,6 +169,11 @@ it('keeps advisor messages, drafts and in-flight replies mounted while saving a 
       });
     if (path.startsWith('/forecast?'))
       return { ...forecast, month: path.split('=')[1] };
+    if (path === '/payee-review/payees')
+      return { total: 0, groups: [], ungrouped: [], review: null };
+    if (path === '/planning/categories') return [];
+    if (path.startsWith('/planning'))
+      return { plans: [], total_planned: 0, set_aside: null };
     return [];
   });
   render(<App />);
@@ -231,6 +269,9 @@ it('keeps transactions mounted through minute timers and manual refreshes while 
   let hold = false;
   const pending: (() => void)[] = [];
   vi.mocked(api).mockImplementation(async (path) => {
+    if (path === '/savings')
+      return { amount: null, month: '2026-11', floor: 0 };
+    if (path.startsWith('/imports?')) return { items: [], next_cursor: null };
     if (path === '/settings')
       return {
         currency: 'USD',
@@ -253,20 +294,33 @@ it('keeps transactions mounted through minute timers and manual refreshes while 
     if (path.startsWith('/transactions?')) {
       if (hold)
         return new Promise((resolve) =>
-          pending.push(() => resolve([{ ...transaction, amount: 1500 }])),
+          pending.push(() =>
+            resolve({
+              items: [{ ...transaction, amount: 1500 }],
+              next_cursor: null,
+            }),
+          ),
         );
-      return [transaction];
+      return { items: [transaction], next_cursor: null };
     }
+    if (path === '/payee-review/payees')
+      return { total: 0, groups: [], ungrouped: [], review: null };
+    if (path === '/planning/categories') return [];
+    if (path.startsWith('/planning'))
+      return { plans: [], total_planned: 0, set_aside: null };
     return [];
   });
   render(<App />);
   fireEvent.click(screen.getByRole('button', { name: 'Spending' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Transactions' }));
-  const anchor = await screen.findByText('Transaction anchor');
-  const row = anchor.closest('tr')!;
+  await screen.findByText('Transaction anchor');
   fireEvent.change(screen.getByLabelText('Search transactions'), {
     target: { value: 'anchor' },
   });
+  await waitFor(() =>
+    expect(screen.getByText('Transaction anchor')).toBeInTheDocument(),
+  );
+  const row = screen.getByText('Transaction anchor').closest('tr')!;
   vi.mocked(api).mockClear();
   hold = true;
   await act(async () => {

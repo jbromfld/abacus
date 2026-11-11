@@ -114,6 +114,7 @@ it('separates category charts from the entries pane while retaining the chosen c
   };
   vi.mocked(api).mockResolvedValue(data);
   const show = vi.fn();
+  const showBreakdown = vi.fn();
   const { rerender } = render(
     <ExpenseBreakdown {...props} onShowEntries={show} />,
   );
@@ -123,14 +124,26 @@ it('separates category charts from the entries pane while retaining the chosen c
   expect(screen.queryByText('Synthetic meal')).not.toBeInTheDocument();
   fireEvent.click(category);
   expect(show).toHaveBeenCalledOnce();
-  rerender(<ExpenseBreakdown {...props} view="entries" onShowEntries={show} />);
+  rerender(
+    <ExpenseBreakdown
+      {...props}
+      view="entries"
+      onShowEntries={show}
+      onShowBreakdown={showBreakdown}
+    />,
+  );
   expect(await screen.findByText('Synthetic meal')).toBeInTheDocument();
   expect(
     screen.queryByRole('button', { name: /Dining 1 transactions/ }),
   ).not.toBeInTheDocument();
   expect(screen.getByLabelText('Breakdown month')).toHaveValue('2026-10');
   fireEvent.click(screen.getByRole('button', { name: 'All categories' }));
+  expect(showBreakdown).toHaveBeenCalledOnce();
+  rerender(<ExpenseBreakdown {...props} view="breakdown" />);
   expect(
-    screen.getByRole('heading', { name: 'Entries in this range' }),
+    screen.getByRole('heading', { name: 'Expense breakdown' }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole('button', { name: /Dining 1 transactions/ }),
   ).toBeInTheDocument();
 });

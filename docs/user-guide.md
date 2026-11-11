@@ -9,9 +9,9 @@
 3. Add named bank/card accounts for statement imports, manual transactions, or ACH.
 4. In **Recurring accounts**, add income, recurring bills, and budget allowances.
 5. Save an opening savings snapshot if you want projected savings balances.
-6. Use **Purchase planner → Current budget** to inspect the next 12 or 24 months.
+6. Use **Overview → The bigger picture** for the year, or **Planning → See the funding projection** for running cash.
 7. Enter actual transactions or import statements, then inspect **Spending**.
-8. Optionally configure reserve checks, card freshness monitoring, and Budget advisor.
+8. Add Planning goals and optionally configure card freshness monitoring and Budget advisor.
 
 ## Budget concepts
 
@@ -19,19 +19,17 @@
 | --- | --- | --- |
 | Recurring payable | A scheduled monthly expense or annual budget total | Yes, while active |
 | Recurring receivable | Scheduled income | Increases forecast income |
-| Included purchase | A saved one-time plan counted in its month | Yes |
-| Draft purchase/payment estimate | A possibility for preview | No, until explicitly included/converted |
+| Planning goal | A named amount and target date funded from shared savings | In the Planning projection |
 | Actual spending | Recorded purchases and fees minus refunds | No; reported separately |
 | Paid status | Confirmation that a scheduled occurrence was paid | No |
 | Category planning guide | Informational monthly category reference | No |
 | Savings snapshot | User-entered opening balance for cash projections | No |
-| Reserve target | A fixed plan for funding dated annual bills | No |
-| Recorded savings balance | A dated manual observation for reserve checks | No |
+| Recorded savings balance | A dated manual savings observation | No |
 
 Each normal forecast month stands alone:
 
 ```text
-remaining = scheduled income − recurring expenses − included purchases
+remaining = scheduled income − recurring expenses
 ```
 
 There is no balance carry-forward in monthly forecasts. Savings projections and
@@ -46,13 +44,15 @@ is no conversion between currencies.
 ## Navigation and accessibility
 
 The menu contains **Overview**, **Spending**, **Recurring accounts**,
-**Purchase planner**, **Statement imports**, and **Settings**. **Budget advisor** appears
+**Planning**, **Statement imports**, and **Settings**. **Budget advisor** appears
 when enabled. On phones, navigation moves above the page and Settings remains in
 the header; short desktop layouts keep navigation reachable by scrolling its menu.
 
-Use the selected-month picker or previous/next arrows for forecasts. Actual
+Use the selected-month picker or previous/next arrows for forecasts. Clicking
+**Overview** in the menu (or the Abacus logo) returns to the current month and
+refreshes its data. Actual
 spending initially uses the preceding month. Historical spending has an independent
-ending month. Due dates and reserve checks follow today's date, not the selected
+ending month. Due dates and Planning funding suggestions follow today's date, not the selected
 forecast month. Each section labels its own period.
 
 Forms and action buttons support keyboard focus, Tab navigation, and native form
@@ -87,17 +87,20 @@ annual expenses, payment history, or payment status.
 month?** card compares recorded spending in the latest two finished months,
 independently of the selected forecast month. It refreshes after changes and when
 you return to the app, without using a model or requiring the advisor to be enabled.
-Purchase planning is available from the main menu.
+Planning is available from the main menu.
 
-**The bigger picture** shows the selected year's income and expense bars. Deficit
-markers appear only when that month's forecast remaining plus your current
-manually entered savings is negative. Zero is covered. Each month is checked
-independently against the same current balance; this is not a running savings
-projection. Unset savings is treated as zero for markers. The table shows both
-monthly remaining and remaining plus current savings; income/expense bars and
-ordinary forecast-deficit alerts stay based on the original monthly forecast.
-Choose a bar or table month to change the selected forecast month. Reserve checks
-appear when enabled/configured; monitored card warnings appear across views.
+**The bigger picture** keeps the selected year's monthly budget bars and adds a
+running cash forecast from the saved balance month. Markers flag negative cash or
+an annual bill's funding gap, even when unrelated budget room could cover it.
+The table shows monthly remaining, projected cash, and annual funding gaps. Months
+before the balance (or beyond the ten-year projection limit) have no projected
+cash balance. Income/expense bars and ordinary monthly deficit alerts still use
+the monthly budget. Click a month to open its Overview.
+
+Below the three Overview cards, **Annual expense funding & Planning** shows
+tracked upcoming and overdue bills, selected-month projected cash, and an actual-savings
+slider. It opens automatically when a bill has a funding gap. Future contributions
+are assumptions, not deposits. No other category is silently used to fill a gap.
 
 ## Recurring accounts
 
@@ -180,81 +183,90 @@ that occurrence. Schedule changes do not rewrite already generated actuals.
 Imported/manual bank debits are not automatically reconciled with generated ACH
 records; review overlap to avoid counting the same debit twice.
 
+### Annual expected income
+
+In **Recurring accounts**, **Annual expected income** tracks extra income estimates
+for the selected calendar year, such as tax refunds, sale proceeds, or variable
+earnings. It is separate from regular monthly income and from annual recurring
+income already scheduled in its anniversary month.
+
+Add a named source, enter its yearly amount or move its slider, and choose
+**Include in monthly income**. Inclusion defaults off. Save to apply edits; moving
+a slider alone never changes the forecast. Multiple sources can be included
+independently. Included amounts are divided across January–December, with leftover
+minor units assigned to the earliest months so the twelve allocations sum exactly
+to the annual amount. **Monthly allocation of included estimates** shows the result.
+
+The estimates apply only to that year; they do not recur in the next. They are
+budget assumptions, not confirmed receipts or a monthly deposit schedule. Included
+estimates affect forecasts, projections, and advisor context. They create no
+actual transactions and do not increase recorded savings. Avoid entering a source
+already represented by recurring income. Removing a source removes its forecast
+contribution; existing recurring income remains independent.
+
 ### Savings
 
-The **Savings** panel sits beside **Expected income**. Set an exact opening amount
+Open **Planning → Savings balance & slider**. Set an exact opening amount
 or use the slider, choose **Balance month**, optionally set a savings floor, and
 save. The balance belongs to the start of that month; it is not bank-synchronized
 or automatically advanced. Slider edits are temporary until saved.
 
-Purchase planner and the advisor use this snapshot. Saving a current/past month
-also records that month's opening balance for reserve checks. Saving a future
-projection balance does not create an actual savings observation. A saved reserve
-funding target remains unchanged in either case.
+Planning and the advisor use this snapshot. Saving a current/past month
+also records that month's opening balance in savings history. Saving a future
+projection assumption does not create a current savings observation. Goal targets
+remain unchanged when the savings balance changes. Saving replaces the absolute
+balance; it never adds the target or earmark to savings. The balance excludes
+that month's projected contributions. When recording a newer balance that already
+includes November's contribution, choose December as the next projection month
+so November is not counted again. There is no separate contribution ledger.
 
-## Purchase planner
+## Planning
 
-### Current budget and cash projections
+**Planning** is the single home for tax, vacation, and purchase goals. The top
+shows your saved savings balance, total planned, and unassigned savings. Open
+**Savings balance & slider** to update the shared opening balance or protected
+floor. Annual income estimates remain in Recurring accounts.
 
-**Current budget** is selected initially and needs no hypothetical bill. Choose
-12 or 24 months. With savings set, the projection starts at the saved balance month;
-without savings, it starts at the selected forecast month and shows budget/cash
-flow without inventing a balance. The chart offers monthly budget room and, when
-available, projected savings.
+Choose **Add a plan** and enter **Name**, **Target amount** (slider or exact entry),
+and **Target date**. Category defaults to `purchase`; choose `tax`, `vacation`, or a
+category managed in **Settings → Planning categories**. Saving a plan creates a
+funding goal, not an actual transaction or a second recurring bill.
 
-The summary shows starting-month budget room, lowest projected savings, and ending
-savings. **Monthly comparison & assumptions** exposes income, forecast expenses,
-room, cash expenses, cash remaining, named annual payments, and month-end savings.
+**Use annual expense** links a new goal to an annual bill; the same selector in
+**Edit** links an existing goal. **Track in Planning** on a dated annual bill opens
+its existing goal or creates one. Only one goal per bill/year is allowed. Linked
+amounts and dated deadlines always follow the bill, including later changes;
+edit those values in Recurring accounts. For an annual allowance without a due
+day, choose the goal's target date yourself. The running cash forecast replaces
+the bill with one linked payment. Passing a deadline does not mark it paid or
+silently roll it into next year; an explicit paid confirmation releases its earmark.
 
-For dated, distributed annual bills, cash calculations remove the monthly
-allocations from expenses, leaving that cash in savings, then subtract the full
-annual payment when due. This avoids counting the allocation and payment twice.
-Undated annual allowances retain their budget timing. Annual bills already counted
-fully in their due month are not added again.
+Plans share the one savings balance in earliest-target-date order, preserving the
+savings floor. Each card shows set aside, still needed, and a suggested monthly
+amount. Suggestions are not recorded transfers or proof of affordability. Without
+savings, funding is shown as unknown. Annual cards also show their budgeted monthly
+allocation, projected contributions, projected funding at the deadline, and any
+additional funding gap. Their suggested monthly amount is the extra needed above
+the existing allocation. Contributions are assigned to one annual cycle only.
 
-```text
-cash expenses = forecast expenses − dated annual allocations + distributed annual payments due
-cash remaining = income − cash expenses
-month-end savings = previous savings + cash remaining
-```
+For example: $1,500 winter taxes due December 31, $500 recorded in November, and
+$125 budgeted each month gives $750 projected funding and a $750 gap after the
+November and December contributions. Both contributions are assumed to arrive
+before payment and neither is included in the $500. The gap is a funding warning,
+not another expense. The cash forecast pays the $1,500 once.
 
-The savings balance includes money reserved for annual bills; it is not all free
-spending money. For example, $5,943.67 of forecast expenses with $791.67 of dated
-allocations and a $1,500 annual payment becomes $6,652 cash expenses. With $6,000
-income, savings falls by $652 that month. This can happen even with positive
-forecast room, because the reserve is being spent on its intended bill.
+**See the funding projection** shows conditional month-end balances over 24 months
+from the saved balance month. It uses planned income and bills, includes each goal
+once, and labels missing income. Full-month income is assumed; exact-day cash
+availability and goals outside the displayed horizon are not established. Main
+monthly budget forecasts remain based on recurring bills and income; the Planning
+projection additionally considers your goals. Existing imported actuals remain
+separate from both forecasts.
 
-These are full-month estimates. Payday ordering, interest, inflation, live bank
-balances, and actual transaction reconciliation are not modeled. Missing income
-is flagged instead of being treated as a confident affordability result.
-
-### Recurring payment scenarios
-
-Choose **Add payment**, **Change payment**, or **Remove payment**:
-
-- Add: enter name, monthly amount, start/end months, and optionally a due day.
-  Previewing needs no category; saving a draft requires one. **Save estimate**
-  leaves it outside expenses. **Add to recurring bills** explicitly creates a
-  real monthly payable once. An already added estimate stays in the baseline once.
-- Change: select an existing payable, enter the new amount and effective month,
-  and optionally limit the final month. Annual entries use the full annual total.
-  Earlier months, explicit overrides, and later scheduled defaults remain intact.
-- Remove: select a payable and exclusion window. It is removed only from that
-  hypothetical window, including the corresponding annual cash payments.
-
-The summary/chart/table compare current and proposed budgets. Change/remove are
-preview-only; use Recurring accounts to apply real edits. **Current budget** returns
-to the unchanged baseline. **Discuss this preview with Budget advisor** sends an
-add-payment preview and savings assumptions to optional local chat.
-
-### One-time purchases
-
-Use **Plan a purchase** to save a name, category, amount, month, and optional notes.
-Drafts stay outside forecasts. **Preview impact** counts that purchase once in its
-month without changing its inclusion status. **Include in budget** counts it;
-**Return to draft** removes its forecast effect while preserving the estimate.
-Edit or delete a purchase from its card. Include a trip as a one-time estimate when
-you have chosen a total; an advisor's proposed price range is not a saved purchase.
+**Discuss** opens Budget advisor with that saved plan. **Edit** uses the same short
+form. **Delete** permanently removes the goal and its earmark after confirmation;
+its linked bill, savings balance, and actual transactions remain. No archive or
+restart restores it. Overview links to Planning below the three summary cards.
 
 ## Spending
 
@@ -407,190 +419,80 @@ file remains blocked until its import is deleted.
 ### Payee classification
 
 Saving a categorized manual transaction/edit or committing an import remembers its
-exact description and type. Rules are shared across accounts, but purchases,
-refunds, and fees are separate. Matching preserves row types, amounts, and existing
-review categories. Priority is existing review label, exact remembered variant,
-unambiguous normalized group, then conservative similarity; unknown/conflicting
-matches stay for review. Rules persist until forgotten in Settings.
+exact description and type. Purchases, refunds and fees stay separate. Matching
+fills empty review categories and preserves explicit edits, amounts, transaction
+types, original descriptions and CSV duplicate identities.
 
-Normalization ignores Unicode/case/spacing differences, explicit `#store` numbers,
-leading years/dates, apostrophes, and punctuation. Meaningful brand numbers remain.
-The [merchant configuration](../backend/abacus/payee_matching.json) also groups:
+**Refresh payees** reloads the saved list and latest review status, showing a
+loading state and a completion message. It does not start a model review.
 
-- Amazon.com, Amazon Marketplace, and Amazon Prime order codes into three separate groups.
-- A2 PCI Parking, Panera Bread, PetSmart, and REI store/location variants by brand.
-- ActBlue's `*` recipient suffixes under ActBlue.
+In **Settings → Remembered payees**, choose **Review similar payees**. An installed
+local model proposes merchant groups from remembered names and categories. Review
+runs in the background with progress and cancellation; leaving Settings and coming
+back resumes the same review. Calls use up to eight names with a dedicated reply
+allowance. A failed batch retries in smaller overlapping sets. If a later call
+fails, valid earlier suggestions remain available with an explicit **Partial
+review** warning; approve those or start a new review. Errors distinguish a
+timeout, reply limit, invalid output, and connection failure. Only names, transaction types, category labels and
+local review IDs go to Ollama, never statements, amounts, dates or bank accounts.
 
-**Remembered payees** displays exact saved variants, so it may contain hundreds of
-rows even when normalized matching works. Editing/forgetting one rule does not
-rewrite transactions. Normalization is not a database cleanup or trained model.
+No rule changes during preview. Select the proposed groups you want, edit their
+names, and uncheck individual members as needed. **Keep individual categories** is
+the default, including when a group has conflicting categories. Choosing a shared
+category explicitly updates only selected remembered aliases. **Apply selected
+changes** saves approved groups atomically. Changed/forgotten aliases invalidate a
+stale preview rather than silently overwriting your correction. Repeating the same
+apply request does not duplicate groups. Unapproved suggestions are left alone.
 
-Patterns run case-insensitively on each classification pass; JSON `"\\1"` means
-retain the first capture group. A literal replacement such as `"rei"` makes a
-canonical name. `*` must be escaped to match a literal asterisk. Use merchant-specific
-boundaries and test real variants before broadening patterns. The default fuzzy
-threshold is `0.94` with a `0.05` margin; setting the threshold to `1` disables
-similarity. Similarity also constrains first words, numeric components, transaction
-types, and name lengths. **Similar payee · check category** labels its suggestions.
-See [classification/training](../training/README.md) for exact behavior and exports.
+Approved groups expand to show their exact aliases and current categories. You can
+rename a group, edit a category, forget one alias, or **Ungroup** while keeping its
+aliases and categories. These actions do not recategorize saved transactions.
+Exact category corrections remain highest priority. An approved canonical name
+suggests a category only when its members agree; conflicting groups abstain.
 
-## Annual bill reserve checks
+Imports continue deterministic matching without model calls. Generic Unicode,
+whitespace, punctuation, explicit #store markers and leading year/date cleanup
+remain. Merchant-specific JSON patterns and automatic fuzzy category guesses have
+been retired. A new unfamiliar variation may need manual categorization followed
+by another review; the model does not silently invent future aliases.
 
-Enable **Annual bill reserve alerts** and set **Reserve checkpoint day** in Settings
-(default enabled/day 1). Days 29–31 clamp in short months. In **Recurring accounts →
-Annual bill reserve plan → Set funding target**, explicitly save an opening baseline
-and month. The plan snapshots dated annual payables distributed monthly, including
-future amount changes/overrides. No target is invented before setup.
-
-```text
-reserve target = max(0, fixed baseline + allocations due by checkpoint
-                        − annual payments scheduled before that date)
-```
-
-Prior-month allocations should arrive by the next month's checkpoint day. With a
-$500 baseline plus $791.67 allocated in November, December 1 targets $1,291.67.
-Optional forecast surplus is excluded. The full baseline is treated as available
-for these bills; savings for other goals is not separately earmarked. Undated
-allowances and non-distributed annual bills are outside this reserve plan.
-
-Use **Record savings balance** to enter an opening balance and **Balance as of** date,
-before annual payments due that day. An after-payment balance belongs to the next
-date; future observations are rejected. Reusing a date corrects it. The history
-lists the 12 most recent dated observations. Observations do not change the saved
-Purchase planner snapshot; the existing slider can update that separately.
-
-Overview and Purchase planner distinguish:
-
-- Missing/stale balance: **Update savings**, not an assertion that a transfer was missed.
-- Fresh balance below target: the amount needed to reach the saved reserve target.
-- Upcoming payment risk: recorded balance plus planned allocations may not cover
-  payments due within 30 days. Same-day bills share funds; future allocations are
-  clearly unconfirmed.
-- On track or a scheduled next checkpoint: a quieter status with the next target.
-
-**View funding plan** exposes current/upcoming checkpoints and allocation/payment
-components. **Dismiss until next checkpoint** suppresses notices until that date;
-a new observation clears the dismissal. Settings can disable alerts without
-removing the plan or observation history. Checks follow today in `APP_TIMEZONE`,
-refresh every minute and on foreground/focus, and are independent of forecast month.
-
-Updating observed savings never lowers the fixed target. Annual schedule edits
-show a review notice; only **Replace funding target** adopts new schedules or a
-baseline. Scheduled payments are subtracted after their due day even if not marked
-paid; this is an assumption, not bank verification. Reserve checks create no
-transactions or payment confirmations. A reserve target is not an extra expense.
+A failed, cancelled or restart-interrupted review changes no payees. Model-proposed
+regular expressions, unknown IDs and mixed transaction types are rejected.
+See [classification and local review](../training/README.md) for implementation
+limits and exports.
 
 ## Budget advisor
 
-Optional **Memora** recalls approved intentions, preferences, and decisions in
-later conversations. It defaults off. Choose **Remember this**, review the local
-draft and source excerpt, then **Save memory**. Settings provides editing, revision
-history, completion/abandonment, and confirmed forgetting. Goals are statements,
-not achieved savings, and never change budget calculations. See the complete
-[advisor memory guide](advisor-memory.md) for setup, controls, and privacy.
+Enable Budget advisor and select an installed local model in Settings. Chat can
+answer spending questions, review saved Planning goals, and research a trip or
+purchase. There is one chat card: no Planner context dropdown or research sidebar.
 
-Choose an installed local model in Settings, enable **Budget advisor in the main
-menu**, and save. No models download automatically. Ask a general budget question,
-select saved planning context, or discuss an add-payment preview from Purchase
-planner. Create/edit estimates in Purchase planner; chat itself is read-only.
+From a plan, choose **Discuss**. Chat shows a removable **Discussing** label and
+reads the plan by ID with every question. Editing/deleting that plan invalidates
+old context; a deleted/changed plan cannot return a stale in-flight answer. The
+conversation stays available when budget data refreshes. Read-only spending
+comparisons and transaction evidence appear below chat.
 
-Each turn reads a fresh snapshot: forecasts for the selected month and following
-11 months (23 with web research), three months of recent category actuals, up to
-12 finished calendar months of category/payee spending history, category guides,
-upcoming drafts, a previous-month forecast comparison, and any
-selected purchase/payment/savings scenario. Python calculates balances and deltas.
-Expand **Budget context** and calculated result panels to inspect the numbers.
+**Enable web search** is next to Ask. When enabled, enter a public search topic,
+preview its queries, and approve them inline. Only that approved public topic goes
+to Brave. Financial snapshots, private chat, memory, and account details stay local.
+Travel and product topics share the chat workflow; researched sources appear with
+the answer. Web search requires `BRAVE_SEARCH_API_KEY`.
 
-Below the conversation, **What changed this month?** compares recorded charges
-and debits by account, with optional category details, for the latest two finished
-months ending no later than the selected month. Refunds reduce spending; card
-payments and transfers are excluded. Editing a card's forecast allowance does not
-change this comparison. Missing and incomplete months are labeled.
-**Calculated budget impact** subtracts those recorded expenses from planned income;
-it does not verify deposits or bank balances. **Future budget projection** is a
-separate estimate using saved forecast assumptions and annual payment timing.
+**Add to Planning** on an answer asks the local model to suggest a name, exact
+amount, target date, and category. It opens the normal Planning form for review.
+Unknown dates or amounts remain blank. Nothing is saved until **Save plan**.
 
-Replies render Markdown headings, emphasis, lists, code, and tables. Common TeX prose from local
-models is simplified for readability; code and source URLs are preserved.
-All money sent to the model is formatted in Python, including card-bill changes,
-annual payments, and savings projections. Raw minor-unit amounts remain in the API
-snapshot for the interface, but are excluded from the model payload. Replies default
-to 768 generated tokens, configurable with `ADVISOR_MAX_TOKENS` in `.env`. If an
-answer reaches that limit, a visible warning identifies it as incomplete; ask a
-shorter follow-up or increase the configured limit and restart the service.
+The advisor's database login has SELECT-only access, including `plans`,
+`plan_categories`, and annual bill paid confirmations in `bill_payments`. Setup/update maintains the explicit allowlist. All monetary
+figures passed to the model are Python-formatted currency amounts; funding totals
+are calculated by Python, not the model. Predictions are conditional, not bank
+verification. Local-model responses can still be mistaken.
 
-Source citations remain clickable; remote images and links not present in verified research sources
-are disabled so model-generated URLs cannot transmit financial details.
-
-Ask **“What could I do to increase my savings?”** to discuss recorded category and
-payee changes. Python computes the first-to-last difference over the latest two
-and three finished months. For example, restaurant spending of $150 then $200 is
-a recorded $50 increase. Refunds reduce spending; card payments
-and transfers do not count. Current/future months are excluded; missing months
-produce unknown changes, and incomplete months are flagged. History ends at the
-selected month or the latest finished month, whichever is earlier.
-
-**Budget context → View the snapshot used for the last answer → Local transaction
-history used for this answer** shows category amounts, data completeness, and
-calculated differences. The visible snapshot includes up to 20 normalized payees;
-ordinary model replies receive up to eight, with explicitly mentioned labels
-prioritized. Ordinary replies receive three recent monthly values plus averages
-computed over the full window; year/history questions include all monthly values.
-The snapshot prioritizes
-recent increases and then recent spending; omitted-payee counts are visible.
-These are transaction labels grouped by existing normalization rules, not verified
-merchant identities. Suggestions do not change the budget or actual transactions.
-
-The snapshot uses a **dedicated SELECT-only PostgreSQL login** and a **read-only,
-repeatable-read transaction**, released before the model responds. Setup and the
-updater maintain its explicit permission allowlist; see [advisor account setup](operations.md#dedicated-advisor-database-login).
-Missing credentials or grants disable advisor requests only, without falling back
-to the writable login. The model receives a bounded local snapshot, not credentials,
-SQL, or tool access.
-**No personal financial context is sent to Brave**: search receives only the
-separately entered, previewed, approved public travel topic. Database amounts,
-payees, transaction history, private chat/history, and model responses never feed
-search construction. The financial snapshot goes only to loopback Ollama.
-
-From a deficit alert, **Reconcile with Budget advisor** prepares a question comparing
-months, turns web research off for that handoff, and clears unrelated scenario
-selection. Press **Ask**. **What changed this month?** shows income/expenses/remaining,
-named changed schedules/purchases, and their effect on budget room. Reductions are
-suggestions; lowering future entertainment spending does not reduce a card bill
-already owed. **Preview changes in Purchase planner** lets you test an adjustment.
-
-A narrow unambiguous phrase such as “another $200 monthly bill” can be converted
-into a deterministic monthly scenario starting in the selected month. Ambiguous
-amounts/dates/durations need explicit planner fields. Saved savings is used when
-available; without it, only monthly budget impact is calculated.
-
-### Web research and trip funding
-
-Configure your own Brave key as described in [Operations](operations.md#optional-local-model-and-web-research).
-**Use current web research** becomes available but defaults off. Enter a
-**Public research topic** with travel details only, select **Preview public searches**,
-and approve the displayed terms before asking. Editing the topic clears approval.
-The preview does not contact Brave; only an approved request searches. Chat and
-history never become search queries. The sent terms are also shown with the reply. Research provides excerpts, clickable sources/retrieval dates, missing
-details, and partial/failure labels. It does not verify exact-date availability or
-book anything. Confirm dates, traveler counts, departure airports, currency,
-accommodation preferences, fees, and estimates before relying on a trip plan.
-
-**Funds already set aside** and **Monthly breathing room to preserve** support a
-separate hypothetical 24-month trip-funding calculation. Contributions use
-nonnegative forecast room after the buffer, starting no earlier than the current
-month. Missing income/funding assumptions leave readiness unknown. A proposed trip
-range becomes a calculated selected scenario only after you choose a purchase
-estimate. Contributions are not reserved in the budget or guaranteed available cash.
-
-Chat stays in tab memory and survives menu navigation. New conversation, reload,
-context month/model changes, or disabling the advisor clear it. Cancel stops UI
-waiting; the model may finish its current computation. Errors restore the question
-for retry and do not change financial records. A failed first question stays in
-the conversation instead of returning to the welcome screen; retrying excludes the
-failed attempt from model history. Saving budget entries refreshes the same month
-in the background. A notice marks earlier answers as based on an older snapshot;
-your next question reads fresh data. See [timeout troubleshooting](operations.md#troubleshooting).
+Replies support Markdown and source citations. A token-limit warning marks an
+incomplete answer. Optional [approved local memory](advisor-memory.md) remains
+independent of saved plans. An unavailable-memory warning describes that answer;
+use Settings → Advisor memory → Refresh memory to check the current connection.
 
 ## Settings
 
@@ -603,7 +505,7 @@ edit, or forget rules. The heading shows the number of saved rules.
   **Refresh models**; selecting none leaves CSV/manual workflows available.
 - **Enable Budget advisor in the main menu:** optional; disabling chat does not
   disable PDF extraction or delete the model setting.
-- **Annual bill reserve alerts / Reserve checkpoint day:** control reserve reminders.
+- **Planning categories:** add, rename, or delete planning labels.
 - **Bank & card accounts:** add/rename/delete named accounts; names are not bank
   connections. Accounts/categories referenced by financial records may need those
   references resolved before deletion. Deleting a category also removes its payee
@@ -612,7 +514,7 @@ edit, or forget rules. The heading shows the number of saved rules.
   30 is stale. An account with no evidence warns immediately. Saved dated transactions
   and committed statement coverage establish freshness; old cycles imported today
   do not appear current. This does not prove a complete statement or bank sync.
-- **Categories:** add/rename/delete categories used by schedules, purchases, and actuals.
+- **Categories:** add/rename/delete categories used by schedules and actuals.
 - **Remembered payees:** edit category memory or forget a specific rule without
   recategorizing history. A later saved label can teach it again.
 
@@ -623,7 +525,7 @@ edit, or forget rules. The heading shows the number of saved rules.
 | Forecast deficit | Forecast expenses exceed that month's income | Reconcile with advisor or edit plans; no separate disable toggle |
 | Actual deficit | Actual net spending exceeds its own month's forecast income | Review Spending; no separate disable toggle |
 | Card information stale/missing | Per-account opt-in; last evidence older than 30 days or absent | Settings checkbox; import the relevant account |
-| Annual reserve check | Missing observation, below target, or upcoming coverage risk | Settings toggle/day, manual update, plan review, dismissal |
+| Planning funding | Shared savings does not yet cover a goal | Open Planning to review dates, suggested contributions, and savings |
 | Import/research/model errors | Validation, processing, or optional service failure | Correct/retry; saved spending stays unchanged on failed processing |
 
 All notices remain inside the app. There are no email, push, OS notifications, bank

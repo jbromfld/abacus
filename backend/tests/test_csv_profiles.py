@@ -45,7 +45,7 @@ def test_mapping_remembers_all_fields_and_auto_applies_to_new_file(client, accou
     assert (
         second["rows"][0]["amount"] == 2000 and second["rows"][0]["kind"] == "purchase"
     )
-    assert client.get("/api/transactions").json() == []
+    assert client.get("/api/transactions").json()["items"] == []
 
 
 def test_existing_queued_file_can_use_mapping_learned_after_upload(client, account_id):
@@ -161,7 +161,7 @@ def test_committed_mapping_is_retained_and_default_route_cannot_remap_it(
     assert saved["status"] == "committed" and saved["source"]["mapping"] == PROFILE
     result = client.post("/api/imports/" + job["id"] + "/mapping/default").json()
     assert result["status"] == "committed" and result["source"]["mapping"] == PROFILE
-    assert len(client.get("/api/transactions").json()) == 1
+    assert len(client.get("/api/transactions").json()["items"]) == 1
 
 
 def test_invalid_mapping_does_not_save_card_default(client, account_id):

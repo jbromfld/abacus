@@ -15,24 +15,23 @@ requirements, enum values, and validation responses for the running version.
 - Months are `YYYY-MM`; dates are `YYYY-MM-DD`. Valid month and transaction-date years are 1900–9998.
   End months/date ranges are inclusive. Annual paid periods use `YYYY` instead.
 - Repeat list parameters, e.g. `?end=2026-12&category_ids=ID1&category_ids=ID2`.
-- Most creates return 201. Deletes return `{"ok":true}`. List endpoints return arrays;
-  forecast, projection, averages, reserve, and breakdown endpoints return objects.
+- Most creates return 201. Deletes return `{"ok":true}`. Most list endpoints return arrays; transaction/import history returns page envelopes;
+  forecast, projection, averages, and breakdown endpoints return objects.
 - This is an unauthenticated loopback application, not an Internet-facing API.
   Local host/origin restrictions apply. No API initiates payments or bank connections.
 
 Most `PUT` resource bodies follow their full input schema rather than arbitrary
-patch semantics. Send complete recurring/purchase/transaction records when editing.
+patch semantics. Send complete recurring/transaction records when editing.
 `PUT /settings` has defaults for currency/model/advisor, so include their current
-values when changing reserve preferences. Omitted/null reserve preferences preserve
-the existing values. Use dedicated PATCH endpoints where provided.
+values when changing preferences. Use dedicated PATCH endpoints where provided.
 
 ## Health, settings, and local services
 
 | Method | Path | Purpose / inputs |
 | --- | --- | --- |
 | GET | `/api/health` | Check database query; returns `status` |
-| GET | `/api/settings` | Budget currency, selected model/advisor opt-in, savings fields, and reserve preferences |
-| PUT | `/api/settings` | `currency`, `model`, `advisor_enabled`, optional `reserve_alerts_enabled`, `reserve_checkpoint_day` (1–31) |
+| GET | `/api/settings` | Budget currency, selected model/advisor opt-in, savings fields |
+| PUT | `/api/settings` | `currency`, `model`, `advisor_enabled` |
 | GET | `/api/models` | Installed local model names and connection error text |
 | GET | `/api/advisor/research-status` | Brave availability/status, without exposing the key |
 | POST | `/api/advisor/research-preview` | `{topic}` prepares public queries and a confirmation value; no outbound request |
@@ -87,22 +86,99 @@ occurrence membership/tracking is validated. Paid dates cannot be in the future.
 Paid-status updates leave actual transactions unchanged. Automatic ACH occurrences
 are derived from their generated actuals rather than manual confirmations.
 
-## Purchases and payment estimates
+## Annual expected income
 
 | Method | Path | Purpose / inputs |
 | --- | --- | --- |
-| GET | `/api/purchases` | One-time purchase plans, drafts and included |
-| POST | `/api/purchases` | `name`, `amount`, `month`, `category_id`, optional `notes`, `included` |
-| PUT | `/api/purchases/{id}` | Update plan/inclusion with the purchase input schema |
-| DELETE | `/api/purchases/{id}` | Delete plan |
-| GET | `/api/bill-estimates` | Monthly payment drafts and conversion status |
-| POST | `/api/bill-estimates` | `name`, `amount`, `start_month`, optional `end_month`, required `category_id`, optional `due_day` |
-| PUT | `/api/bill-estimates/{id}` | Edit an unconverted payment draft |
-| DELETE | `/api/bill-estimates/{id}` | Delete estimate; a converted recurring bill is retained |
-| POST | `/api/bill-estimates/{id}/include` | Atomically convert once into a monthly recurring payable |
+| GET | `/api/annual-income?year=YYYY` | Year, total, included total, twelve included monthly amounts, and sources |
+| POST | `/api/annual-income` | Create `{year,name,amount,included}`; inclusion defaults false |
+| PUT | `/api/annual-income/{id}` | Replace the source's year, name, amount, and inclusion |
+| DELETE | `/api/annual-income/{id}` | Remove the source and its forecast contribution |
 
-An already converted estimate cannot be edited/reconverted. Use its recurring
-schedule for changes. Drafts never affect the baseline until explicitly included.
+Years range from 1900 through 9998. Amounts are positive integer minor units,
+at most 9,000,000,000,000. Each source response includes twelve `monthly_amounts`
+showing its possible allocation; summary `monthly_amounts` includes only checked
+sources. Division uses integer quotient/remainder, assigning leftover minor units
+to January onward. Included estimates affect all twelve months of that calendar
+year only. They supplement recurring income without creating transactions or
+altering savings observations. These are estimates, not dated cash receipts.
+Advisor access is SELECT-only on `annual_income`; rerun advisor setup after
+migration 0015 to maintain the explicit allowlist.
+
+## Remembered payee group review
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/payee-review/payees` | Approved groups, individual aliases, total, and latest resumable review |
+| POST | `/api/payee-review/reviews` | Start one background local-model preview; return 202; repeated start reuses an active job |
+| GET | `/api/payee-review/reviews/{id}` | Status, progress, snapshot members and suggestions |
+| DELETE | `/api/payee-review/reviews/{id}` | Cancel/discard an unapplied review; remembered payees remain unchanged |
+| POST | `/api/payee-review/reviews/{id}/apply` | Atomically apply explicitly selected groups |
+| PUT | `/api/payee-review/groups/{id}` | Rename canonical label with `{name}` |
+| DELETE | `/api/payee-review/groups/{id}` | Ungroup while retaining individual alias rules/categories |
+
+Apply body: `{groups:[{suggestion_id,name,member_ids,category_id}]}`. Null
+`category_id` preserves each alias's current category; an existing category ID
+explicitly updates the selected aliases. At least two distinct displayed members
+are required per group. Altered or forgotten selected rows return 409 without
+applying any group. An identical applied request returns the prior result; a
+different replay returns 409. Historical transactions are never recategorized.
+
+States are queued, running, ready, applied, cancelled, failed, or interrupted.
+Preview generation uses the configured local model, eight-name candidate batches,
+and a dedicated 2,048-token allowance. Model output supplies exactly one
+canonical name or null per provided payee ID. Unknown, missing, and duplicate
+keys are rejected; the server derives each group's membership. A failed batch retries in smaller sets,
+bounded to two subdivision levels. Complete validated suggestions are checkpointed
+after each batch. `ready` can carry a nonempty `error` describing an incomplete
+review; show that warning beside the still-reviewable suggestions. A failed call
+never turns truncated JSON into proposals. No payee changes occur until apply.
+Private jobs are excluded from the advisor's SELECT allowlist; approved groups and
+payee rules are readable solely for aggregate naming. The existing `/payee-rules`
+edit/forget endpoints continue to manage exact aliases.
+
+## Planning
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/planning` | Goals, live linked bill values, funding gaps, and shared cash projection; optional `month` chooses projection start |
+| POST | `/api/planning/annual/{recurring_id}` | Track the next open dated annual occurrence, reusing an existing goal |
+| POST | `/api/planning` | Save `{name,amount,target_date,category_id?,recurring_id?,request_id?}` |
+| GET | `/api/planning/{id}` | Current goal/funding; deleted IDs return 404 |
+| PUT | `/api/planning/{id}` | Replace the goal using the same input |
+| DELETE | `/api/planning/{id}` | Permanently delete; repeated deletion succeeds |
+| GET/POST | `/api/planning/categories` | List or create `{name}` |
+| PUT/DELETE | `/api/planning/categories/{id}` | Rename or delete a label; deleting retains uncategorized goals |
+| POST | `/api/planning/draft` | Local-model extraction from `{user_message,assistant_message}` for review; never writes a goal |
+
+Amounts are positive integer minor units. Target dates use YYYY-MM-DD (1900–9998).
+The optional UUID `request_id` makes a retried create reuse the original saved goal.
+Planning categories are separate from transaction categories. Linked annual
+expenses must exist and have at most one plan per year. Savings remains a manual
+opening snapshot. New goals affect the Planning funding projection, not actual
+transactions. Linked annual cash amounts are replaced once in that projection;
+saved recurring bills are not edited. Linked amount and dated target derive from the
+annual occurrence on every read and save, rather than trusting copied fields.
+Undated annual allowances retain the goal's chosen date. Annual goal responses
+include `monthly_allocation`, `contributions`, `projected_contributions`,
+`projected_funding`, and `funding_gap`; unknown funding is null. Paid/inactive goals
+release earmarks and do not have active funding-gap fields.
+
+`GET /api/forecasts?...&include_savings=true` uses the same running cash engine,
+including saved goals. `projected_savings` and legacy `remaining_with_savings`
+now carry a running balance, or null before the saved balance month/beyond ten
+years. `cash_expenses` pays dated annual bills once instead of monthly allocations.
+`funding_gap` sums tracked annual goals due in that month; `annual_funding` gives
+those goal details. Monthly budget fields are unchanged.
+
+Advisor chat accepts optional `plan_id`. The server resolves it inside the fresh
+read-only snapshot and rejects a response if that plan was edited or deleted
+while the model was answering. `plans` and `plan_categories` require the normal
+advisor setup SELECT grants after migration 0016.
+
+The following legacy planning endpoints are retained for internal scenario
+calculations and older API callers; the application UI uses only Planning.
+Migration 0016 clears their obsolete saved plan records.
 
 ## Forecasts, actuals, trends, and transactions
 
@@ -127,24 +203,19 @@ period. Missing trend values are `null`, not zero; complete zero months are zero
 Breakdowns include charges/refunds/net, category aggregates, entries, and month
 completeness. Forecast breakdowns require full calendar-month boundaries.
 
-## Savings projections and reserve checks
+## Savings projections
 
 | Method | Path | Purpose / inputs |
 | --- | --- | --- |
 | GET | `/api/savings` | Opening snapshot `{amount,month,floor}`; unset amount is `null` |
-| PUT | `/api/savings` | Save `{amount,month,floor}`; nonfuture month also records its opening observation |
+| PUT | `/api/savings` | Save `{amount,month,floor}` |
 | POST | `/api/savings/projection` | Read-only as-is or hypothetical 12-/24-month cash projection |
-| GET | `/api/reserve-check` | Preferences, fixed plan, latest/history observations, status, targets, upcoming risks/checkpoints |
-| PUT | `/api/reserve-check/plan` | Explicitly create/replace frozen target with `{amount,month}` and current annual schedules |
-| POST | `/api/reserve-check/balances` | Upsert dated opening observation `{amount,as_of}`; never resets the plan |
-| POST | `/api/reserve-check/dismiss` | Suppress notices until the next checkpoint |
 
 A projection takes `months` (12/24; default 24) plus `savings:{amount,month,floor}`
 or, without known savings, `start_month`. Optional scenario inputs are mutually
 exclusive:
 
 - `bill:{name,amount,start_month,end_month}` for a proposed monthly payment.
-- `estimate_id` for a saved payment estimate, accounting for prior conversion once.
 - `recurring_change:{recurring_id,action,start_month,end_month,amount}`; `action` is
   `modify` (amount required) or `remove` (amount prohibited).
 
@@ -152,15 +223,6 @@ Omit all scenarios for the unchanged current budget. Existing schedules/transact
 are never mutated by projection. It returns separate forecast/cash expenses and
 monthly room, allocation adjustments, named annual payments, baseline/scenario
 savings, breaches, missing income, and status. Unknown savings remains `null`.
-
-Reserve responses distinguish `no_bills`, `not_configured`, `needs_update`,
-`below_target`, `payment_risk`, `scheduled`, and `on_track`. `enabled` and `dismissed`
-control presentation separately from the calculated status. Dates follow
-`APP_TIMEZONE`. Targets exclude optional surplus and are frozen until explicit plan
-replacement. An observation before the latest checkpoint is stale; a same-date
-observation replaces its amount. Future observations/baseline months are rejected.
-Observations represent opening balances before payments due that day. No reserve
-endpoint creates spending or paid confirmations.
 
 ## Statement import lifecycle
 
@@ -226,8 +288,8 @@ characters). Optional fields:
 | --- | --- |
 | `history` | Up to 12 user/assistant messages, with bounded content/total length |
 | `memory_epoch` | Echo `context.advisor_memory.epoch` for follow-ups with memory enabled; stale history returns 409 |
-| `purchase_id` or `scenario:{name,amount,month}` | A saved or one-off purchase; mutually exclusive |
-| `monthly_bill` or `bill_estimate_id` | Structured monthly payment or saved estimate; exclusive with purchase scenarios |
+| `scenario:{name,amount,month}`  | A hypothetical one-off purchase |
+| `monthly_bill` | Structured monthly payment; exclusive with purchase scenarios |
 | `savings` | Explicit opening snapshot override for this request |
 | `use_web` | Enable optional Brave research; default false at the API |
 | `research_topic` | Required explicit public topic when using web research; chat/history never supply it |
@@ -236,7 +298,7 @@ characters). Optional fields:
 
 The response is `{reply,reply_truncated,context}`. `reply_truncated` is true when
 Ollama ends generation at its token limit; the UI marks that answer incomplete. Context includes monthly forecasts, recent
-actuals/completeness, drafts, category guide statistics, Python-calculated
+actuals/completeness, category guide statistics, Python-calculated
 `forecast_comparison`, selected scenario, `savings_projection`, `planning_capacity`,
 `spending_history`, `spending_comparison`, and `web_research`. Monetary names ending `_minor` are integer minor units; **all
 money in savings_projection also uses minor units**, even without that suffix.
@@ -397,11 +459,11 @@ months in `APP_TIMEZONE`, including account/category deltas and completeness. It
 never invokes Ollama or web research and does not depend on the selected forecast
 month. Refunds reduce spending; payments/transfers are excluded.
 
-`GET /api/forecasts?...&include_savings=true` adds `savings_balance` (nullable),
-`remaining_with_savings`, and `savings_adjusted_deficit` to each forecast. The last
-field tests `remaining + (savings_balance or 0) < 0` independently per month, with
-no carry-forward or changes to the original `remaining`/`deficit` fields. The
-parameter defaults false to preserve the standard forecast-window response.
+`GET /api/forecasts?...&include_savings=true` adds the running cash and annual
+funding fields described under [Planning](#planning). `savings_adjusted_deficit`
+flags a negative projected balance; if no cash estimate is available, it falls
+back to the monthly budget deficit. Funding gaps are independent warnings.
+Ordinary `remaining`/`deficit` fields are unchanged. The parameter defaults false.
 
 
 ### Permanent budget-alert acknowledgements
@@ -412,5 +474,20 @@ parameter defaults false to preserve the standard forecast-window response.
 requests idempotent and preserves the original dismissal timestamp.
 `DELETE /api/alerts/dismissals` restores all notices and returns `{restored:count}`.
 Dismissals do not expire or depend on amounts and never modify financial records.
-They control Overview notices only; reserve reminders retain their existing
+They control Overview notices only; other notifications retain their existing
 checkpoint-based dismissal. The advisor login receives no access to this table.
+
+### Bounded history pages
+
+`GET /api/transactions` and `GET /api/imports` return
+`{items,next_cursor}`. Pass `limit` (default 100, maximum 200) and return the
+opaque `next_cursor` as `cursor` for the next page. A null cursor ends the list.
+Transactions sort by date descending then ID ascending; imports sort by creation
+time descending then ID ascending. Transaction `month`, `category_id`, and literal
+`q` search filters apply before paging. Reset the cursor when filters change.
+Malformed cursors and out-of-range limits return 422. Cursors describe the current
+data rather than a historical snapshot; refresh starts at the first page.
+
+Core read responses have explicit OpenAPI schemas. Generate frontend contracts
+with `uv run python scripts/generate_api_types.py`; CI runs the same command with
+`--check` to detect drift. Generated files are not manually formatted or edited.

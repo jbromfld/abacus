@@ -17,7 +17,7 @@ def test_standard_instructions_are_short_and_keep_accounting_and_privacy_rules()
             "spending_history": {"months": []},
         },
     )
-    assert len(value) < 3800
+    assert len(value) < 4400
     for text in (
         "read-only",
         "untrusted",
@@ -32,6 +32,15 @@ def test_standard_instructions_are_short_and_keep_accounting_and_privacy_rules()
     ):
         assert text.casefold() in value.casefold()
     assert "Travel planning:" not in value and "Savings/bill scenarios:" not in value
+
+
+def test_additional_savings_guidance_does_not_recommend_repeating_past_cuts():
+    value = system_instructions(request(), {})
+    assert "acknowledge existing reductions first" in value
+    assert "Do not copy last month's reduction as a new recommendation" in value
+    assert "current planned amounts and recent spending" in value
+    assert "Without a calculated scenario" in value
+    assert "never invent a numeric cut, percentage, new cap, or savings total" in value
 
 
 def test_savings_instructions_only_when_python_projection_exists():
@@ -55,8 +64,6 @@ def test_savings_instructions_only_when_python_projection_exists():
             ),
             {},
         ),
-        (request("Is this possible?", use_web=True), {}),
-        (request("Is this possible?"), {"web_research": {"sources": [{"id": "S1"}]}}),
         (request("Could I afford it?"), {"purchase_scenario": {"name": "Summer trip"}}),
     ],
 )
@@ -66,7 +73,7 @@ def test_travel_rules_cover_offline_questions_followups_and_selected_scenarios(
     value = system_instructions(body, context)
     assert "Travel planning:" in value and "missing exact dates" in value
     assert "current_date" in value and "cite [S1]" in value
-    assert "planning_capacity" in value and "exchange rate" in value
+    assert "planning_goals" in value and "exchange rate" in value
 
 
 def test_user_text_cannot_replace_instructions_or_grant_tools():
@@ -295,3 +302,17 @@ def test_every_model_money_path_uses_formatted_currency_including_annual_payment
     assert result["planning_capacity"]["available_savings_display"] == "USD 150.00"
     assert "minor_unit_digits" not in result
     assert context == original
+
+
+def test_web_search_does_not_force_travel_questions_for_products():
+    value = system_instructions(request("Compare laptop options", use_web=True), {})
+    assert "Public research:" in value
+    assert "Travel planning:" not in value
+    value = system_instructions(
+        request(
+            "How has dining changed?",
+            history=[{"role": "user", "content": "Plan a vacation"}],
+        ),
+        {},
+    )
+    assert "Travel planning:" not in value

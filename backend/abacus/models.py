@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,14 +40,11 @@ class Settings(Base):
     advisor_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
-    advisor_memory_enabled: Mapped[bool] = mapped_column(
+    advisor_dreaming_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
-    reserve_alerts_enabled: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="true"
-    )
-    reserve_checkpoint_day: Mapped[int] = mapped_column(
-        Integer, default=1, server_default="1"
+    advisor_memory_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
     )
     savings_balance: Mapped[int | None] = mapped_column(BigInteger)
     savings_month: Mapped[str | None] = mapped_column(String(7))
@@ -69,22 +67,43 @@ class AlertDismissal(Base):
     )
 
 
-class ReservePlan(Base):
-    __tablename__ = "reserve_plans"
-    id: Mapped[int] = mapped_column(primary_key=True, default=1)
-    amount: Mapped[int] = mapped_column(BigInteger)
-    start_date: Mapped[date] = mapped_column(Date)
-    schedules: Mapped[list] = mapped_column(JSON)
-    dismissed_until: Mapped[date | None] = mapped_column(Date)
-    __table_args__ = (CheckConstraint("amount >= 0"),)
-
-
-class SavingsObservation(Base):
-    __tablename__ = "savings_observations"
+class PlanCategory(Base):
+    __tablename__ = "plan_categories"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    as_of: Mapped[date] = mapped_column(Date, unique=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+
+
+class Plan(Base):
+    __tablename__ = "plans"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    name: Mapped[str] = mapped_column(String(160))
     amount: Mapped[int] = mapped_column(BigInteger)
-    __table_args__ = (CheckConstraint("amount >= 0"),)
+    target_date: Mapped[date] = mapped_column(Date, index=True)
+    category_id: Mapped[str | None] = mapped_column(
+        ForeignKey("plan_categories.id", ondelete="SET NULL")
+    )
+    recurring_id: Mapped[str | None] = mapped_column(
+        ForeignKey("recurring.id", ondelete="SET NULL")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    __table_args__ = (CheckConstraint("amount > 0 AND amount <= 9000000000000"),)
+
+
+class AnnualIncome(Base):
+    __tablename__ = "annual_income"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    year: Mapped[int] = mapped_column(Integer, index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    included: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    __table_args__ = (
+        CheckConstraint("year BETWEEN 1900 AND 9998"),
+        CheckConstraint("amount > 0 AND amount <= 9000000000000"),
+    )
 
 
 class Recurring(Base):
@@ -148,39 +167,6 @@ class BillPayment(Base):
     )
 
 
-class Purchase(Base):
-    __tablename__ = "purchases"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    name: Mapped[str] = mapped_column(String(160))
-    amount: Mapped[int] = mapped_column(BigInteger)
-    month: Mapped[str] = mapped_column(String(7))
-    category_id: Mapped[str] = mapped_column(ForeignKey("categories.id"))
-    notes: Mapped[str] = mapped_column(String(2000), default="")
-    included: Mapped[bool] = mapped_column(Boolean, default=False)
-    __table_args__ = (CheckConstraint("amount > 0"),)
-
-
-class BillEstimate(Base):
-    __tablename__ = "bill_estimates"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    name: Mapped[str] = mapped_column(String(160))
-    amount: Mapped[int] = mapped_column(BigInteger)
-    start_month: Mapped[str] = mapped_column(String(7))
-    end_month: Mapped[str | None] = mapped_column(String(7))
-    category_id: Mapped[str] = mapped_column(ForeignKey("categories.id"))
-    due_day: Mapped[int | None] = mapped_column(Integer)
-    included: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false"
-    )
-    recurring_id: Mapped[str | None] = mapped_column(
-        ForeignKey("recurring.id", ondelete="SET NULL")
-    )
-    __table_args__ = (
-        CheckConstraint("amount > 0"),
-        CheckConstraint("due_day BETWEEN 1 AND 31", name="estimate_due_day_range"),
-    )
-
-
 class Account(Base):
     __tablename__ = "accounts"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -229,9 +215,11 @@ class Transaction(Base):
     category_id: Mapped[str | None] = mapped_column(ForeignKey("categories.id"))
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"))
     import_id: Mapped[str | None] = mapped_column(ForeignKey("imports.id"), index=True)
+    csv_fingerprint: Mapped[str | None] = mapped_column(String(64))
     provenance: Mapped[dict] = mapped_column(JSON, default=dict)
     __table_args__ = (
         Index("ix_transactions_account_date", "account_id", "date"),
+        Index("ix_transactions_account_csv", "account_id", "csv_fingerprint"),
         CheckConstraint("amount > 0"),
         CheckConstraint("kind IN ('purchase','refund','fee','payment','transfer')"),
         CheckConstraint("kind IN ('payment','transfer') OR category_id IS NOT NULL"),
@@ -259,15 +247,62 @@ class RecurringDebit(Base):
     __table_args__ = (UniqueConstraint("recurring_id", "month"),)
 
 
+class PayeeGroup(Base):
+    __tablename__ = "payee_groups"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    name: Mapped[str] = mapped_column(String(160))
+    kind: Mapped[str] = mapped_column(String(16))
+    __table_args__ = (CheckConstraint("kind IN ('purchase','refund','fee')"),)
+
+
+class PayeeReview(Base):
+    __tablename__ = "payee_reviews"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    snapshot: Mapped[list] = mapped_column(JSON, default=list)
+    suggestions: Mapped[list] = mapped_column(JSON, default=list)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str] = mapped_column(String(500), default="")
+    result: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+
 class PayeeRule(Base):
     __tablename__ = "payee_rules"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     payee: Mapped[str] = mapped_column(String(500))
     kind: Mapped[str] = mapped_column(String(16))
+    group_id: Mapped[str | None] = mapped_column(
+        ForeignKey("payee_groups.id", ondelete="SET NULL"), index=True
+    )
     category_id: Mapped[str] = mapped_column(
         ForeignKey("categories.id", ondelete="CASCADE")
     )
     __table_args__ = (
         UniqueConstraint("payee", "kind"),
         CheckConstraint("kind IN ('purchase','refund','fee')"),
+    )
+
+
+@event.listens_for(Transaction, "before_insert")
+@event.listens_for(Transaction, "before_update")
+def update_csv_fingerprint(mapper, connection, target):
+    from .source_keys import csv_fields_key, fingerprint
+
+    key = csv_fields_key((target.provenance or {}).get("source"))
+    target.csv_fingerprint = fingerprint(key) if key is not None else None
+
+
+class MemoryDream(Base):
+    __tablename__ = "memory_dreams"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    state: Mapped[str] = mapped_column(String(24), default="queued")
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

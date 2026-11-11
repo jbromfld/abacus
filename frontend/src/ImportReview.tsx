@@ -17,16 +17,22 @@ export default function ImportReview({
   onClose: () => void;
   onChanged: (update?: ImportUpdate) => void;
 }) {
+  const onChangedRef = useRef(onChanged);
+  useEffect(() => {
+    onChangedRef.current = onChanged;
+  }, [onChanged]);
   const [job, setJob] = useState(initial);
   const [rows, setRows] = useState<ReviewRow[]>(
     initial.rows.map((r, i) => ({ ...r, source_index: i })),
   );
+  const [page, setPage] = useState(0);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const locked = ['processing', 'committed', 'undone'].includes(job.status);
   const fmt = (n: number) => money(n, currency);
   const update = (j: ImportJob) => {
     setJob(j);
+    setPage(0);
     setRows(j.rows.map((r, i) => ({ ...r, source_index: i })));
     onChanged(j);
   };
@@ -43,18 +49,35 @@ export default function ImportReview({
   };
   useEffect(() => {
     if (job.status !== 'processing') return;
-    const timer = setInterval(() => {
-      api<ImportJob>('/imports/' + job.id)
-        .then((j) => {
-          setJob(j);
-          if (j.status !== 'processing') {
-            setRows(j.rows.map((r, i) => ({ ...r, source_index: i })));
-            onChanged(j);
-          }
-        })
-        .catch((e) => setError(e.message));
-    }, 1500);
-    return () => clearInterval(timer);
+    let active = true;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const j = await api<ImportJob>(
+          '/imports/' + job.id,
+          'GET',
+          undefined,
+          controller.signal,
+        );
+        if (!active) return;
+        setJob(j);
+        if (j.status !== 'processing') {
+          setRows(j.rows.map((r, i) => ({ ...r, source_index: i })));
+          onChangedRef.current(j);
+          return;
+        }
+      } catch (e) {
+        if (active) setError((e as Error).message);
+      }
+      if (active) timer = setTimeout(poll, 1500);
+    };
+    timer = setTimeout(poll, 1500);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [job.id, job.status]);
   const patch = (i: number, value: Partial<ReviewRow>) =>
     setRows((rs) =>
@@ -92,8 +115,15 @@ export default function ImportReview({
           : 0),
     0,
   );
+  const dirty =
+    JSON.stringify(rows.map(({ source_index: _index, ...row }) => row)) !==
+    JSON.stringify(job.rows);
+  const close = () => {
+    if (!busy && (!dirty || window.confirm('Discard unsaved review changes?')))
+      onClose();
+  };
   return (
-    <Modal title="Review your statement" onClose={onClose}>
+    <Modal title="Review your statement" onClose={close}>
       <div className="review-heading">
         <p>
           <strong>{job.filename}</strong>
@@ -315,6 +345,22 @@ export default function ImportReview({
       )}
       {rows.length > 0 && (
         <>
+          <nav className="button-group pagination" aria-label="Review pages">
+            <button disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+              Previous page
+            </button>
+            <span>
+              {' '}
+              Page {page + 1} of{' '}
+              {Math.max(1, Math.ceil(rows.length / 100))}{' '}
+            </span>
+            <button
+              disabled={(page + 1) * 100 >= rows.length}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next page
+            </button>
+          </nav>
           <div className="review-table table-scroll">
             <table>
               <thead>
@@ -329,117 +375,122 @@ export default function ImportReview({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i} className={!r.selected ? 'unchecked' : ''}>
-                    <td>
-                      <input
-                        aria-label={`Save row ${i + 1}`}
-                        type="checkbox"
-                        checked={r.selected}
-                        disabled={locked || !!r.skip_duplicate}
-                        onChange={(e) =>
-                          patch(i, { selected: e.target.checked })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        aria-label={`Date row ${i + 1}`}
-                        type="date"
-                        value={r.date}
-                        disabled={locked || !!r.skip_duplicate}
-                        onChange={(e) => patch(i, { date: e.target.value })}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        aria-label={`Description row ${i + 1}`}
-                        value={r.description}
-                        disabled={locked || !!r.skip_duplicate}
-                        onChange={(e) =>
-                          patch(i, { description: e.target.value })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <ReviewAmount
-                        value={r.amount}
-                        currency={currency}
-                        disabled={locked || !!r.skip_duplicate}
-                        onChange={(n) => patch(i, { amount: n })}
-                      />
-                    </td>
-                    <td>
-                      <select
-                        aria-label={`Type row ${i + 1}`}
-                        value={r.kind}
-                        disabled={locked || !!r.skip_duplicate}
-                        onChange={(e) => patch(i, { kind: e.target.value })}
-                      >
-                        {kinds.map((k) => (
-                          <option key={k}>{k}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <select
-                        aria-label={`Category row ${i + 1}`}
-                        value={r.category_id ?? ''}
-                        disabled={locked || !!r.skip_duplicate}
-                        onChange={(e) =>
-                          patch(i, { category_id: e.target.value || null })
-                        }
-                      >
-                        <option value="">Choose category</option>
-                        {categories.map((c) => (
-                          <option value={c.id} key={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      {r.classification === 'remembered_payee' && (
-                        <span className="pill included">Remembered payee</span>
-                      )}
-                      {r.classification === 'normalized_payee' && (
-                        <span className="pill included">
-                          Matched normalized payee
-                        </span>
-                      )}
-                      {r.classification === 'similar_payee' && (
-                        <span className="pill warning">
-                          Similar payee · check category
-                        </span>
-                      )}
-                      {r.classification === 'description_keyword' && (
-                        <span className="pill">PAYMENT in description</span>
-                      )}
-                      {r.skip_duplicate ? (
-                        <span className="pill warning">
-                          Already imported · skipped
-                        </span>
-                      ) : (
-                        r.duplicate && (
-                          <span className="pill warning">
-                            Possible duplicate
+                {rows.slice(page * 100, (page + 1) * 100).map((r, offset) => {
+                  const i = page * 100 + offset;
+                  return (
+                    <tr key={i} className={!r.selected ? 'unchecked' : ''}>
+                      <td>
+                        <input
+                          aria-label={`Save row ${i + 1}`}
+                          type="checkbox"
+                          checked={r.selected}
+                          disabled={locked || !!r.skip_duplicate}
+                          onChange={(e) =>
+                            patch(i, { selected: e.target.checked })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          aria-label={`Date row ${i + 1}`}
+                          type="date"
+                          value={r.date}
+                          disabled={locked || !!r.skip_duplicate}
+                          onChange={(e) => patch(i, { date: e.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          aria-label={`Description row ${i + 1}`}
+                          value={r.description}
+                          disabled={locked || !!r.skip_duplicate}
+                          onChange={(e) =>
+                            patch(i, { description: e.target.value })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <ReviewAmount
+                          value={r.amount}
+                          currency={currency}
+                          disabled={locked || !!r.skip_duplicate}
+                          onChange={(n) => patch(i, { amount: n })}
+                        />
+                      </td>
+                      <td>
+                        <select
+                          aria-label={`Type row ${i + 1}`}
+                          value={r.kind}
+                          disabled={locked || !!r.skip_duplicate}
+                          onChange={(e) => patch(i, { kind: e.target.value })}
+                        >
+                          {kinds.map((k) => (
+                            <option key={k}>{k}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          aria-label={`Category row ${i + 1}`}
+                          value={r.category_id ?? ''}
+                          disabled={locked || !!r.skip_duplicate}
+                          onChange={(e) =>
+                            patch(i, { category_id: e.target.value || null })
+                          }
+                        >
+                          <option value="">Choose category</option>
+                          {categories.map((c) => (
+                            <option value={c.id} key={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        {r.classification === 'remembered_payee' && (
+                          <span className="pill included">
+                            Remembered payee
                           </span>
-                        )
-                      )}
-                      {(!r.skip_duplicate ? r.errors : [])?.map((e, j) => (
-                        <small className="red" key={j}>
-                          {e}
-                        </small>
-                      ))}
-                      {r.source && (
-                        <details>
-                          <summary>Source</summary>
-                          <pre>{JSON.stringify(r.source, null, 2)}</pre>
-                        </details>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                        )}
+                        {r.classification === 'normalized_payee' && (
+                          <span className="pill included">
+                            Matched normalized payee
+                          </span>
+                        )}
+                        {r.classification === 'similar_payee' && (
+                          <span className="pill warning">
+                            Similar payee · check category
+                          </span>
+                        )}
+                        {r.classification === 'description_keyword' && (
+                          <span className="pill">PAYMENT in description</span>
+                        )}
+                        {r.skip_duplicate ? (
+                          <span className="pill warning">
+                            Already imported · skipped
+                          </span>
+                        ) : (
+                          r.duplicate && (
+                            <span className="pill warning">
+                              Possible duplicate
+                            </span>
+                          )
+                        )}
+                        {(!r.skip_duplicate ? r.errors : [])?.map((e, j) => (
+                          <small className="red" key={j}>
+                            {e}
+                          </small>
+                        ))}
+                        {r.source && (
+                          <details>
+                            <summary>Source</summary>
+                            <pre>{JSON.stringify(r.source, null, 2)}</pre>
+                          </details>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

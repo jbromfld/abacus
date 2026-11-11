@@ -14,15 +14,17 @@ from abacus.models import (
     Account,
     AlertDismissal,
     AmountChange,
-    BillEstimate,
+    AnnualIncome,
     Category,
     ImportPage,
+    MemoryDream,
     MonthStatus,
+    PayeeGroup,
+    PayeeReview,
     PayeeRule,
-    Purchase,
+    Plan,
+    PlanCategory,
     Recurring,
-    ReservePlan,
-    SavingsObservation,
     Settings,
     StatementImport,
     Transaction,
@@ -52,6 +54,9 @@ def advisor_credentials():
 
 @pytest.fixture(autouse=True)
 def clean_database(monkeypatch, tmp_path, advisor_credentials):
+    from abacus import dreaming
+
+    dreaming.start()
     from abacus import config
 
     monkeypatch.setattr(config, "ENV_FILE", tmp_path / "isolated.env")
@@ -63,31 +68,38 @@ def clean_database(monkeypatch, tmp_path, advisor_credentials):
         )
     with Session() as db:
         for model in [
+            MemoryDream,
+            Plan,
+            AnnualIncome,
             AlertDismissal,
             ImportPage,
-            ReservePlan,
-            SavingsObservation,
-            BillEstimate,
             PayeeRule,
+            PayeeGroup,
+            PayeeReview,
             Transaction,
             StatementImport,
             AmountChange,
             Recurring,
-            Purchase,
             Account,
             MonthStatus,
         ]:
             db.execute(delete(model))
         setting = db.get(Settings, 1)
         setting.model, setting.currency, setting.advisor_enabled = "", "USD", False
+        setting.advisor_dreaming_enabled = False
         setting.advisor_memory_enabled = False
-        setting.reserve_alerts_enabled, setting.reserve_checkpoint_day = True, 1
         setting.savings_balance, setting.savings_month, setting.savings_floor = (
             None,
             None,
             0,
         )
         db.execute(update(Category).values(monthly_guide=None))
+        # Custom planning categories are isolated, while migration defaults persist.
+        db.execute(
+            delete(PlanCategory).where(
+                PlanCategory.id.not_in(["tax", "vacation", "purchase"])
+            )
+        )
         db.commit()
     yield
 

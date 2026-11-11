@@ -15,6 +15,7 @@ dependencies = [
     "httpx>=0.28,<1",
     "pydantic>=2.10,<3",
     "mcp>=1.26,<2",
+    "langsmith~=0.12",
 ]
 
 [dependency-groups]

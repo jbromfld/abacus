@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 import httpx
 
 from .config import local_config
+from .model_activity import interactive_model
+from .model_tracing import record_model_usage, traced_model
 
 
 def ollama_url():
@@ -38,6 +40,8 @@ def available_models():
         ]
 
 
+@interactive_model
+@traced_model("abacus.ollama.extract")
 def ask_model(model, prompt, schema):
     if not model:
         raise ValueError(
@@ -65,7 +69,9 @@ def ask_model(model, prompt, schema):
             },
         )
         response.raise_for_status()
-        return json.loads(response.json()["message"]["content"])
+        payload = response.json()
+        record_model_usage(payload)
+        return json.loads(payload["message"]["content"])
 
 
 class ModelReply(str):
@@ -75,7 +81,13 @@ class ModelReply(str):
         return value
 
 
-def chat_with_model(model, messages, schema=None):
+class ModelReplyLimitError(ValueError):
+    """A structured reply was cut off; none of it can be safely consumed."""
+
+
+@interactive_model
+@traced_model("abacus.ollama.chat")
+def chat_with_model(model, messages, schema=None, *, max_tokens=None):
     if not model or model not in available_models():
         raise ValueError("Choose an installed local model in Settings.")
     try:
@@ -85,7 +97,11 @@ def chat_with_model(model, messages, schema=None):
     except (TypeError, ValueError):
         raise ValueError("ADVISOR_TIMEOUT_SECONDS must be between 30 and 1800 seconds.")
     try:
-        max_tokens = int(local_config().get("ADVISOR_MAX_TOKENS", "768"))
+        max_tokens = (
+            int(local_config().get("ADVISOR_MAX_TOKENS", "768"))
+            if max_tokens is None
+            else max_tokens
+        )
         if not 256 <= max_tokens <= 4096:
             raise ValueError()
     except (TypeError, ValueError):
@@ -139,6 +155,7 @@ def chat_with_model(model, messages, schema=None):
                     )
                 parts.append(content)
                 if chunk.get("done"):
+                    record_model_usage(chunk)
                     truncated = chunk.get("done_reason") == "length"
                     complete = True
                     break
@@ -152,7 +169,7 @@ def chat_with_model(model, messages, schema=None):
                 "The local model returned an empty reply. Try another question or model."
             )
         if truncated and schema:
-            raise ValueError(
-                "The local model reached its reply limit. Retry the draft or enter it manually."
+            raise ModelReplyLimitError(
+                "The local model reached its reply limit before completing the structured result."
             )
         return ModelReply(content, truncated=truncated)

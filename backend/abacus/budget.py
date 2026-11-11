@@ -2,10 +2,16 @@ from collections import defaultdict
 from datetime import date
 
 from sqlalchemy import case, func, select
-from sqlalchemy.orm import load_only
 
+from .annual_income import allocated_income
 from .clock import local_today
-from .models import AmountChange, MonthStatus, Purchase, Recurring, Transaction
+from .models import (
+    AmountChange,
+    AnnualIncome,
+    MonthStatus,
+    Recurring,
+    Transaction,
+)
 
 
 def shift_month(month, delta):
@@ -67,8 +73,8 @@ def scheduled_amount(item, changes, month):
     return share + (1 if offset < remainder else 0)
 
 
-def forecast(db, month, category_ids=None, preview=None, inputs=None):
-    return (inputs or ForecastInputs(db)).forecast(month, category_ids, preview)
+def forecast(db, month, category_ids=None, inputs=None):
+    return (inputs or ForecastInputs(db)).forecast(month, category_ids)
 
 
 def actual(db, month, category_ids=None, window=None):
@@ -81,26 +87,12 @@ class ForecastInputs:
     def __init__(self, db):
         self.changes = db.scalars(select(AmountChange)).all()
         self.schedules = db.scalars(select(Recurring)).all()
-        self.purchases = db.scalars(
-            select(Purchase).options(
-                load_only(
-                    Purchase.id,
-                    Purchase.name,
-                    Purchase.amount,
-                    Purchase.month,
-                    Purchase.category_id,
-                    Purchase.included,
-                )
-            )
-        ).all()
+        self.annual_income = db.scalars(select(AnnualIncome)).all()
         self.changes_by_schedule = defaultdict(list)
-        self.purchases_by_month = defaultdict(list)
         for item in self.changes:
             self.changes_by_schedule[item.recurring_id].append(item)
-        for item in self.purchases:
-            self.purchases_by_month[item.month].append(item)
 
-    def forecast(self, month, category_ids=None, preview=None):
+    def forecast(self, month, category_ids=None):
         lines = []
         for item in self.schedules:
             amount = scheduled_amount(item, self.changes_by_schedule[item.id], month)
@@ -114,19 +106,19 @@ class ForecastInputs:
                         category_id=item.category_id,
                     )
                 )
-        for item in self.purchases_by_month[month]:
-            if (item.included or item.id == preview) and (
-                category_ids is None or item.category_id in category_ids
-            ):
-                lines.append(
-                    dict(
-                        id=item.id,
-                        name=item.name,
-                        amount=item.amount,
-                        kind="payable",
-                        category_id=item.category_id,
+        if category_ids is None:
+            for item in self.annual_income:
+                if amount := allocated_income(item, month):
+                    lines.append(
+                        dict(
+                            id=item.id,
+                            name=item.name,
+                            amount=amount,
+                            kind="receivable",
+                            category_id=None,
+                            source="annual_income_estimate",
+                        )
                     )
-                )
         income = sum(line["amount"] for line in lines if line["kind"] == "receivable")
         expenses = sum(line["amount"] for line in lines if line["kind"] == "payable")
         return dict(

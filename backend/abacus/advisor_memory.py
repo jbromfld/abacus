@@ -15,6 +15,7 @@ from anyio.from_thread import start_blocking_portal
 from .config import local_config
 
 UNAVAILABLE = "Local memory is unavailable. Check MEMORA_PYTHON, MEMORA_CONFIG, its database, and offline model files. Advisor chat can continue without memory."
+RECALL_UNAVAILABLE = "Saved notes could not be recalled for this answer. In Settings, choose Refresh memory to check the current connection, then ask again. Chat continued without memory."
 
 
 class MemoryError(Exception):
@@ -81,6 +82,11 @@ class MCPMemory:
             "create",
             "update",
             "forget",
+            "dream_candidates",
+            "consolidate",
+            "consolidation_status",
+            "undo_consolidation",
+            "forget_consolidation",
         }:
             raise MemoryError("invalid", "Unknown memory operation.")
         try:
@@ -227,7 +233,32 @@ def recalled_memory(enabled, request):
                 <= 1500
             ):
                 result["notes"].append(note)
+                if item.get("is_consolidated"):
+                    detail = memory_call(True, "get", id=item["id"])
+                    note["source_details"] = []
+                    for source in (detail.get("consolidation") or {}).get(
+                        "sources", []
+                    ):
+                        retained = {
+                            key: source[key] for key in ("id", "source_date", "text")
+                        }
+                        note["source_details"].append(retained)
+                        if (
+                            len(
+                                json.dumps(
+                                    result["notes"],
+                                    ensure_ascii=False,
+                                    separators=(",", ":"),
+                                )
+                            )
+                            > 1500
+                        ):
+                            note["source_details"].pop()
+                            result["warnings"].append(
+                                "Some retained source details did not fit; inspect the consolidated memory before relying on omitted amounts or constraints."
+                            )
+                            break
         result["status"] = "ready"
     except (MemoryError, KeyError, TypeError, ValueError):
-        result.update(status="unavailable", warnings=[UNAVAILABLE], notes=[])
+        result.update(status="unavailable", warnings=[RECALL_UNAVAILABLE], notes=[])
     return result

@@ -119,7 +119,7 @@ def test_correction_updates_rule_and_forgetting_stops_propagation(
     assert client.delete("/api/payee-rules/" + rules[0]["id"]).status_code == 200
     assert client.get("/api/payee-rules").json() == []
     # Existing transactions are unaffected by forgetting or editing a future rule.
-    assert client.get("/api/transactions").json()[0]["category_id"] == other
+    assert client.get("/api/transactions").json()["items"][0]["category_id"] == other
 
 
 def test_conflicts_abstain_and_refunds_keep_their_type(db, category_id):
@@ -337,7 +337,7 @@ def test_merchant_metadata_variants_share_a_category(
         and row["classification"] == "normalized_payee"
     )
     assert (
-        client.get("/api/transactions").json()[0]["description"]
+        client.get("/api/transactions").json()["items"][0]["description"]
         == original["description"]
     )
 
@@ -396,7 +396,7 @@ def test_normalized_categories_do_not_change_exact_csv_duplicate_identity(
     assert second["rows"][0]["category_id"] == category_id
     assert second["rows"][0]["skip_duplicate"] is False
     assert client.post("/api/imports/" + second["id"] + "/commit").status_code == 200
-    assert len(client.get("/api/transactions").json()) == 2
+    assert len(client.get("/api/transactions").json()["items"]) == 2
 
 
 @pytest.mark.parametrize(
@@ -407,13 +407,12 @@ def test_normalized_categories_do_not_change_exact_csv_duplicate_identity(
         ("amazon prime*f76vd1p63", "AMAZON PRIME*5A56L8SR0"),
     ],
 )
-def test_amazon_order_codes_share_category(
+def test_unapproved_amazon_order_codes_require_review(
     client, account_id, category_id, first, second
 ):
     manual(client, account_id, category_id, description=first)
     row = mapped_csv(client, account_id, [second])["rows"][0]
-    assert row["category_id"] == category_id
-    assert row["classification"] == "normalized_payee"
+    assert row["category_id"] is None
     assert row["description"] == second
     assert not row["skip_duplicate"]
 
@@ -435,7 +434,7 @@ def test_amazon_channels_and_other_star_merchants_remain_distinct():
     assert normalize_payee("Other*ABC123") != normalize_payee("Other*XYZ987")
 
 
-def test_similarity_fallback_and_ambiguity(db, category_id):
+def test_unreviewed_similarity_never_guesses_categories(db, category_id):
     other = db.scalar(select(Category.id).where(Category.id != category_id))
     learn_labels(
         db,
@@ -450,8 +449,8 @@ def test_similarity_fallback_and_ambiguity(db, category_id):
     row = dict(
         description="Neighborhood Grocery Marke", kind="purchase", category_id=None
     )
-    assert apply_payee_rules(db, [row])[0]["category_id"] == category_id
-    assert row["classification"] == "similar_payee"
+    assert apply_payee_rules(db, [row])[0]["category_id"] is None
+    assert row.get("classification") != "similar_payee"
     learn_labels(
         db,
         [
@@ -476,65 +475,6 @@ def test_similarity_fallback_and_ambiguity(db, category_id):
     )
 
 
-def test_similarity_preserves_numbers_short_names_and_edits():
-    from abacus.payee_matching import similar_category
-
-    groups = {("neighborhood store 123", "purchase"): {"category"}}
-    assert (
-        similar_category("neighborhood store 124", "purchase", groups, 0.94, 0.05)
-        is None
-    )
-    assert (
-        similar_category(
-            "store", "purchase", {("stores", "purchase"): {"category"}}, 0.8, 0.05
-        )
-        is None
-    )
-    assert (
-        similar_category("different store 123", "purchase", groups, 0.8, 0.05) is None
-    )
-
-
-def test_matching_config_reload_and_invalid_config(tmp_path, monkeypatch, caplog):
-    import json
-
-    import abacus.payee_matching as matching
-
-    config = tmp_path / "matching.json"
-    monkeypatch.setattr(matching, "CONFIG_PATH", config)
-    config.write_text(
-        json.dumps(
-            dict(
-                fuzzy_threshold=1,
-                fuzzy_margin=0.05,
-                patterns=[dict(pattern=r"\bshop\*\w+", replacement="shop")],
-            )
-        )
-    )
-    assert normalize_payee("SHOP*ABC123") == "shop"
-    config.write_text(
-        json.dumps(dict(fuzzy_threshold=1, fuzzy_margin=0.05, patterns=[]))
-    )
-    assert normalize_payee("SHOP*ABC123") == "shop abc123"
-    config.write_text("{bad json")
-    assert matching.load_matching_config() == ([], 1, 1)
-    assert "config disabled" in caplog.text
-    config.write_text(
-        json.dumps(dict(fuzzy_threshold=0.5, fuzzy_margin=0.05, patterns=[]))
-    )
-    assert matching.load_matching_config() == ([], 1, 1)
-    config.write_text(
-        json.dumps(
-            dict(
-                fuzzy_threshold=0.94,
-                fuzzy_margin=0.05,
-                patterns=[dict(pattern="[", replacement="")],
-            )
-        )
-    )
-    assert matching.load_matching_config() == ([], 1, 1)
-
-
 @pytest.mark.parametrize(
     "first,second,canonical",
     [
@@ -549,16 +489,27 @@ def test_matching_config_reload_and_invalid_config(tmp_path, monkeypatch, caplog
         ("rei #124 ann arbor", "rei.com 800-426-4840", "rei"),
     ],
 )
-def test_configured_merchant_formats_share_reviewed_category(
-    client, account_id, category_id, first, second, canonical
+def test_named_merchant_variants_require_approved_aliases(
+    client, account_id, category_id, first, second, canonical, db
 ):
-    assert normalize_payee(first) == normalize_payee(second) == canonical
+    from abacus.models import PayeeGroup
+
     manual(client, account_id, category_id, description=first)
+    group = PayeeGroup(name=canonical, kind="purchase")
+    db.add(group)
+    db.flush()
+    for name in (first, second):
+        rule = db.scalar(select(PayeeRule).where(PayeeRule.payee == name.casefold()))
+        if rule is None:
+            rule = PayeeRule(
+                payee=name.casefold(), kind="purchase", category_id=category_id
+            )
+            db.add(rule)
+        rule.group_id = group.id
+    db.commit()
     row = mapped_csv(client, account_id, [second])["rows"][0]
-    assert (
-        row["category_id"] == category_id
-        and row["classification"] == "normalized_payee"
-    )
+    assert row["category_id"] == category_id
+    assert row["classification"] == "remembered_payee"
     assert row["description"] == second
 
 

@@ -132,13 +132,13 @@ Credentials embedded in a full URL must be URL-encoded. `.env` interpolation is
 disabled. Do not paste real credentials into documentation, chat, or shell history.
 Restart the backend after changing its database connection.
 
-Currency, categories, account names, card monitoring/mappings, savings, reserve
-preferences, and selected local model/advisor opt-in live in PostgreSQL. Merchant
-normalization patterns live separately in
-[`backend/abacus/payee_matching.json`](../backend/abacus/payee_matching.json).
-Patterns reload on the next classification pass, including an open review's
-**Apply remembered payees**. Invalid config disables optional regex/similarity
-matching and logs a warning; exact/basic memory remains available.
+Currency, categories, account names, card monitoring/mappings, savings, selected
+local model and approved merchant aliases live in PostgreSQL. Migration 0017 adds
+payee groups and review jobs while retaining exact categories and expenses. Run
+the usual updater to migrate, refresh SELECT-only advisor grants and rebuild.
+`payee_matching.json` is retired; maintain aliases through Settings → Remembered
+payees. Review needs an installed local Ollama model, even if advisor chat is off.
+No new service or dependency is required. Reviews run separately from import jobs.
 
 ## Dedicated advisor database login
 
@@ -163,8 +163,9 @@ pool. Missing or invalid credentials or grants cause advisor requests to return
 fallback to the writable login.
 
 The account has `CONNECT`, schema `USAGE`, and `SELECT` only on `settings`,
-`categories`, `recurring`, `amount_changes`, `purchases`, `transactions`,
-`month_status`, and `bill_estimates`. For named account comparisons it also has
+`categories`, `recurring`, `amount_changes`, `bill_payments`, `annual_income`,
+`plans`, `plan_categories`, `payee_groups`, `payee_rules`, `purchases`,
+`transactions`, `month_status`, and `bill_estimates`. For named account comparisons it also has
 column-level `SELECT` on `accounts.id` and `accounts.name` only; account import
 mappings and monitoring configuration remain inaccessible. It cannot inherit or
 switch to other roles,
@@ -285,7 +286,16 @@ latency guarantee. The common spending/purchase instructions decreased from
 7,266 characters to 2,792; specialized questions include additional relevant rules.
 The runtime uses an 8,192-token context and a no-thinking request. Replies default
 to 768 generated tokens (`ADVISOR_MAX_TOKENS`, configurable from 256 to 4,096 in
-`.env`). The advisor requests concise Markdown and plain currency amounts; Python
+`.env`). Payee review uses its own 2,048-token reply allowance and batches of at
+most eight names; changing the advisor token setting does not shrink review
+replies. Its structured response requires one canonical-name assignment (or null)
+per supplied payee ID, with duplicate/missing/unknown keys rejected. The server
+builds group memberships; the model does not generate member-ID lists.
+It retries failed batches in smaller overlapping sets (at most two
+levels), retaining only complete validated suggestions for explicit approval.
+The same configured timeout applies to each call. Review diagnostics log the
+exception type and batch size without model output or payee text.
+The advisor requests concise Markdown and plain currency amounts; Python
 formats historical amounts and means before supplying them to the local model.
 A token-limit stop returns the available text with an explicit incomplete-answer
 warning; transport interruption still fails the request. Structured memory drafts
@@ -378,6 +388,13 @@ feature-specific data. In particular, reserve setup is explicit: its migration
 preserves an existing nonfuture savings opening balance as a dated observation,
 without inventing a reserve target.
 
+Migration 0016 intentionally resets obsolete purchases, bill estimates and the old
+combined reserve target. It preserves imported expenses/provenance, recurring
+bills and their history, account/category data, savings and annual income. New
+Planning goals are stored separately and survive subsequent updater runs. Advisor
+setup adds SELECT-only grants for the two new planning tables. Rebuild and restart
+after upgrading; no manual reset or data import is needed.
+
 ## Backup and restore
 
 PostgreSQL contains the budget, actuals, imports/review provenance, payee memory,
@@ -401,8 +418,8 @@ Restore into a new database first. Check it with the appropriate application
 version and migrations before switching `DATABASE`/`DATABASE_URL`. Stop the app
 while switching, then restart it. Do not run tests against the restored budget.
 
-Back up `.env` and custom payee patterns separately, using a private location; a
-database dump does not include them. Backups, source excerpts, and optional
+Back up `.env` separately in a private location. Approved payee groups, aliases
+and review jobs are included in the database dump. Backups, source excerpts, and optional
 training exports contain private financial information. Clearing browser storage
 or switching browsers does not remove PostgreSQL data.
 
@@ -476,7 +493,8 @@ public deployment design. Keep the database and app private.
 | Advisor budget context | Loopback model receives aggregates, normalized payee/category history, schedule/purchase names, assumptions, and chat; no raw statements, provenance, account/card IDs, or individual transaction identities |
 | Optional web research | Only separately approved public travel queries to Brave; no financial snapshot, payees, balances, transaction history, private chat, or model output |
 | Chat and upload queue UI | Current tab memory; saved import jobs remain in PostgreSQL |
-| Merchant patterns / optional export | Local repository config / explicitly selected export file |
+| Merchant group review | Saved payee names, kinds and category labels to loopback Ollama only; proposals and approvals in local PostgreSQL |
+| Optional training export | Explicitly selected local export file |
 
 Import undo deletes linked transactions but keeps the import/fingerprint; deleting
 an eligible import removes its review data/fingerprint. Payee memory survives undo
@@ -511,8 +529,9 @@ links. Local context and generated replies cannot initiate further searches.
 | PAYMENT row needs a different type | Correct it explicitly in review; keyword defaults are overridable. |
 | No new rows saved from overlap | Original fields matched an earlier saved CSV row for that account. Inspect skipped counts; repeats inside one file remain selectable. |
 | Reupload blocked after undo | Delete the undone import to release its exact-file fingerprint. |
-| Remembered category seems wrong | Clear the review category before applying memory; inspect exact rule/category conflicts, pattern formats, and similarity labels. Existing descriptions in Settings are not canonical groups. |
-| Remembered payees list keeps growing | Saving new exact variants is intentional. Normalization affects matching, not automatic record consolidation. |
+| Remembered category seems wrong | Inspect the exact alias category and group conflicts in Settings. Grouping preserves individual categories unless you explicitly change them. |
+| Remembered payees list keeps growing | Use Review similar payees to propose groups. Unknown variants still need review; existing exact corrections are retained. |
+| Local payee review failed/interrupted | Check the selected installed model, start another review, and inspect progress. Payee rules were not changed. |
 | ACH missing from actual total | Check the actual period (previous month by default), active range, recording start, day, account, and running backend. Deleted generated occurrences are not regenerated. |
 | Actual total differs from forecast | Forecasts and actuals are independent. Confirm transaction types, refunds, dates, card settlement exclusion, and possible imported/generated ACH overlap. |
 | Monthly room positive but savings falls | An annual payment can draw saved allocations. Read cash expenses and named annual payments in Purchase planner. |
@@ -525,3 +544,55 @@ The code entry points are [`main.py`](../backend/abacus/main.py),
 [`budget.py`](../backend/abacus/budget.py), [`savings.py`](../backend/abacus/savings.py),
 [`reserves.py`](../backend/abacus/reserves.py), and
 [`classification.py`](../backend/abacus/classification.py).
+
+### Legacy planning removal (0019)
+
+Back up before upgrading. Migration 0019 permanently deletes obsolete purchases,
+bill estimates, reserve targets, reserve observations, and reserve preferences.
+Current Planning goals, savings balances, recurring bills, imports, and transactions
+are preserved. Downgrade recreates empty legacy tables; deleted records require
+a database backup to recover. The retired endpoints return 404 and removed
+request fields return validation errors. Rebuild the UI with the backend update.
+
+## Optional LangSmith model tracing
+
+Abacus can export one LangSmith `llm` run per local model call. Generation still
+uses loopback Ollama. Traces are tagged by workflow: Budget advisor, statement
+extraction, payee review, Planning drafts, memory drafts, and memory dreaming.
+Model discovery is not a generation and is not traced. Generation latency excludes
+time spent waiting for the local model slot. Token counts come from Ollama's final
+response when available; missing counts are not estimated. Truncated responses and
+error types are recorded. Tracing failures never retry a model call or change its
+result, exception, or structured-output validation.
+
+Set these values in the private project `.env`, then restart Abacus:
+
+```dotenv
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your-own-langsmith-api-key
+LANGSMITH_PROJECT=abacus
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_CAPTURE_CONTENT=false
+# LANGSMITH_WORKSPACE_ID=your-workspace-id
+```
+
+Tracing defaults off and requires both the explicit tracing flag and an API key.
+An inherited SDK tracing context or legacy `LANGCHAIN_TRACING_V2` flag does not
+opt Abacus in. Configure your region or self-hosted API with `LANGSMITH_ENDPOINT`;
+HTTPS is required except for a loopback HTTP endpoint. SDK exports are batched,
+use bounded network timeouts, and are flushed briefly during normal shutdown.
+
+With `LANGSMITH_CAPTURE_CONTENT=false`, only model/workflow identifiers, generation
+timing, token counts, truncation and exception class are exported. Exception
+messages and tracebacks are excluded because they can contain private information.
+Credentials and database/runtime configuration are never included in run inputs.
+
+Set `LANGSMITH_CAPTURE_CONTENT=true` only if you want LangSmith to receive full
+model prompts and outputs. These can contain budget figures, transaction/payee or
+statement data, approved memories and retained source evidence, chat history,
+research excerpts, and model-generated replies. This is a separate opt-in from
+web research and changes the otherwise local handling of model content. It does
+not change Babar's configuration or pass tracing credentials to its MCP child.
+No model downloads or cloud generation fallback are introduced.
+
+Implementation uses the official [LangSmith RunTree API](https://reference.langchain.com/python/langsmith/run_trees/RunTree).

@@ -61,6 +61,7 @@ def test_role_can_read_only_the_explicit_allowlist(reader_engine):
         "UPDATE accounts SET name=name",
         "SELECT 1 FROM imports LIMIT 0",
         "SELECT 1 FROM import_pages LIMIT 0",
+        "SELECT 1 FROM payee_reviews LIMIT 0",
     ],
 )
 def test_read_write_transaction_still_cannot_write_or_read_unapproved_tables(

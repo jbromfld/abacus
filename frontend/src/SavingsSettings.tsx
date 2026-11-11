@@ -43,7 +43,7 @@ export default function SavingsSettings({
     return () => {
       active = false;
     };
-  }, [currency]);
+  }, [currency, factor]);
   const inputs = useMemo(() => {
     try {
       return amount && month
@@ -82,7 +82,8 @@ export default function SavingsSettings({
         <div>
           <h2>Savings</h2>
           <p>
-            Your saved starting balance for Purchase planner and Budget advisor.
+            The actual shared balance used by Planning and Budget advisor.
+            Saving replaces this balance; it does not add a deposit.
           </p>
         </div>
       </div>
@@ -146,10 +147,11 @@ export default function SavingsSettings({
           </label>
         </div>
         <p className="savings-hint">
-          Use the balance at the start of this month. Saving a past/current
-          month also records that dated balance for reserve checks; it never
-          resets the reserve target. Savings is separate from recurring income
-          and expenses; scenarios use it without adding it to monthly income.
+          Enter your actual balance before this month's projected contributions.
+          Move the balance month forward when you record a newer balance, so
+          earlier contributions are not projected again. Plans share this
+          savings pool; it is separate from monthly income. The protected
+          savings floor stays available as your buffer.
         </p>
         {error && (
           <p role="alert" className="notice danger">

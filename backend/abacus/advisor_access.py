@@ -9,10 +9,14 @@ ADVISOR_TABLES = (
     "categories",
     "recurring",
     "amount_changes",
-    "purchases",
+    "bill_payments",
+    "annual_income",
+    "plans",
+    "plan_categories",
+    "payee_groups",
+    "payee_rules",
     "transactions",
     "month_status",
-    "bill_estimates",
 )
 ADVISOR_COLUMNS = {"accounts": ("id", "name")}
 ROLE_ATTRIBUTES = (

@@ -1,5 +1,3 @@
-# Abacus
-
 <img src="docs/assets/abacus-logo.png" alt="Abacus logo" width="240" />
 
 A local personal budget app: recurring income and bills, purchase estimates, actual spending, and 12-month category trends. React/TypeScript + FastAPI + PostgreSQL, with classification memory, an optional local Budget advisor, and optional Ollama PDF extraction.
@@ -10,8 +8,10 @@ A local personal budget app: recurring income and bills, purchase estimates, act
 - [User guide: every screen and workflow](docs/user-guide.md)
 - [Setup, configuration, upgrades, backups, and troubleshooting](docs/operations.md)
 - [Complete API reference](docs/api.md)
-- [Classification memory and future training](training/README.md)
-- [Optional local advisor memory with Memora](docs/advisor-memory.md)
+- [Remembered payee groups, local-model review, and classification](training/README.md)
+- [Optional LangSmith model tracing](docs/operations.md#optional-langsmith-model-tracing)
+- [Optional local advisor memory and dreaming with Memora](docs/advisor-memory.md)
+- [Unified Planning: annual bill funding, savings goals, sliders, and advisor research](docs/reserve-redesign.md)
 
 Use the user guide for daily workflows and Operations for maintenance. Feature details live in those guides to keep one source of truth.
 
@@ -55,6 +55,21 @@ the port are left alone until they stop. See [automatic startup and controls](do
 for stop/start/restart/uninstall, logs, and updates. Temporal, Docker, and cron are
 not required for this local macOS setup.
 
+Migration **0016** replaces the old planning flow and clears obsolete purchase, bill-estimate, and combined reserve records. Imported expenses and recurring bills are preserved. New goals live in **Planning**. Migration **0019** removes the obsolete planning tables and APIs permanently; back up before upgrading. Current Planning goals and financial records are preserved. See [upgrade and recovery details](docs/operations.md#upgrade).
+
+### Restart only
+
+For the installed macOS login service:
+
+```sh
+python3 scripts/macos_service.py restart
+python3 scripts/macos_service.py status
+```
+
+This reloads the service without installing dependencies, migrating, or building.
+Build frontend changes first with `npm run build --prefix frontend`. Changes with
+a migration or advisor permission update need the update workflow below.
+
 ### Update and restart
 
 For an installed macOS login service, apply the current workspace changes with:
@@ -65,6 +80,9 @@ python3 scripts/update.py
 
 This stops Abacus, syncs locked dependencies, migrates, maintains advisor permissions,
 rebuilds, and starts it.
+It can be rerun for build + restart: Alembic applies only pending migrations, and
+advisor setup preserves its managed login while refreshing permissions. Dependency
+sync and the frontend build run on every invocation.
 Use `--dry-run` to preview commands. A failed update stops before later steps.
 See [upgrade and recovery details](docs/operations.md#upgrade).
 

@@ -108,6 +108,20 @@ def plan_research(topic, current_date):
             ]
         )
     details = []
+    if not re.search(
+        r"\b(travel|trip|vacation|holiday|weekend|flight|hotel|lodging|resort|cruise|july|august|miami|vallarta)\b",
+        raw,
+        re.I,
+    ):
+        return ResearchPlan(
+            queries=[
+                raw[:180] + " official specifications price",
+                raw[:180] + " official buying guide availability",
+            ],
+            missing_details=[
+                "Confirm product requirements, region and currency before treating an advertised price as a usable estimate."
+            ],
+        )
 
     def season(match):
         modifier, name = match.group(1).lower(), match.group(2).lower()

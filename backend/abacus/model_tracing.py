@@ -61,7 +61,7 @@ def _client(endpoint, key, workspace):
     return client
 
 
-def _new_run(name, arguments):
+def _new_run(name, arguments, *, run_type="llm"):
     config = local_config()
     # Do not infer consent from an API key, SDK context, or legacy tracing flags.
     if str(config.get("LANGSMITH_TRACING", "")).lower() != "true":
@@ -110,7 +110,7 @@ def _new_run(name, arguments):
         )
     run = RunTree(
         name=name,
-        run_type="llm",
+        run_type=run_type,
         inputs=inputs,
         extra={"metadata": metadata},
         tags=["abacus", "ollama", _workflow.get()],
@@ -177,3 +177,30 @@ def flush_model_traces():
             client.flush(timeout=2)
         except Exception:
             pass
+
+
+def controller_event(job_id, operation_key, phase, outcome):
+    """Fixed metadata only; failures never affect controller decisions."""
+    if phase not in ("validation", "commit") or outcome not in (
+        "ready",
+        "review",
+        "committed",
+        "cancelled",
+        "undone",
+    ):
+        return
+    try:
+        run, _ = _new_run("abacus.dreaming.controller", {}, run_type="chain")
+        if run is not None:
+            run.add_metadata(
+                {
+                    "job_id": job_id,
+                    "operation_key": operation_key,
+                    "phase": phase,
+                    "outcome": outcome,
+                }
+            )
+            run.end(outputs={"outcome": outcome})
+            run.patch()
+    except Exception:
+        pass

@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .config import local_config
+from .model_activity import interactive_model
 
 
 def ollama_url():
@@ -38,6 +39,7 @@ def available_models():
         ]
 
 
+@interactive_model
 def ask_model(model, prompt, schema):
     if not model:
         raise ValueError(
@@ -79,6 +81,7 @@ class ModelReplyLimitError(ValueError):
     """A structured reply was cut off; none of it can be safely consumed."""
 
 
+@interactive_model
 def chat_with_model(model, messages, schema=None, *, max_tokens=None):
     if not model or model not in available_models():
         raise ValueError("Choose an installed local model in Settings.")

@@ -1,12 +1,11 @@
 """User-driven note management, separate from financial advisor snapshots."""
 
 import json
-from datetime import date
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from .advisor_memory import (
@@ -18,28 +17,11 @@ from .advisor_memory import (
 from .clock import local_today
 from .db import session
 from .local_model import chat_with_model
+from .memory_types import MemoryNoteIn
 from .models import Settings
 
 router = APIRouter(prefix="/api/advisor/memory")
 DB = Annotated[Session, Depends(session)]
-
-
-class MemoryNoteIn(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    title: str = Field(min_length=1, max_length=100)
-    text: str = Field(min_length=1, max_length=400)
-    kind: Literal["intention", "preference", "decision"]
-    source_date: date
-    source_excerpt: str = Field(default="", max_length=1000)
-    cues: list[str] = Field(default_factory=list, max_length=8)
-    status: Literal["active", "completed", "abandoned"] = "active"
-
-    @field_validator("cues")
-    @classmethod
-    def valid_cues(cls, values):
-        if any(not v.strip() or len(v) > 50 for v in values):
-            raise ValueError("Cues must contain 1–50 characters.")
-        return sorted(set(v.strip().casefold() for v in values))
 
 
 class CreateMemoryIn(BaseModel):
@@ -75,9 +57,20 @@ def enabled(db):
 
 def invoke(operation, **arguments):
     try:
-        if operation in ("update", "forget"):
-            return mutate_memory(operation, **arguments)
-        return memory_call(True, operation, **arguments)
+        from . import dreaming
+        from .db import Session as Factory
+
+        with dreaming.gate:
+            if operation in ("create", "update", "forget", "forget_consolidation"):
+                if operation.startswith("forget"):
+                    with Factory() as maintenance:
+                        dreaming.cancel(maintenance, purge=True)
+                result = mutate_memory(operation, **arguments)
+                if operation in ("create", "update"):
+                    with Factory() as maintenance:
+                        dreaming.queue(maintenance)
+                return result
+            return memory_call(True, operation, **arguments)
     except MemoryError as exc:
         raise HTTPException(
             {"invalid": 422, "not_found": 404, "conflict": 409}.get(exc.code, 503),
@@ -218,4 +211,13 @@ def update_note(id: UUID, data: UpdateMemoryIn, db: DB):
 def forget_note(id: UUID, db: DB, expected_revision: int = Query(ge=1)):
     enabled(db)
     result = invoke("forget", id=str(id), expected_revision=expected_revision)
+    return {**result, "epoch": memory_epoch()}
+
+
+@router.delete("/{id}/family")
+def forget_family(id: UUID, db: DB, expected_revision: int = Query(ge=1)):
+    enabled(db)
+    result = invoke(
+        "forget_consolidation", id=str(id), expected_revision=expected_revision
+    )
     return {**result, "epoch": memory_epoch()}

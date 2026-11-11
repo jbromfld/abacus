@@ -29,12 +29,10 @@ it('keeps cancellation separate from connection failures', async () => {
 it('explains a connection interrupted while reading the advisor reply', async () => {
   vi.stubGlobal(
     'fetch',
-    vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: () => Promise.reject(new TypeError('Load failed')),
-      }),
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.reject(new TypeError('Load failed')),
+    }),
   );
   await expect(
     api('/advisor/chat', 'POST', { message: 'test' }),

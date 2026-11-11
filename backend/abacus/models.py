@@ -40,6 +40,9 @@ class Settings(Base):
     advisor_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    advisor_dreaming_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     advisor_memory_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
@@ -291,3 +294,15 @@ def update_csv_fingerprint(mapper, connection, target):
 
     key = csv_fields_key((target.provenance or {}).get("source"))
     target.csv_fingerprint = fingerprint(key) if key is not None else None
+
+
+class MemoryDream(Base):
+    __tablename__ = "memory_dreams"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    state: Mapped[str] = mapped_column(String(24), default="queued")
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )

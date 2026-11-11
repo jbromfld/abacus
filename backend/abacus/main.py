@@ -19,6 +19,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 
+from . import dreaming
 from .ach import record_due
 from .advisor import answer_question, budget_context
 from .advisor_history import latest_spending_comparison
@@ -42,6 +43,7 @@ from .budget import (
 from .card_alerts import account_information
 from .category_planning import category_averages
 from .db import Session, read_only_session, session
+from .dreaming_api import router as dreaming_router
 from .dues import (
     automatic_occurrence,
     due_settings,
@@ -96,6 +98,7 @@ from .transaction_api import router as transaction_router
 
 @asynccontextmanager
 async def lifespan(app):
+    dreaming.start()
     with Session() as db:
         from .models import PayeeReview
 
@@ -117,10 +120,26 @@ async def lifespan(app):
         )
         db.commit()
     await asyncio.to_thread(record_due_in_session)
+
+    async def dreaming_scheduler():
+        while True:
+            await asyncio.sleep(5)
+            try:
+                await asyncio.to_thread(dreaming.tick)
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Memory dreaming pass unavailable; will retry."
+                )
+
+    dream_task = asyncio.create_task(dreaming_scheduler())
     task = asyncio.create_task(ach_scheduler())
     try:
         yield
     finally:
+        dreaming.stop()
+        dream_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await dream_task
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
@@ -148,6 +167,7 @@ app.include_router(records_router)
 app.include_router(transaction_router)
 app.include_router(import_router)
 app.include_router(memory_router)
+app.include_router(dreaming_router)
 app.include_router(alert_router)
 app.include_router(annual_income_router)
 app.include_router(planning_router)
@@ -236,7 +256,10 @@ def update_settings(data: SettingsIn, db: DB):
         data.advisor_memory_enabled is not None
         and data.advisor_memory_enabled != setting.advisor_memory_enabled
     )
-    result = save(db, setting, data.model_dump(exclude_none=True))
+    with dreaming.gate:
+        result = save(db, setting, data.model_dump(exclude_none=True))
+        if not dreaming.enabled(setting):
+            dreaming.cancel(db)
     if memory_changed:
         invalidate_memory()
         close_memory()

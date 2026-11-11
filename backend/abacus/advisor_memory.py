@@ -82,6 +82,11 @@ class MCPMemory:
             "create",
             "update",
             "forget",
+            "dream_candidates",
+            "consolidate",
+            "consolidation_status",
+            "undo_consolidation",
+            "forget_consolidation",
         }:
             raise MemoryError("invalid", "Unknown memory operation.")
         try:
@@ -228,6 +233,31 @@ def recalled_memory(enabled, request):
                 <= 1500
             ):
                 result["notes"].append(note)
+                if item.get("is_consolidated"):
+                    detail = memory_call(True, "get", id=item["id"])
+                    note["source_details"] = []
+                    for source in (detail.get("consolidation") or {}).get(
+                        "sources", []
+                    ):
+                        retained = {
+                            key: source[key] for key in ("id", "source_date", "text")
+                        }
+                        note["source_details"].append(retained)
+                        if (
+                            len(
+                                json.dumps(
+                                    result["notes"],
+                                    ensure_ascii=False,
+                                    separators=(",", ":"),
+                                )
+                            )
+                            > 1500
+                        ):
+                            note["source_details"].pop()
+                            result["warnings"].append(
+                                "Some retained source details did not fit; inspect the consolidated memory before relying on omitted amounts or constraints."
+                            )
+                            break
         result["status"] = "ready"
     except (MemoryError, KeyError, TypeError, ValueError):
         result.update(status="unavailable", warnings=[RECALL_UNAVAILABLE], notes=[])

@@ -1,3 +1,4 @@
+vi.mock('./DreamingPanel', () => ({ default: () => null }));
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { api } from './api';

@@ -17,6 +17,7 @@ from abacus.models import (
     AnnualIncome,
     Category,
     ImportPage,
+    MemoryDream,
     MonthStatus,
     PayeeGroup,
     PayeeReview,
@@ -53,6 +54,9 @@ def advisor_credentials():
 
 @pytest.fixture(autouse=True)
 def clean_database(monkeypatch, tmp_path, advisor_credentials):
+    from abacus import dreaming
+
+    dreaming.start()
     from abacus import config
 
     monkeypatch.setattr(config, "ENV_FILE", tmp_path / "isolated.env")
@@ -64,6 +68,7 @@ def clean_database(monkeypatch, tmp_path, advisor_credentials):
         )
     with Session() as db:
         for model in [
+            MemoryDream,
             Plan,
             AnnualIncome,
             AlertDismissal,
@@ -81,6 +86,7 @@ def clean_database(monkeypatch, tmp_path, advisor_credentials):
             db.execute(delete(model))
         setting = db.get(Settings, 1)
         setting.model, setting.currency, setting.advisor_enabled = "", "USD", False
+        setting.advisor_dreaming_enabled = False
         setting.advisor_memory_enabled = False
         setting.savings_balance, setting.savings_month, setting.savings_floor = (
             None,

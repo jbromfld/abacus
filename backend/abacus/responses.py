@@ -43,6 +43,7 @@ class SettingsOut(Response):
     currency: str
     model: str
     advisor_enabled: bool
+    advisor_dreaming_enabled: bool
     advisor_memory_enabled: bool
     savings_balance: int | None
     savings_month: str | None

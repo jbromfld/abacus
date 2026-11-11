@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import Modal from './Modal';
+import DreamingPanel from './DreamingPanel';
 
 export type MemoryNote = {
   id?: string;
@@ -12,6 +13,12 @@ export type MemoryNote = {
   source_excerpt: string;
   cues: string[];
   status: 'active' | 'completed' | 'abandoned';
+  superseded_by?: string | null;
+  consolidation?: {
+    sources: MemoryNote[];
+    operation_key: string;
+    undone: boolean;
+  } | null;
   history?: MemoryNote[];
 };
 export type MemoryRecall = {
@@ -308,6 +315,26 @@ function NoteEditor({
             ))}
           </div>
         )}
+        {note.superseded_by && (
+          <p className="notice">
+            This source was superseded. Edit its consolidated memory or undo the
+            consolidation.
+          </p>
+        )}
+        {note.consolidation && (
+          <details>
+            <summary>Retained source memories</summary>
+            {note.consolidation.sources.map((source) => (
+              <article key={source.id}>
+                <strong>
+                  {source.title} · {source.source_date}
+                </strong>
+                <p>{source.text}</p>
+                <blockquote>{source.source_excerpt}</blockquote>
+              </article>
+            ))}
+          </details>
+        )}
         {note.history && (
           <details>
             <summary>Earlier revisions ({note.history.length})</summary>
@@ -328,7 +355,7 @@ function NoteEditor({
           </p>
         )}
         <div className="button-group">
-          <button disabled={busy}>
+          <button disabled={busy || !!note.superseded_by}>
             {busy ? 'Working…' : note.id ? 'Save revision' : 'Save memory'}
           </button>
           <button type="button" className="secondary" onClick={onClose}>
@@ -348,9 +375,9 @@ function NoteEditor({
         {confirmForget && (
           <div className="notice">
             <p>
-              Forget this note, all revisions, source excerpts, and embeddings?
-              Your current advisor conversation will be cleared. Older backups
-              may retain it.
+              Forget this note and its consolidated family, including all
+              retained sources, revisions, and embeddings? Your current advisor
+              conversation will be cleared. Older backups may retain it.
             </p>
             <button
               type="button"
@@ -360,7 +387,7 @@ function NoteEditor({
                 void perform(async () => {
                   try {
                     await api(
-                      `/advisor/memory/${note.id}?expected_revision=${note.revision}`,
+                      `/advisor/memory/${note.id}${note.consolidation || note.superseded_by ? '/family' : ''}?expected_revision=${note.revision}`,
                       'DELETE',
                     );
                   } finally {
@@ -491,6 +518,7 @@ export default function AdvisorMemory({
         )}
         {enabled && (
           <>
+            {enabled && <DreamingPanel />}
             <div className="button-group">
               <button
                 className="secondary"
@@ -515,7 +543,8 @@ export default function AdvisorMemory({
               <article className="memory-note" key={note.id}>
                 <strong>{note.title}</strong>
                 <small>
-                  {note.source_date} · {note.kind} · {note.status}
+                  {note.source_date} · {note.kind} ·{' '}
+                  {note.superseded_by ? 'superseded' : note.status}
                 </small>
                 <p>{note.text}</p>
                 <button

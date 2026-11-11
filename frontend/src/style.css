@@ -3615,11 +3615,68 @@ dialog:has(.batch-table) {
   font-weight: 600;
 }
 .planning-overview > summary {
-  cursor: pointer;
+  padding: 20px 25px;
+  color: inherit;
+  font-size: 13px;
   font-weight: 600;
 }
-.planning-overview > .section-head {
-  margin-top: 1rem;
+.planning-overview[open] > summary {
+  margin-bottom: 0;
+}
+.planning-overview-content {
+  display: grid;
+  gap: 18px;
+  padding: 20px 25px 24px;
+  border-top: 1px solid var(--border);
+}
+.planning-overview-content > .section-head {
+  padding: 0;
+}
+.planning-overview-content > .section-head p {
+  margin: 0;
+}
+.planning-overview-content > .notice,
+.planning-overview-content > .planning-note {
+  margin: 0;
+}
+.planning-overview-content > .planning-note {
+  padding: 0;
+}
+.planning-overview .plan-card > h3 {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.planning-overview .annual-funding {
+  display: grid;
+  gap: 14px;
+}
+.planning-overview .annual-funding-values,
+.planning-overview .annual-funding > .notice {
+  margin: 0;
+}
+.planning-overview-savings {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.planning-overview-savings .savings-settings {
+  margin: 0;
+  border: 0;
+}
+.planning-overview-savings .savings-settings .section-head {
+  padding: 0 0 16px;
+}
+.planning-overview-savings .savings-controls {
+  padding: 0;
+}
+@media (max-width: 600px) {
+  .planning-overview > summary {
+    padding: 18px 16px;
+  }
+  .planning-overview-content {
+    padding: 18px 16px;
+    gap: 16px;
+  }
 }
 @media (max-width: 650px) {
   .annual-funding-values {

@@ -791,50 +791,54 @@ export function PlanningOverview({
       open={annual.some((p) => (p.funding_gap ?? 0) > 0) || undefined}
     >
       <summary>Annual expense funding & Planning</summary>
-      <div className="section-head">
-        <p>
-          {data.plans.length} plans · {money(data.total_planned, currency)}{' '}
-          planned ·{' '}
-          {data.set_aside === null
-            ? 'Set savings to track funding'
-            : money(data.set_aside, currency) + ' set aside'}
+      <div className="planning-overview-content">
+        <div className="section-head">
+          <p>
+            {data.plans.length} plans · {money(data.total_planned, currency)}{' '}
+            planned ·{' '}
+            {data.set_aside === null
+              ? 'Set savings to track funding'
+              : money(data.set_aside, currency) + ' set aside'}
+          </p>
+          <button className="secondary small" onClick={onOpen}>
+            Open Planning
+          </button>
+        </div>
+        {annual.map((item) => (
+          <article key={item.id} className="plan-card">
+            <h3>
+              {item.name} · {money(item.amount, currency)} due{' '}
+              {dateLabel(item.target_date)}
+            </h3>
+            <AnnualFunding item={item} currency={currency} />
+          </article>
+        ))}
+        {!annual.length && (
+          <p>
+            Track annual bills in Planning to see their funding coverage and
+            upcoming shortfalls.
+          </p>
+        )}
+        {point?.balance != null && (
+          <p
+            className={point.balance < data.floor ? 'notice danger' : 'notice'}
+          >
+            Projected end-of-month cash: {money(point.balance, currency)}
+            {!data.projection?.income_complete
+              ? ' · incomplete income forecast'
+              : ''}
+            .
+          </p>
+        )}
+        <p className="planning-note">
+          Assumes future contributions arrive before payment and are not already
+          in your recorded balance. Other categories are not reassigned.
         </p>
-        <button className="secondary small" onClick={onOpen}>
-          Open Planning
-        </button>
+        <details className="planning-overview-savings">
+          <summary>Update actual savings</summary>
+          <SavingsSettings currency={currency} onChanged={onChanged} />
+        </details>
       </div>
-      {annual.map((item) => (
-        <article key={item.id} className="plan-card">
-          <h3>
-            {item.name} · {money(item.amount, currency)} due{' '}
-            {dateLabel(item.target_date)}
-          </h3>
-          <AnnualFunding item={item} currency={currency} />
-        </article>
-      ))}
-      {!annual.length && (
-        <p>
-          Track annual bills in Planning to see their funding coverage and
-          upcoming shortfalls.
-        </p>
-      )}
-      {point?.balance != null && (
-        <p className={point.balance < data.floor ? 'notice danger' : 'notice'}>
-          Projected end-of-month cash: {money(point.balance, currency)}
-          {!data.projection?.income_complete
-            ? ' · incomplete income forecast'
-            : ''}
-          .
-        </p>
-      )}
-      <p className="planning-note">
-        Assumes future contributions arrive before payment and are not already
-        in your recorded balance. Other categories are not reassigned.
-      </p>
-      <details>
-        <summary>Update actual savings</summary>
-        <SavingsSettings currency={currency} onChanged={onChanged} />
-      </details>
     </details>
   );
 }

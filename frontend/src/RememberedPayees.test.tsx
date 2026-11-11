@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -214,4 +215,58 @@ it('labels partial results as incomplete while allowing explicit approval of val
   expect(
     within(results).getByRole('button', { name: 'Apply selected changes (0)' }),
   ).toBeDisabled();
+});
+
+it('refreshes saved payees with a loading state and confirmation, without starting a model review', async () => {
+  let reads = 0;
+  let finish: (value: unknown) => void = () => {};
+  vi.mocked(api).mockImplementation(async () => {
+    reads++;
+    if (reads === 1) return summary;
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  mount();
+  const refresh = await screen.findByRole('button', {
+    name: 'Refresh payees',
+  });
+  fireEvent.click(refresh);
+  expect(
+    screen.getByRole('button', { name: 'Refreshing payees…' }),
+  ).toBeDisabled();
+  await waitFor(() => expect(reads).toBe(2));
+  const added = { ...members[0], id: 'new', payee: 'New merchant' };
+  await act(async () =>
+    finish({ ...summary, total: 4, ungrouped: [...members, added] }),
+  );
+  expect(await screen.findByRole('status')).toHaveTextContent(
+    'Payees refreshed. 4 remembered aliases.',
+  );
+  expect(screen.getByText('Individual payees (4)')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Refresh payees' })).toBeEnabled();
+  expect(
+    vi.mocked(api).mock.calls.every(([, method]) => method === 'GET'),
+  ).toBe(true);
+});
+
+it('clears a failed refresh error after a successful retry', async () => {
+  let reads = 0;
+  vi.mocked(api).mockImplementation(async () => {
+    reads++;
+    if (reads === 2) throw new Error('Synthetic refresh failure');
+    return summary;
+  });
+  mount();
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Refresh payees' }),
+  );
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Synthetic refresh failure',
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh payees' }));
+  expect(await screen.findByRole('status')).toHaveTextContent(
+    'Payees refreshed. 3 remembered aliases.',
+  );
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });

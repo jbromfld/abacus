@@ -48,7 +48,9 @@ The menu contains **Overview**, **Spending**, **Recurring accounts**,
 when enabled. On phones, navigation moves above the page and Settings remains in
 the header; short desktop layouts keep navigation reachable by scrolling its menu.
 
-Use the selected-month picker or previous/next arrows for forecasts. Actual
+Use the selected-month picker or previous/next arrows for forecasts. Clicking
+**Overview** in the menu (or the Abacus logo) returns to the current month and
+refreshes its data. Actual
 spending initially uses the preceding month. Historical spending has an independent
 ending month. Due dates and Planning funding suggestions follow today's date, not the selected
 forecast month. Each section labels its own period.
@@ -420,6 +422,9 @@ Saving a categorized manual transaction/edit or committing an import remembers i
 exact description and type. Purchases, refunds and fees stay separate. Matching
 fills empty review categories and preserves explicit edits, amounts, transaction
 types, original descriptions and CSV duplicate identities.
+
+**Refresh payees** reloads the saved list and latest review status, showing a
+loading state and a completion message. It does not start a model review.
 
 In **Settings → Remembered payees**, choose **Review similar payees**. An installed
 local model proposes merchant groups from remembered names and categories. Review

@@ -73,18 +73,32 @@ export default function RememberedPayees({
   const [groupName, setGroupName] = useState('');
   const [reload, setReload] = useState(0);
   const initialized = useRef<string | null>(null);
+  const [fetching, setFetching] = useState(true);
+  const [refreshNotice, setRefreshNotice] = useState('');
+  const manualRefresh = useRef(false);
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
+    const showConfirmation = manualRefresh.current;
+    manualRefresh.current = false;
+    setFetching(true);
     api<Summary>('/payee-review/payees', 'GET', undefined, controller.signal)
       .then((value) => {
         if (active) {
           setData(value);
           setReview(value.review);
+          setError('');
+          if (showConfirmation)
+            setRefreshNotice(
+              `Payees refreshed. ${value.total} remembered aliases.`,
+            );
         }
       })
       .catch((e) => {
         if (active && e.name !== 'AbortError') setError(e.message);
+      })
+      .finally(() => {
+        if (active) setFetching(false);
       });
     return () => {
       active = false;
@@ -142,6 +156,7 @@ export default function RememberedPayees({
   const perform = async (action: () => Promise<unknown>, refresh = true) => {
     setBusy(true);
     setError('');
+    setRefreshNotice('');
     try {
       await action();
       if (refresh) {
@@ -245,12 +260,25 @@ export default function RememberedPayees({
           </button>
           <button
             className="text-button"
-            disabled={busy}
-            onClick={() => setReload((value) => value + 1)}
+            disabled={busy || fetching}
+            title="Reload remembered payees and the latest review status"
+            onClick={() => {
+              manualRefresh.current = true;
+              setFetching(true);
+              setError('');
+              setRefreshNotice('');
+              setReload((value) => value + 1);
+            }}
           >
-            Refresh payees
+            {fetching && <LoaderCircle size={15} className="spin" />}
+            {fetching ? 'Refreshing payees…' : 'Refresh payees'}
           </button>
         </div>
+        {refreshNotice && (
+          <p className="notice" role="status">
+            {refreshNotice}
+          </p>
+        )}
         {!model && (
           <p className="notice">
             Choose an installed local model in Settings to review similar

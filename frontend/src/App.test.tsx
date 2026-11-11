@@ -51,6 +51,7 @@ it('never displays November totals under December after its request fails, and s
       };
     if (path === '/payee-review/payees')
       return { total: 0, groups: [], ungrouped: [], review: null };
+    if (path === '/planning/categories') return [];
     if (path.startsWith('/planning'))
       return { plans: [], total_planned: 0, set_aside: null };
     return [];
@@ -80,6 +81,26 @@ it('never displays November totals under December after its request fails, and s
   expect(
     screen.queryByText(/Forecast expenses exceed income/),
   ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Overview' }));
+  expect(screen.getByLabelText('Selected month', { exact: true })).toHaveValue(
+    '2026-11',
+  );
+  expect(await screen.findByText('$1,050.00')).toBeInTheDocument();
+  expect(
+    screen.queryByText('Synthetic December failure'),
+  ).not.toBeInTheDocument();
+  const previousReads = vi
+    .mocked(api)
+    .mock.calls.filter(([path]) => path === '/forecast?month=2026-11').length;
+  fireEvent.click(screen.getByRole('button', { name: 'Overview' }));
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(([path]) => path === '/forecast?month=2026-11')
+        .length,
+    ).toBeGreaterThan(previousReads),
+  );
 });
 
 it('keeps advisor messages, drafts and in-flight replies mounted while saving a recurring bill refreshes the workspace', async () => {
@@ -150,6 +171,7 @@ it('keeps advisor messages, drafts and in-flight replies mounted while saving a 
       return { ...forecast, month: path.split('=')[1] };
     if (path === '/payee-review/payees')
       return { total: 0, groups: [], ungrouped: [], review: null };
+    if (path === '/planning/categories') return [];
     if (path.startsWith('/planning'))
       return { plans: [], total_planned: 0, set_aside: null };
     return [];
@@ -275,6 +297,7 @@ it('keeps transactions mounted through minute timers and manual refreshes while 
     }
     if (path === '/payee-review/payees')
       return { total: 0, groups: [], ungrouped: [], review: null };
+    if (path === '/planning/categories') return [];
     if (path.startsWith('/planning'))
       return { plans: [], total_planned: 0, set_aside: null };
     return [];

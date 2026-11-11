@@ -168,6 +168,11 @@ export default function App() {
     }
   }, [scrollToBreakdown, view, spendingMode]);
   const refresh = () => setRevision((n) => n + 1);
+  const openOverview = () => {
+    setMonth(monthNow());
+    setView('Overview');
+    refresh();
+  };
   const currency = settings.currency;
   const fmt = (n: number) => money(n, currency);
   const catName = (id: string | null) =>
@@ -585,7 +590,7 @@ export default function App() {
             href="#"
             onClick={(e) => {
               e.preventDefault();
-              setView('Overview');
+              openOverview();
             }}
           >
             <span className="brand-mark">
@@ -604,7 +609,9 @@ export default function App() {
               <button
                 key={n.name}
                 className={'nav-item ' + (view === n.name ? 'active' : '')}
-                onClick={() => setView(n.name)}
+                onClick={() =>
+                  n.name === 'Overview' ? openOverview() : setView(n.name)
+                }
               >
                 <n.icon size={19} />
                 {n.name}

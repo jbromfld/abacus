@@ -15,6 +15,32 @@ A local personal budget app: recurring income and bills, purchase estimates, act
 
 Use the user guide for daily workflows and Operations for maintenance. Feature details live in those guides to keep one source of truth.
 
+## Argo migration support
+
+Container packaging is being introduced alongside the native workflow. See the
+[environment migration guide](../local-agent-environment/docs/abacus-argo-migration.md)
+for staging, acceptance, cutover, and rollback. Native operation remains the
+active deployment until those gates pass.
+
+The image includes the frontend and a separate Babar environment, runs one
+Uvicorn worker as UID 1000 on port 8000, and consumes runtime configuration through
+Secrets. Publish committed sources with:
+
+```sh
+python3 scripts/publish_images.py --babar-revision FULL_BABAR_COMMIT
+```
+
+The publisher archives both source commits and records Babar provenance. Mount
+its offline model cache read-only and its private profile at
+`/run/abacus/memory.json`, owned by UID 1000 with mode 0600. Database placement is
+independent of the image. Use `DATABASE_URL` for runtime and
+`ABACUS_ADMIN_DATABASE_URL` for explicit Alembic/advisor maintenance; keep the
+administrator DSN out of runtime Secrets.
+
+Memory setup accepts `--admin-env` to use independent administrator `PG*`
+settings and `--pre-provisioned` to maintain an existing memory database/login.
+Keep the `abacus-advisor` namespace and existing model identity.
+
 ## Quick start
 
 Requirements: Python 3.11+, `uv`, Node.js 24 LTS or 26+, and a running local PostgreSQL instance. Ollama is optional; manual transaction entry and CSV review work without it.

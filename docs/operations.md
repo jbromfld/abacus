@@ -132,13 +132,13 @@ Credentials embedded in a full URL must be URL-encoded. `.env` interpolation is
 disabled. Do not paste real credentials into documentation, chat, or shell history.
 Restart the backend after changing its database connection.
 
-Currency, categories, account names, card monitoring/mappings, savings, reserve
-preferences, and selected local model/advisor opt-in live in PostgreSQL. Merchant
-normalization patterns live separately in
-[`backend/abacus/payee_matching.json`](../backend/abacus/payee_matching.json).
-Patterns reload on the next classification pass, including an open review's
-**Apply remembered payees**. Invalid config disables optional regex/similarity
-matching and logs a warning; exact/basic memory remains available.
+Currency, categories, account names, card monitoring/mappings, savings, selected
+local model and approved merchant aliases live in PostgreSQL. Migration 0017 adds
+payee groups and review jobs while retaining exact categories and expenses. Run
+the usual updater to migrate, refresh SELECT-only advisor grants and rebuild.
+`payee_matching.json` is retired; maintain aliases through Settings → Remembered
+payees. Review needs an installed local Ollama model, even if advisor chat is off.
+No new service or dependency is required. Reviews run separately from import jobs.
 
 ## Dedicated advisor database login
 
@@ -408,8 +408,8 @@ Restore into a new database first. Check it with the appropriate application
 version and migrations before switching `DATABASE`/`DATABASE_URL`. Stop the app
 while switching, then restart it. Do not run tests against the restored budget.
 
-Back up `.env` and custom payee patterns separately, using a private location; a
-database dump does not include them. Backups, source excerpts, and optional
+Back up `.env` separately in a private location. Approved payee groups, aliases
+and review jobs are included in the database dump. Backups, source excerpts, and optional
 training exports contain private financial information. Clearing browser storage
 or switching browsers does not remove PostgreSQL data.
 
@@ -483,7 +483,8 @@ public deployment design. Keep the database and app private.
 | Advisor budget context | Loopback model receives aggregates, normalized payee/category history, schedule/purchase names, assumptions, and chat; no raw statements, provenance, account/card IDs, or individual transaction identities |
 | Optional web research | Only separately approved public travel queries to Brave; no financial snapshot, payees, balances, transaction history, private chat, or model output |
 | Chat and upload queue UI | Current tab memory; saved import jobs remain in PostgreSQL |
-| Merchant patterns / optional export | Local repository config / explicitly selected export file |
+| Merchant group review | Saved payee names, kinds and category labels to loopback Ollama only; proposals and approvals in local PostgreSQL |
+| Optional training export | Explicitly selected local export file |
 
 Import undo deletes linked transactions but keeps the import/fingerprint; deleting
 an eligible import removes its review data/fingerprint. Payee memory survives undo
@@ -518,8 +519,9 @@ links. Local context and generated replies cannot initiate further searches.
 | PAYMENT row needs a different type | Correct it explicitly in review; keyword defaults are overridable. |
 | No new rows saved from overlap | Original fields matched an earlier saved CSV row for that account. Inspect skipped counts; repeats inside one file remain selectable. |
 | Reupload blocked after undo | Delete the undone import to release its exact-file fingerprint. |
-| Remembered category seems wrong | Clear the review category before applying memory; inspect exact rule/category conflicts, pattern formats, and similarity labels. Existing descriptions in Settings are not canonical groups. |
-| Remembered payees list keeps growing | Saving new exact variants is intentional. Normalization affects matching, not automatic record consolidation. |
+| Remembered category seems wrong | Inspect the exact alias category and group conflicts in Settings. Grouping preserves individual categories unless you explicitly change them. |
+| Remembered payees list keeps growing | Use Review similar payees to propose groups. Unknown variants still need review; existing exact corrections are retained. |
+| Local payee review failed/interrupted | Check the selected installed model, start another review, and inspect progress. Payee rules were not changed. |
 | ACH missing from actual total | Check the actual period (previous month by default), active range, recording start, day, account, and running backend. Deleted generated occurrences are not regenerated. |
 | Actual total differs from forecast | Forecasts and actuals are independent. Confirm transaction types, refunds, dates, card settlement exclusion, and possible imported/generated ACH overlap. |
 | Monthly room positive but savings falls | An annual payment can draw saved allocations. Read cash expenses and named annual payments in Purchase planner. |

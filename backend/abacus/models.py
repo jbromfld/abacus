@@ -316,7 +316,9 @@ class PayeeReview(Base):
     total: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(String(500), default="")
     result: Mapped[dict | None] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
 
 
 class PayeeRule(Base):
@@ -324,7 +326,9 @@ class PayeeRule(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     payee: Mapped[str] = mapped_column(String(500))
     kind: Mapped[str] = mapped_column(String(16))
-    group_id: Mapped[str | None] = mapped_column(ForeignKey("payee_groups.id", ondelete="SET NULL"), index=True)
+    group_id: Mapped[str | None] = mapped_column(
+        ForeignKey("payee_groups.id", ondelete="SET NULL"), index=True
+    )
     category_id: Mapped[str] = mapped_column(
         ForeignKey("categories.id", ondelete="CASCADE")
     )

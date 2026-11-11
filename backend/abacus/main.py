@@ -78,6 +78,7 @@ from .models import (
     Transaction,
     uid,
 )
+from .payee_review import router as payee_review_router
 from .planning import router as planning_router
 from .provenance import compact_pdf_rows, expanded_sources
 from .research import confirmation_for, plan_research, research_status
@@ -114,6 +115,16 @@ from .schemas import (
 @asynccontextmanager
 async def lifespan(app):
     with Session() as db:
+        from .models import PayeeReview
+
+        db.execute(
+            update(PayeeReview)
+            .where(PayeeReview.status.in_(["queued", "running"]))
+            .values(
+                status="interrupted",
+                error="Review interrupted by restart. Existing payees were not changed. Start another review.",
+            )
+        )
         db.execute(
             update(StatementImport)
             .where(StatementImport.status == "processing")
@@ -155,6 +166,7 @@ app.include_router(memory_router)
 app.include_router(alert_router)
 app.include_router(annual_income_router)
 app.include_router(planning_router)
+app.include_router(payee_review_router)
 DB = Annotated[DBSession, Depends(session)]
 ReadOnlyDB = Annotated[DBSession, Depends(read_only_session)]
 

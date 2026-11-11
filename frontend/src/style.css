@@ -3441,3 +3441,162 @@ dialog:has(.batch-table) {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.payee-review-content {
+  padding: 0 25px 24px;
+  min-width: 0;
+}
+.payee-review-content > p {
+  font-size: 12px;
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
+.payee-review-content .button-group {
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+.payee-review-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.payee-review-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.payee-review-results {
+  margin: 20px 0;
+}
+.payee-review-results > p,
+.payee-suggestion > p {
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 10px 0 16px;
+}
+.payee-suggestion {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.payee-suggestion legend {
+  max-width: 100%;
+  padding: 0 8px;
+  font-weight: 600;
+}
+.payee-suggestion .checkbox {
+  flex-direction: row;
+  align-items: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.payee-suggestion .checkbox input {
+  width: auto;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.payee-suggestion .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.payee-suggestion input,
+.payee-suggestion select {
+  min-width: 0;
+  width: 100%;
+}
+.payee-proposed-members {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+}
+.payee-proposed-members li {
+  padding: 8px 0;
+}
+.payee-proposed-members small {
+  display: block;
+  color: var(--muted);
+  margin-top: 3px;
+  font-size: 11px;
+}
+.payee-member {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding: 12px 0;
+}
+.payee-member .grow {
+  min-width: 0;
+  flex: 1;
+}
+.payee-member strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.payee-member small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+  font-size: 10px;
+}
+.payee-member label {
+  max-width: 42%;
+  min-width: 90px;
+}
+.payee-member select {
+  width: 100%;
+  font-size: 11px;
+}
+.payee-list-title {
+  font-size: 14px;
+  margin: 24px 0 14px;
+}
+.payee-approved-group {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  margin: 12px 0;
+  padding: 14px;
+}
+.payee-approved-group summary {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.payee-approved-group summary span {
+  display: block;
+  padding-left: 14px;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.payee-rename-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.payee-rename-form input {
+  flex: 1;
+  min-width: 110px;
+}
+@media (max-width: 600px) {
+  .payee-review-content {
+    padding: 0 18px 20px;
+  }
+  .payee-suggestion .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .payee-member {
+    flex-wrap: wrap;
+  }
+  .payee-member .grow {
+    flex-basis: calc(100% - 42px);
+  }
+  .payee-member label {
+    max-width: calc(100% - 42px);
+    flex: 1;
+  }
+}

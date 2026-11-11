@@ -71,10 +71,47 @@ def test_exact_local_category_and_payee_differences_refunds_and_payment_exclusio
     assert row["comparisons"][0]["from_month"] == "2026-09"
     assert row["comparisons"][0]["partial_month_count"] == 2
     assert len(result["payees"]) == 1
-    assert result["payees"][0]["payee"] == "panera bread"
+    assert result["payees"][0]["payee"] == "panera bread k"
     assert result["payees"][0]["monthly_net_minor"][-3:] == [10000, 15000, 20000]
     assert "DO_NOT_SEND_STATEMENT_PROVENANCE" not in json.dumps(result)
     assert account_id not in json.dumps(result)
+
+
+def test_approved_display_aliases_respect_kind_and_net_refunds(
+    db, account_id, category_id
+):
+    from abacus.models import PayeeGroup, PayeeRule
+
+    for kind, description, amount in (
+        ("purchase", "Panera Bread north location", 22000),
+        ("refund", "PANERA RETURN SOUTH", 2000),
+        ("fee", "Panera service fee", 100),
+    ):
+        group = PayeeGroup(name="Reviewed Panera", kind=kind)
+        db.add(group)
+        db.flush()
+        db.add(
+            PayeeRule(
+                payee=description.casefold(),
+                kind=kind,
+                category_id=category_id,
+                group_id=group.id,
+            )
+        )
+        add(
+            db,
+            account_id,
+            category_id,
+            "2026-10-04",
+            amount,
+            description=description,
+            kind=kind,
+        )
+    db.commit()
+    result = history(db)
+    assert len(result["payees"]) == 1
+    assert result["payees"][0]["payee"] == "Reviewed Panera"
+    assert result["payees"][0]["monthly_net_minor"][-1] == 20100
 
 
 def test_missing_month_prevents_claiming_an_increase_and_complete_zero_is_known(

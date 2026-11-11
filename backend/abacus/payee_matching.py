@@ -1,56 +1,74 @@
-"""Local, editable merchant matching configuration. No transaction data is changed."""
+"""Bounded candidate batches for user-reviewed local-model suggestions."""
 
-import json
-import logging
 import re
-from difflib import SequenceMatcher
-from pathlib import Path
+from collections import defaultdict
 
-CONFIG_PATH = Path(__file__).with_name("payee_matching.json")
+from .classification import normalize_payee
 
-
-def load_matching_config():
-    """Read on each classification pass so edits need no server restart.
-
-    Invalid configuration disables optional matching; basic memory still works.
-    This is a trusted local Python regex configuration, not uploaded statement data.
-    """
-    try:
-        data = json.loads(CONFIG_PATH.read_text())
-        threshold = float(data["fuzzy_threshold"])
-        margin = float(data["fuzzy_margin"])
-        if not 0.8 <= threshold <= 1 or not 0 < margin <= 1:
-            raise ValueError("threshold must be 0.8–1 and margin must be >0–1")
-        patterns = []
-        for entry in data["patterns"]:
-            pattern = re.compile(entry["pattern"], re.IGNORECASE)
-            replacement = entry["replacement"]
-            pattern.sub(replacement, "")  # Validate replacement backreferences too.
-            patterns.append((pattern, replacement))
-        return patterns, threshold, margin
-    except (OSError, ValueError, TypeError, KeyError, re.error, IndexError) as exc:
-        logging.getLogger(__name__).warning("Payee matching config disabled: %s", exc)
-        return [], 1.0, 1.0
+# Generic statement/organization words are not merchant identities.
+STOP_WORDS = {
+    "store",
+    "stores",
+    "market",
+    "payment",
+    "purchase",
+    "refund",
+    "online",
+    "inc",
+    "llc",
+    "pos",
+    "tst",
+    "sq",
+    "sp",
+    "the",
+    "com",
+}
 
 
-def similar_category(payee, kind, groups, threshold, margin):
-    """Abstain for short names, changed numbers, first-word changes or close rivals."""
-    if threshold >= 1 or len(payee) < 12 or not payee.split():
-        return None
-    scores = {}
-    for (candidate, candidate_kind), categories in groups.items():
-        if candidate_kind != kind or len(candidate) < 12:
+def candidate_batches(records, size=24, overlap=6):
+    """Shared text finds candidates only. It never authorizes an alias or category."""
+    parents = {row["id"]: row["id"] for row in records}
+
+    def root(key):
+        while parents[key] != key:
+            parents[key] = parents[parents[key]]
+            key = parents[key]
+        return key
+
+    def connect(keys):
+        if not keys:
+            return
+        first = root(keys[0])
+        for key in keys[1:]:
+            parents[root(key)] = first
+
+    buckets = defaultdict(list)
+    approved = defaultdict(list)
+    for row in records:
+        if row["group_id"]:
+            approved[row["group_id"]].append(row["id"])
+        text = normalize_payee(row["payee"] + " " + (row.get("group_name") or ""))
+        tokens = {
+            word
+            for word in text.split()
+            if len(word) >= 3 and not word.isdigit() and word not in STOP_WORDS
+        }
+        for token in tokens:
+            # Prefixes bridge spellings such as WHOLEFDS and Whole Foods. The
+            # model and then the user decide; this is not automatic matching.
+            buckets[(row["kind"], re.sub(r"\W", "", token)[:4])].append(row["id"])
+    for keys in [*buckets.values(), *approved.values()]:
+        connect(keys)
+    components = defaultdict(list)
+    for row in records:
+        components[root(row["id"])].append(row)
+    result = []
+    for rows in components.values():
+        if len(rows) < 2 or all(row["group_id"] for row in rows):
             continue
-        if candidate.split()[0] != payee.split()[0]:
-            continue
-        if re.findall(r"\d+", candidate) != re.findall(r"\d+", payee):
-            continue
-        score = SequenceMatcher(None, payee, candidate, autojunk=False).ratio()
-        for category in categories:
-            scores[category] = max(scores.get(category, 0), score)
-    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-    if not ranked or ranked[0][1] < threshold:
-        return None
-    if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < margin:
-        return None
-    return ranked[0][0]
+        rows.sort(key=lambda row: (normalize_payee(row["payee"]), row["id"]))
+        for start in range(0, len(rows), size - overlap):
+            batch = rows[start : start + size]
+            if len(batch) >= 2:
+                result.append(batch)
+    return result

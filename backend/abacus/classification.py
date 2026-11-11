@@ -118,7 +118,11 @@ def apply_payee_rules(db, rows):
 
 def approved_payee_names(db):
     """Display-only aggregation aliases, respecting exact per-kind variants."""
-    rows = db.execute(select(PayeeRule.payee, PayeeRule.kind, PayeeGroup.name).join(PayeeGroup, PayeeRule.group_id == PayeeGroup.id))
+    rows = db.execute(
+        select(PayeeRule.payee, PayeeRule.kind, PayeeGroup.name)
+        .join(PayeeGroup, PayeeRule.group_id == PayeeGroup.id)
+        .where(PayeeRule.kind == PayeeGroup.kind)
+    )
     return {(exact_payee(payee), kind): name for payee, kind, name in rows}
 
 

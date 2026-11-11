@@ -399,32 +399,40 @@ file remains blocked until its import is deleted.
 ### Payee classification
 
 Saving a categorized manual transaction/edit or committing an import remembers its
-exact description and type. Rules are shared across accounts, but purchases,
-refunds, and fees are separate. Matching preserves row types, amounts, and existing
-review categories. Priority is existing review label, exact remembered variant,
-unambiguous normalized group, then conservative similarity; unknown/conflicting
-matches stay for review. Rules persist until forgotten in Settings.
+exact description and type. Purchases, refunds and fees stay separate. Matching
+fills empty review categories and preserves explicit edits, amounts, transaction
+types, original descriptions and CSV duplicate identities.
 
-Normalization ignores Unicode/case/spacing differences, explicit `#store` numbers,
-leading years/dates, apostrophes, and punctuation. Meaningful brand numbers remain.
-The [merchant configuration](../backend/abacus/payee_matching.json) also groups:
+In **Settings → Remembered payees**, choose **Review similar payees**. An installed
+local model proposes merchant groups from remembered names and categories. Review
+runs in the background with progress and cancellation; leaving Settings and coming
+back resumes the same review. Only names, transaction types, category labels and
+local review IDs go to Ollama, never statements, amounts, dates or bank accounts.
 
-- Amazon.com, Amazon Marketplace, and Amazon Prime order codes into three separate groups.
-- A2 PCI Parking, Panera Bread, PetSmart, and REI store/location variants by brand.
-- ActBlue's `*` recipient suffixes under ActBlue.
+No rule changes during preview. Select the proposed groups you want, edit their
+names, and uncheck individual members as needed. **Keep individual categories** is
+the default, including when a group has conflicting categories. Choosing a shared
+category explicitly updates only selected remembered aliases. **Apply selected
+changes** saves approved groups atomically. Changed/forgotten aliases invalidate a
+stale preview rather than silently overwriting your correction. Repeating the same
+apply request does not duplicate groups. Unapproved suggestions are left alone.
 
-**Remembered payees** displays exact saved variants, so it may contain hundreds of
-rows even when normalized matching works. Editing/forgetting one rule does not
-rewrite transactions. Normalization is not a database cleanup or trained model.
+Approved groups expand to show their exact aliases and current categories. You can
+rename a group, edit a category, forget one alias, or **Ungroup** while keeping its
+aliases and categories. These actions do not recategorize saved transactions.
+Exact category corrections remain highest priority. An approved canonical name
+suggests a category only when its members agree; conflicting groups abstain.
 
-Patterns run case-insensitively on each classification pass; JSON `"\\1"` means
-retain the first capture group. A literal replacement such as `"rei"` makes a
-canonical name. `*` must be escaped to match a literal asterisk. Use merchant-specific
-boundaries and test real variants before broadening patterns. The default fuzzy
-threshold is `0.94` with a `0.05` margin; setting the threshold to `1` disables
-similarity. Similarity also constrains first words, numeric components, transaction
-types, and name lengths. **Similar payee · check category** labels its suggestions.
-See [classification/training](../training/README.md) for exact behavior and exports.
+Imports continue deterministic matching without model calls. Generic Unicode,
+whitespace, punctuation, explicit #store markers and leading year/date cleanup
+remain. Merchant-specific JSON patterns and automatic fuzzy category guesses have
+been retired. A new unfamiliar variation may need manual categorization followed
+by another review; the model does not silently invent future aliases.
+
+A failed, cancelled or restart-interrupted review changes no payees. Model-proposed
+regular expressions, unknown IDs and mixed transaction types are rejected.
+See [classification and local review](../training/README.md) for implementation
+limits and exports.
 
 ## Budget advisor
 

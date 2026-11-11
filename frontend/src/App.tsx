@@ -35,7 +35,6 @@ import {
 import type {
   Category,
   Account,
-  PayeeRule,
   Recurring,
   Transaction,
   Forecast,
@@ -53,6 +52,7 @@ import UpcomingBills from './UpcomingBills';
 import AnnualExpectedIncome from './AnnualExpectedIncome';
 import Planning, { PlanningCategories, PlanningOverview } from './Planning';
 import type { PlanDraft } from './Planning';
+import RememberedPayees from './RememberedPayees';
 const HistoricalSpending = lazy(() => import('./HistoricalSpending'));
 const ImportReview = lazy(() => import('./ImportReview'));
 import FormEditor from './FormEditor';
@@ -145,7 +145,6 @@ export default function App() {
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [overlay, setOverlay] = useState(true);
   const [query, setQuery] = useState('');
-  const [payeeRules, setPayeeRules] = useState<PayeeRule[]>([]);
   const [models, setModels] = useState<{ models: string[]; error: string }>({
     models: [],
     error: '',
@@ -226,9 +225,6 @@ export default function App() {
         api<typeof models>('/models')
           .then(setModels)
           .catch((e) => setError(e.message));
-      api<PayeeRule[]>('/payee-rules')
-        .then(setPayeeRules)
-        .catch((e) => setError(e.message));
     }
   }, [view, revision]);
   useEffect(() => {
@@ -1794,80 +1790,12 @@ export default function App() {
                           </div>
                         ))}
                       </section>
-                      <details className="panel remembered-payees">
-                        <summary className="section-head">
-                          <div>
-                            <h2>
-                              Remembered payees{' '}
-                              <span className="settings-count">
-                                {payeeRules.length}
-                              </span>
-                            </h2>
-                            <p>
-                              Saved labels also match store-number and year/date
-                              variants. Conflicting categories stay for review.
-                            </p>
-                          </div>
-                          <ChevronRight size={18} aria-hidden="true" />
-                        </summary>
-                        {payeeRules.length ? (
-                          payeeRules.map((r) => (
-                            <div className="name-row" key={r.id}>
-                              <div className="grow">
-                                <strong>{r.payee}</strong>
-                                <small>
-                                  {r.kind} · {catName(r.category_id)}
-                                </small>
-                              </div>
-                              <button
-                                className="icon"
-                                aria-label={`Edit remembered category for ${r.payee}`}
-                                onClick={() =>
-                                  setEditor({
-                                    title: 'Edit remembered category',
-                                    description: r.payee + ' · ' + r.kind,
-                                    fields: [
-                                      {
-                                        name: 'category_id',
-                                        label: 'Category',
-                                        value: r.category_id,
-                                        options: categoryOptions,
-                                      },
-                                    ],
-                                    submit: async (d) => {
-                                      await api(
-                                        '/payee-rules/' + r.id,
-                                        'PUT',
-                                        d,
-                                      );
-                                    },
-                                  })
-                                }
-                              >
-                                <Pencil size={16} />
-                              </button>
-                              <button
-                                className="icon"
-                                aria-label={`Forget ${r.payee}`}
-                                onClick={() =>
-                                  remove(
-                                    '/payee-rules/' + r.id,
-                                    'this remembered payee rule',
-                                  )
-                                }
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="muted pad">
-                            Save a categorized transaction or commit a reviewed
-                            import to remember its payee. Uncertain matches stay
-                            for manual review.
-                          </p>
-                        )}
-                      </details>
+                      <RememberedPayees
+                        categories={categories}
+                        model={settings.model}
+                        revision={revision}
+                        onChanged={refresh}
+                      />
                       <div className="quiet-note">
                         <Leaf size={22} />
                         <h3>A private little workspace.</h3>

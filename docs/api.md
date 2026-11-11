@@ -106,6 +106,31 @@ altering savings observations. These are estimates, not dated cash receipts.
 Advisor access is SELECT-only on `annual_income`; rerun advisor setup after
 migration 0015 to maintain the explicit allowlist.
 
+## Remembered payee group review
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/payee-review/payees` | Approved groups, individual aliases, total, and latest resumable review |
+| POST | `/api/payee-review/reviews` | Start one background local-model preview; return 202; repeated start reuses an active job |
+| GET | `/api/payee-review/reviews/{id}` | Status, progress, snapshot members and suggestions |
+| DELETE | `/api/payee-review/reviews/{id}` | Cancel/discard an unapplied review; remembered payees remain unchanged |
+| POST | `/api/payee-review/reviews/{id}/apply` | Atomically apply explicitly selected groups |
+| PUT | `/api/payee-review/groups/{id}` | Rename canonical label with `{name}` |
+| DELETE | `/api/payee-review/groups/{id}` | Ungroup while retaining individual alias rules/categories |
+
+Apply body: `{groups:[{suggestion_id,name,member_ids,category_id}]}`. Null
+`category_id` preserves each alias's current category; an existing category ID
+explicitly updates the selected aliases. At least two distinct displayed members
+are required per group. Altered or forgotten selected rows return 409 without
+applying any group. An identical applied request returns the prior result; a
+different replay returns 409. Historical transactions are never recategorized.
+
+States are queued, running, ready, applied, cancelled, failed, or interrupted.
+Preview generation uses the configured local model and bounded candidate batches.
+Private jobs are excluded from the advisor's SELECT allowlist; approved groups and
+payee rules are readable solely for aggregate naming. The existing `/payee-rules`
+edit/forget endpoints continue to manage exact aliases.
+
 ## Planning
 
 | Method | Path | Purpose |

@@ -60,6 +60,7 @@ import type { Field, Editor } from './FormEditor';
 import OverviewComparison from './OverviewComparison';
 import YearSummary from './YearSummary';
 import { useWorkspace } from './useWorkspace';
+import { useCardFreshness } from './useCardFreshness';
 import { invalidateResources, useResourceRevision } from './resourceCache';
 import { usePagedRecords } from './usePagedRecords';
 import type { ImportSummary } from './api';
@@ -124,6 +125,7 @@ export default function App() {
   const actualMonth = actualMonthFor(month, currentActual);
   const [actualReport, setActualReport] = useState<Forecast | null>(null);
   const [actualLoading, setActualLoading] = useState(true);
+  const [actualError, setActualError] = useState('');
   const revision = useResourceRevision([
     'settings',
     'categories',
@@ -214,6 +216,7 @@ export default function App() {
     let active = true;
     const controller = new AbortController();
     setActualLoading(true);
+    setActualError('');
     api<Forecast>(
       `/forecast?month=${actualMonth}`,
       'GET',
@@ -225,7 +228,7 @@ export default function App() {
       })
       .catch((e) => {
         if (active && (e as Error).name !== 'AbortError')
-          setError((e as Error).message);
+          setActualError((e as Error).message);
       })
       .finally(() => {
         if (active) setActualLoading(false);
@@ -248,31 +251,7 @@ export default function App() {
     if (view === 'Budget advisor' && !settings.advisor_enabled)
       setView('Settings');
   }, [view, settings.advisor_enabled]);
-  useEffect(() => {
-    let active = true;
-    const updateCards = () => {
-      api<Account[]>('/accounts')
-        .then((cards) => {
-          if (active) setAccounts(cards);
-        })
-        .catch(() => {
-          if (active)
-            setError(
-              'Could not refresh card freshness alerts. Check the local server.',
-            );
-        });
-    };
-    const timer = setInterval(updateCards, 60000);
-    const onVisible = () => {
-      if (!document.hidden) updateCards();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      active = false;
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [setAccounts]);
+  const cardFreshness = useCardFreshness(setAccounts);
   const monitorCard = async (id: string, enabled: boolean) => {
     setMonitoring(id);
     setError('');
@@ -770,10 +749,21 @@ export default function App() {
                 {budgetAlerts.error}
               </p>
             )}
-            {(error || loadError) && (
+            {cardFreshness.error && (
+              <div className="notice danger" role="alert">
+                <span>{cardFreshness.error}</span>
+                <button
+                  className="text-button"
+                  onClick={() => void cardFreshness.refresh()}
+                >
+                  Retry card alerts
+                </button>
+              </div>
+            )}
+            {(error || loadError || actualError) && (
               <div className="notice danger" role="alert">
                 <AlertTriangle size={18} />
-                <span>{error || loadError}</span>
+                <span>{error || loadError || actualError}</span>
                 <button
                   className="text-button"
                   onClick={() => {

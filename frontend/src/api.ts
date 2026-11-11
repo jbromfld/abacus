@@ -85,6 +85,15 @@ export type ImportJob = ImportSummary & {
     mapping_warning?: string | null;
   };
 };
+function connectionFailure(error: unknown, signal?: AbortSignal): never {
+  if (signal?.aborted || (error as Error)?.name === 'AbortError') throw error;
+  throw Object.assign(
+    new Error(
+      'Connection to Abacus was interrupted. The local server may be restarting. Wait a moment, then try again.',
+    ),
+    { status: 0, cause: error },
+  );
+}
 async function request<T>(
   path: string,
   method = 'GET',
@@ -106,7 +115,7 @@ async function request<T>(
         : body === undefined
           ? undefined
           : JSON.stringify(body),
-  });
+  }).catch((error: unknown) => connectionFailure(error, signal));
   if (!response.ok) {
     const data = await response.json().catch(() => ({
       detail: 'Unable to connect. Check that the Python server is running.',
@@ -120,7 +129,11 @@ async function request<T>(
       { status: response.status },
     );
   }
-  return response.json() as Promise<T>;
+  return response.json().catch((error: unknown) => {
+    if (error instanceof TypeError || (error as Error)?.name === 'AbortError')
+      connectionFailure(error, signal);
+    throw error;
+  }) as Promise<T>;
 }
 export function monthNow() {
   const d = new Date();

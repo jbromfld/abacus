@@ -2783,6 +2783,14 @@ dialog:has(.batch-table) {
 }
 .annual-income-source > input[type='range'] {
   width: 100%;
+  accent-color: var(--green);
+}
+.annual-income-source .checkbox {
+  flex-direction: row;
+}
+.annual-income-source .checkbox input {
+  width: auto;
+  flex-shrink: 0;
 }
 .annual-income-source .form-grid {
   grid-template-columns: minmax(0, 1fr);
@@ -2945,6 +2953,10 @@ dialog:has(.batch-table) {
 }
 .reserve-monitor .section-head {
   padding-bottom: 16px;
+  flex-wrap: wrap;
+}
+.reserve-header-actions {
+  flex-wrap: wrap;
 }
 .reserve-warning {
   border-color: #e3c997;

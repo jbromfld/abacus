@@ -155,8 +155,13 @@ completeness. Forecast breakdowns require full calendar-month boundaries.
 | POST | `/api/savings/projection` | Read-only as-is or hypothetical 12-/24-month cash projection |
 | GET | `/api/reserve-check` | Preferences, fixed plan, latest/history observations, status, targets, upcoming risks/checkpoints |
 | PUT | `/api/reserve-check/plan` | Explicitly create/replace frozen target with `{amount,month}` and current annual schedules |
+| DELETE | `/api/reserve-check/plan` | Permanently delete the saved funding target and schedule snapshot; returns a fresh reserve check; repeating it is harmless |
 | POST | `/api/reserve-check/balances` | Upsert dated opening observation `{amount,as_of}`; never resets the plan |
 | POST | `/api/reserve-check/dismiss` | Suppress notices until the next checkpoint |
+
+Deleting the reserve plan retains annual bills, the saved savings snapshot,
+observations, and actual transactions. There is no archived plan or restore action.
+Only explicitly saving another plan creates a new target.
 
 A projection takes `months` (12/24; default 24) plus `savings:{amount,month,floor}`
 or, without known savings, `start_month`. Optional scenario inputs are mutually

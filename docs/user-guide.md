@@ -203,7 +203,7 @@ contribution; existing recurring income remains independent.
 
 ### Savings
 
-The **Savings** panel sits beside **Expected income**. Set an exact opening amount
+The **Savings** panel sits beside **Monthly expected income**. Set an exact opening amount
 or use the slider, choose **Balance month**, optionally set a savings floor, and
 save. The balance belongs to the start of that month; it is not bank-synchronized
 or automatically advanced. Slider edits are temporary until saved.
@@ -276,6 +276,10 @@ month without changing its inclusion status. **Include in budget** counts it;
 **Return to draft** removes its forecast effect while preserving the estimate.
 Edit or delete a purchase from its card. Include a trip as a one-time estimate when
 you have chosen a total; an advisor's proposed price range is not a saved purchase.
+The trash button permanently deletes the purchase plan after confirmation,
+including draft estimates. It is not an archive action. Saved payment estimates
+can also be permanently deleted with **Delete bill estimate**; any previously
+created recurring bill remains separate.
 
 ## Spending
 
@@ -494,6 +498,17 @@ components. **Dismiss until next checkpoint** suppresses notices until that date
 a new observation clears the dismissal. Settings can disable alerts without
 removing the plan or observation history. Checks follow today in `APP_TIMEZONE`,
 refresh every minute and on foreground/focus, and are independent of forecast month.
+
+On Overview, **Annual bill reserve** sits directly below the three summary cards.
+It starts collapsed; **Show reserve details** expands it and **Hide reserve details**
+collapses it. The status and any funding warning remain visible in its header.
+Refreshing balances does not change your expansion choice while the card is open.
+
+In **Recurring accounts → Annual bill reserve plan**, **Permanently delete reserve
+plan** removes the saved target and schedule snapshot after confirmation. The
+underlying annual expenses, savings balance/history, and actual transactions remain.
+The app returns to reserve setup; restarting or rerunning the updater does not
+recreate the deleted plan. You can explicitly save a new target later.
 
 Updating observed savings never lowers the fixed target. Annual schedule edits
 show a review notice; only **Replace funding target** adopts new schedules or a

@@ -401,6 +401,13 @@ def set_reserve_plan(data: ReservePlanIn, db: DB):
     return reserve_check(db)
 
 
+@app.delete("/api/reserve-check/plan")
+def delete_reserve_plan(db: DB):
+    db.execute(delete(ReservePlan).where(ReservePlan.id == 1))
+    db.commit()
+    return reserve_check(db)
+
+
 @app.post("/api/reserve-check/balances")
 def record_savings_balance(data: SavingsObservationIn, db: DB):
     try:

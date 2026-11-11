@@ -15,7 +15,10 @@ vi.mock('./api', async (importOriginal) => ({
   monthNow: () => '2026-11',
 }));
 vi.mock('./UpcomingBills', () => ({ default: () => null }));
-vi.mock('./ReserveMonitor', () => ({ default: () => null }));
+vi.mock('./ReserveMonitor', () => ({
+  default: ({ collapsible }: { collapsible?: boolean }) =>
+    collapsible ? <section aria-label="Overview reserve" /> : null,
+}));
 vi.mock('./ExpenseBreakdown', () => ({ default: () => null }));
 it('never displays November totals under December after its request fails, and skips hidden trend reads', async () => {
   vi.mocked(api).mockImplementation(async (path) => {
@@ -50,6 +53,13 @@ it('never displays November totals under December after its request fails, and s
   });
   render(<App />);
   expect(await screen.findByText('$1,050.00')).toBeInTheDocument();
+  const stats = screen
+    .getByText('Planned expenses')
+    .closest('.overview-stats')!;
+  expect(stats.children).toHaveLength(3);
+  expect(stats.nextElementSibling).toBe(
+    screen.getByRole('region', { name: 'Overview reserve' }),
+  );
   await waitFor(() =>
     expect(vi.mocked(api).mock.calls.some(([p]) => p === '/settings')).toBe(
       true,

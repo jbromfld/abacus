@@ -27,7 +27,13 @@ shared source; existing transaction accounts do not supply a verified balance.
    need to reenter the tax amount or start a combined funding plan.
 4. Show the goal immediately: **Set aside / Target**, **Still needed**, **Due**,
    **Monthly funding**, and a plain status with its reason. Allow edit, pause,
-   and remove; removing tracking leaves the underlying expense intact.
+   and permanently delete. Deleting removes the goal, its contribution plan, and
+   goal-owned research/draft details from active storage, rather than archiving
+   them. The confirmation identifies any independently linked expense that will
+   remain; deleting a reserve does not silently delete an existing bill or purchase.
+   Draft purchase plans and reserve goals must both have a permanent delete action.
+   Deleted goals never return on restart or migration. Savings observations remain
+   separate financial records.
 5. Use **Update savings** in this panel or the existing Savings panel. Both update
    the same dated balance, which the advisor and Purchase planner also use.
    A future projection assumption is not a current balance.
@@ -178,6 +184,13 @@ discuss a plan without savings configured, but must not label it funded. Existin
 draft purchases can be adopted into reserves; retain their inclusion state and
 source identity, rather than re-creating them. Researching an active reserve
 proposes changes for review, never silently changes its target or due date.
+
+The current public research helper is tailored to travel. Product planning will
+need a separate validated public-topic shape (product type, requirements, region,
+and currency), plus the same preview/consent and source handling. Do not derive
+search terms from private budget context or silently route a purchase through
+travel's destination/date requirements. Current prices and availability need
+dated sources; an unresearched estimate remains visibly provisional.
 
 Named yearly income estimates can contribute to a conditional funding forecast
 when included. They never increase **Set aside now**, which uses recorded savings.

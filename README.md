@@ -79,6 +79,9 @@ python3 scripts/update.py
 
 This stops Abacus, syncs locked dependencies, migrates, maintains advisor permissions,
 rebuilds, and starts it.
+It can be rerun for build + restart: Alembic applies only pending migrations, and
+advisor setup preserves its managed login while refreshing permissions. Dependency
+sync and the frontend build run on every invocation.
 Use `--dry-run` to preview commands. A failed update stops before later steps.
 See [upgrade and recovery details](docs/operations.md#upgrade).
 

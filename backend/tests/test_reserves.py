@@ -3,6 +3,7 @@ from datetime import date
 import pytest
 from abacus.models import (
     BillPayment,
+    Purchase,
     ReservePlan,
     SavingsObservation,
     Transaction,
@@ -51,6 +52,49 @@ def record(client, amount, as_of):
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def test_permanent_plan_and_draft_deletion_survives_repeated_upgrades(
+    client, category_id, db, monkeypatch
+):
+    from alembic import command
+    from alembic.config import Config
+
+    today(monkeypatch, "2026-11-07")
+    bill(client, category_id)
+    client.put("/api/savings", json={"amount": 50000, "month": "2026-11"})
+    plan(client)
+    draft = client.post(
+        "/api/purchases",
+        json=dict(
+            name="Vacation draft",
+            amount=100000,
+            month="2027-09",
+            category_id=category_id,
+        ),
+    ).json()
+    before = client.get("/api/forecast?month=2026-11").json()
+    savings = client.get("/api/savings").json()
+    observations = client.get("/api/reserve-check").json()["observations"]
+    assert client.delete("/api/purchases/" + draft["id"]).status_code == 200
+    deleted = client.delete("/api/reserve-check/plan")
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["plan"] is None
+    assert deleted.json()["status"] == "not_configured"
+    assert client.delete("/api/reserve-check/plan").json()["plan"] is None
+    assert db.scalar(select(func.count()).select_from(ReservePlan)) == 0
+    assert db.scalar(select(func.count()).select_from(Purchase)) == 0
+    assert client.get("/api/purchases").json() == []
+    assert client.get("/api/forecast?month=2026-11").json() == before
+    assert client.get("/api/savings").json() == savings
+    assert client.get("/api/reserve-check").json()["observations"] == observations
+    assert db.scalar(select(func.count()).select_from(Transaction)) == 0
+    db.close()
+    for _ in range(2):
+        command.upgrade(Config("alembic.ini"), "head")
+    assert client.get("/api/reserve-check").json()["plan"] is None
+    assert client.get("/api/purchases").json() == []
+    assert client.get("/api/savings").json() == savings
 
 
 def test_manual_balance_drift_has_fixed_target_excludes_surplus_and_never_writes_spending(

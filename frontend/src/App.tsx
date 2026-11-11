@@ -835,12 +835,6 @@ export default function App() {
               <>
                 {view === 'Overview' && forecast && (
                   <>
-                    <ReserveMonitor
-                      currency={currency}
-                      revision={revision}
-                      onConfigure={() => setView('Recurring accounts')}
-                      onChanged={refresh}
-                    />
                     <div className="stats overview-stats">
                       <div className="stat">
                         <span className="stat-label">
@@ -906,6 +900,13 @@ export default function App() {
                         </button>
                       </div>
                     </div>
+                    <ReserveMonitor
+                      collapsible
+                      currency={currency}
+                      revision={revision}
+                      onConfigure={() => setView('Recurring accounts')}
+                      onChanged={refresh}
+                    />
                     {budgetAlerts.ready &&
                       forecast.deficit &&
                       !budgetAlerts.isDismissed('forecast_deficit', month) && (
@@ -1061,9 +1062,7 @@ export default function App() {
                                 ? fmt(forecast.income)
                                 : '…'}
                             </strong>
-                            <small>
-                              {monthLabel(month)} · forecast income
-                            </small>
+                            <small>{monthLabel(month)} · forecast income</small>
                           </div>
                         </div>
                       </section>

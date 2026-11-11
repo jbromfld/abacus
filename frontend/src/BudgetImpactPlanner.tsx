@@ -296,7 +296,7 @@ export default function BudgetImpactPlanner({
     if (
       !selected ||
       !window.confirm(
-        'Delete this estimate? Saved recurring accounts stay unchanged.',
+        'Permanently delete this estimate? Saved recurring accounts stay unchanged. This cannot be undone.',
       )
     )
       return;

@@ -1,5 +1,12 @@
-import { useEffect, useState } from 'react';
-import { AlertTriangle, Check, CalendarClock } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
+import {
+  AlertTriangle,
+  Check,
+  CalendarClock,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
+} from 'lucide-react';
 import { api, inputAmount, money, nonnegativeMinor } from './api';
 import type { ReserveCheck, SavingsSnapshot } from './api';
 
@@ -14,12 +21,14 @@ export default function ReserveMonitor({
   currency,
   revision,
   manage = false,
+  collapsible = false,
   onConfigure,
   onChanged,
 }: {
   currency: string;
   revision: number;
   manage?: boolean;
+  collapsible?: boolean;
   onConfigure: () => void;
   onChanged: () => void;
 }) {
@@ -32,6 +41,8 @@ export default function ReserveMonitor({
   const [error, setError] = useState('');
   const [showPlan, setShowPlan] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
@@ -114,6 +125,20 @@ export default function ReserveMonitor({
         as_of: asOf,
       }),
     );
+  const deletePlan = () => {
+    if (
+      !window.confirm(
+        'Permanently delete this reserve plan and its saved funding target? Annual bills, savings balances, and transactions will remain. This cannot be undone.',
+      )
+    )
+      return;
+    void run(async () => {
+      const updated = await api<ReserveCheck>('/reserve-check/plan', 'DELETE');
+      setShowPlan(false);
+      setInitialized(false);
+      return updated;
+    });
+  };
   if (!report)
     return error ? (
       <p className="notice danger" role="alert">
@@ -223,15 +248,32 @@ export default function ReserveMonitor({
               : message}
           </p>
         </div>
-        {report.status === 'on_track' ? (
-          <Check size={19} />
-        ) : warning && !report.dismissed ? (
-          <AlertTriangle size={19} />
-        ) : (
-          <CalendarClock size={19} />
-        )}
+        <div className="button-group reserve-header-actions">
+          {report.status === 'on_track' ? (
+            <Check size={19} />
+          ) : warning && !report.dismissed ? (
+            <AlertTriangle size={19} />
+          ) : (
+            <CalendarClock size={19} />
+          )}
+          {collapsible && (
+            <button
+              className="text-button"
+              aria-expanded={expanded}
+              aria-controls={contentId}
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              {expanded ? 'Hide reserve details' : 'Show reserve details'}
+            </button>
+          )}
+        </div>
       </div>
-      <div className="reserve-content">
+      <div
+        id={contentId}
+        className="reserve-content"
+        hidden={collapsible && !expanded}
+      >
         {manage && !report.enabled && (
           <p className="notice">
             Reserve alerts are turned off in Settings. You can still manage the
@@ -331,6 +373,18 @@ export default function ReserveMonitor({
           </>
         ) : (
           <>
+            {report.plan && (
+              <div className="button-group">
+                <button
+                  type="button"
+                  className="text-button red"
+                  disabled={busy}
+                  onClick={deletePlan}
+                >
+                  <Trash2 size={14} /> Permanently delete reserve plan
+                </button>
+              </div>
+            )}
             {report.eligible_bill_count === 0 && (
               <p className="notice">
                 Configure an annual payable with monthly distribution and a due

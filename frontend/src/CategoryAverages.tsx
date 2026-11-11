@@ -130,8 +130,9 @@ export default function CategoryAverages({
     let active = true;
     const abort = new AbortController();
     setBusy(true);
-    const params = new URLSearchParams({ end });
-    selectedIds.forEach((id) => params.append('category_ids', id));
+    const [requestEnd, requestIds] = JSON.parse(key) as [string, string[]];
+    const params = new URLSearchParams({ end: requestEnd });
+    requestIds.forEach((id) => params.append('category_ids', id));
     api<SpendingAverages>(
       '/spending/averages?' + params,
       'GET',

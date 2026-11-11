@@ -81,7 +81,6 @@ export default function UpcomingBills({
       clearInterval(timer);
       document.removeEventListener('visibilitychange', visible);
       window.removeEventListener('focus', visible);
-      sequence.current++;
       controller.current?.abort();
     };
   }, [revision, load]);

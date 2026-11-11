@@ -60,6 +60,9 @@ import type { Field, Editor } from './FormEditor';
 import OverviewComparison from './OverviewComparison';
 import YearSummary from './YearSummary';
 import { useWorkspace } from './useWorkspace';
+import { invalidateResources, useResourceRevision } from './resourceCache';
+import { usePagedRecords } from './usePagedRecords';
+import type { ImportSummary } from './api';
 
 const colors = [
   '#548574',
@@ -121,7 +124,17 @@ export default function App() {
   const actualMonth = actualMonthFor(month, currentActual);
   const [actualReport, setActualReport] = useState<Forecast | null>(null);
   const [actualLoading, setActualLoading] = useState(true);
-  const [revision, setRevision] = useState(0);
+  const revision = useResourceRevision([
+    'settings',
+    'categories',
+    'accounts',
+    'recurring',
+    'forecast',
+    'planning',
+    'imports',
+  ]);
+  const transactionRevision = useResourceRevision(['transactions']);
+  const importRevision = useResourceRevision(['imports']);
   const {
     settings,
     categories,
@@ -129,11 +142,9 @@ export default function App() {
     setAccounts,
     recurring,
     forecast,
-    imports,
     loading,
     error: loadError,
-  } = useWorkspace(month, revision);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  } = useWorkspace(month);
   const [error, setError] = useState('');
   const [editor, setEditor] = useState<Editor | null>(null);
   const [importJob, setImportJob] = useState<ImportJob | null>(null);
@@ -145,6 +156,18 @@ export default function App() {
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [overlay, setOverlay] = useState(true);
   const [query, setQuery] = useState('');
+  const transactionPage = usePagedRecords<Transaction>(
+    `/transactions?month=${actualMonth}&q=${encodeURIComponent(query)}`,
+    view === 'Spending' && spendingMode === 'transactions',
+    transactionRevision,
+  );
+  const transactions = transactionPage.items;
+  const importPage = usePagedRecords<ImportSummary>(
+    '/imports',
+    view === 'Statement imports',
+    importRevision,
+  );
+  const imports = importPage.items;
   const [models, setModels] = useState<{ models: string[]; error: string }>({
     models: [],
     error: '',
@@ -167,7 +190,7 @@ export default function App() {
       setScrollToBreakdown(false);
     }
   }, [scrollToBreakdown, view, spendingMode]);
-  const refresh = () => setRevision((n) => n + 1);
+  const refresh = () => invalidateResources('/transactions');
   const openOverview = () => {
     setMonth(monthNow());
     setView('Overview');
@@ -191,25 +214,14 @@ export default function App() {
     let active = true;
     const controller = new AbortController();
     setActualLoading(true);
-    Promise.all([
-      api<Forecast>(
-        `/forecast?month=${actualMonth}`,
-        'GET',
-        undefined,
-        controller.signal,
-      ),
-      api<Transaction[]>(
-        `/transactions?month=${actualMonth}`,
-        'GET',
-        undefined,
-        controller.signal,
-      ),
-    ])
-      .then(([report, rows]) => {
-        if (active) {
-          setActualReport(report);
-          setTransactions(rows);
-        }
+    api<Forecast>(
+      `/forecast?month=${actualMonth}`,
+      'GET',
+      undefined,
+      controller.signal,
+    )
+      .then((report) => {
+        if (active) setActualReport(report);
       })
       .catch((e) => {
         if (active && (e as Error).name !== 'AbortError')
@@ -231,7 +243,7 @@ export default function App() {
           .then(setModels)
           .catch((e) => setError(e.message));
     }
-  }, [view, revision]);
+  }, [view, revision, settings.advisor_enabled]);
   useEffect(() => {
     if (view === 'Budget advisor' && !settings.advisor_enabled)
       setView('Settings');
@@ -260,7 +272,7 @@ export default function App() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, []);
+  }, [setAccounts]);
   const monitorCard = async (id: string, enabled: boolean) => {
     setMonitoring(id);
     setError('');
@@ -1325,6 +1337,32 @@ export default function App() {
                             </button>
                           </div>
                         </div>
+                        {transactionPage.error && (
+                          <p role="alert">{transactionPage.error}</p>
+                        )}
+                        <div
+                          className="button-group"
+                          aria-label="Transaction pages"
+                        >
+                          <button
+                            disabled={
+                              !transactionPage.hasPrevious ||
+                              transactionPage.loading
+                            }
+                            onClick={transactionPage.first}
+                          >
+                            First page
+                          </button>
+                          <button
+                            disabled={
+                              !transactionPage.next_cursor ||
+                              transactionPage.loading
+                            }
+                            onClick={transactionPage.next}
+                          >
+                            Next page
+                          </button>
+                        </div>
                         <div className="transaction-toolbar">
                           <input
                             aria-label="Search transactions"
@@ -1517,6 +1555,21 @@ export default function App() {
                       <button onClick={startImport}>
                         <Upload size={16} />
                         Import statements
+                      </button>
+                    </div>
+                    {importPage.error && <p role="alert">{importPage.error}</p>}
+                    <div className="button-group" aria-label="Import pages">
+                      <button
+                        disabled={!importPage.hasPrevious || importPage.loading}
+                        onClick={importPage.first}
+                      >
+                        First page
+                      </button>
+                      <button
+                        disabled={!importPage.next_cursor || importPage.loading}
+                        onClick={importPage.next}
+                      >
+                        Next page
                       </button>
                     </div>
                     {imports.length ? (

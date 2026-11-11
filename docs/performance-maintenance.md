@@ -28,16 +28,49 @@ Planning and savings behavior remains covered by backend regressions. Funding
 calculations reuse per-schedule changes, and savings-aware forecast windows skip
 an unused intermediate projection.
 
-## Remaining implementation
+## Completed follow-up
 
-- Remove legacy APIs, schemas, advisor inputs, settings, and storage through a new
-  migration, including the authorized deletion of obsolete records.
-- Introduce resource-specific invalidation and parameter-keyed shared reads.
-- Paginate transaction and import-history APIs and update their consumers.
-- Extract feature routers and frontend screen ownership.
-- Add explicit response contracts, generated frontend types, and CI drift checks.
-- Enable effect-dependency checks and resolve the existing App input warnings.
-- Complete populated migration tests, broader synthetic benchmarks, and browser QA.
+Migration 0019 removes the obsolete planning tables and reserve settings. Its
+downgrade restores empty schemas only. Current Planning, recurring bills, imports,
+transactions, and saved savings are covered by populated migration tests. Retired
+routes return 404 and retired advisor/settings/projection inputs are rejected.
+Historical migration files are unchanged.
 
-Verification uses disposable PostgreSQL only. Build artifacts go under `/tmp`;
-applying migrations and restarting the installed service are separate operations.
+Transaction and import history now use bounded cursor pages. Both default to 100
+rows and cap pages at 200; date/creation-time ties use IDs for stable ordering.
+The UI fetches rows only for the relevant screen and keeps review edits across
+pages. Transaction/import route handlers and common CRUD helpers are extracted
+from the application composition module.
+
+Shared parameter-keyed reads deduplicate requests, retain independent cancellation
+ownership, and cache for up to 30 seconds. Mutations invalidate affected resource
+versions and dependent financial summaries. Metadata resources refresh separately;
+a failed account/category read does not discard successful settings or forecasts.
+Manual refresh invalidates financial reads.
+
+Core response schemas drive generated TypeScript contracts. CI detects generated
+contract drift. Effect-dependency linting is an error and passes without warnings;
+the old App input warnings were resolved with correct API fixtures.
+
+## Measurements and verification
+
+A synthetic 5,000-row unique-description import comparison on local disposable
+PostgreSQL measured 5,000 queries / 3,135.78 ms for the former per-row matching
+versus 21 queries / 225.92 ms for batched validation. The new measurement includes
+row validation; this is one local run, not a production latency guarantee.
+Reproduce with `TEST_DATABASE_URL=... uv run python scripts/benchmark_import_validation.py`.
+The benchmark requires an abacus_test database and rolls back synthetic records.
+
+Tests cover equal-date/creation-time page boundaries, literal search, cursor and
+limit validation, shared-request cancellation, targeted invalidation, review edits,
+removed API validation, and data preservation through migration. Verification
+builds are placed under `/tmp`. Browser visual/keyboard/narrow-layout QA could
+not run because the browser-control host was unavailable.
+
+Applying migrations and restarting the installed service are separate operations.
+
+Final verification: 490 backend tests, 42 frontend tests, Alembic schema check,
+Ruff lint/format, ESLint, Prettier, TypeScript, generated-contract drift check,
+and the production build passed. Obsolete feature tests were removed; current
+advisor privacy and model-error tests were adapted to hypothetical scenarios.
+The backend emits an existing Starlette TestClient deprecation warning.

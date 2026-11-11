@@ -56,7 +56,7 @@ the port are left alone until they stop. See [automatic startup and controls](do
 for stop/start/restart/uninstall, logs, and updates. Temporal, Docker, and cron are
 not required for this local macOS setup.
 
-Migration **0016** replaces the old planning flow and clears obsolete purchase, bill-estimate, and combined reserve records. Imported expenses and recurring bills are preserved. New goals live in **Planning**.
+Migration **0016** replaces the old planning flow and clears obsolete purchase, bill-estimate, and combined reserve records. Imported expenses and recurring bills are preserved. New goals live in **Planning**. Migration **0019** removes the obsolete planning tables and APIs permanently; back up before upgrading. Current Planning goals and financial records are preserved. See [upgrade and recovery details](docs/operations.md#upgrade).
 
 ### Restart only
 

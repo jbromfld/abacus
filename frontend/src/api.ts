@@ -1,25 +1,17 @@
-export type Category = { id: string; name: string };
-export type Account = Category & {
-  stale_alert_enabled: boolean;
-  csv_mapping: Record<string, string | null> | null;
-  last_information_date: string | null;
-  days_since_update: number | null;
-  stale: boolean;
-};
+import type * as Contract from './generated/api';
+import { sharedRead, invalidateResources } from './resourceCache';
+export type Category = Pick<Contract.CategoryOut, 'id' | 'name'>;
+export type Account = Contract.AccountOut;
 export type PayeeRule = {
   id: string;
   payee: string;
   kind: string;
   category_id: string;
 };
-export type Settings = {
-  currency: string;
-  model: string;
-  advisor_enabled: boolean;
-  advisor_memory_enabled?: boolean;
-  reserve_alerts_enabled: boolean;
-  reserve_checkpoint_day: number;
-};
+export type Settings = Pick<
+  Contract.SettingsOut,
+  'currency' | 'model' | 'advisor_enabled' | 'advisor_memory_enabled'
+>;
 export type Change = {
   id: string;
   month: string;
@@ -44,47 +36,10 @@ export type Recurring = {
   ach_account_id: string | null;
   changes: Change[];
 };
-export type Purchase = {
-  id: string;
-  name: string;
-  amount: number;
-  month: string;
-  category_id: string;
-  notes: string;
-  included: boolean;
+export type Transaction = Omit<Contract.TransactionOut, 'import_id'> & {
+  import_id?: string | null;
 };
-export type Transaction = {
-  id: string;
-  date: string;
-  description: string;
-  amount: number;
-  kind: string;
-  category_id: string | null;
-  account_id: string;
-  import_id?: string;
-  provenance?: { type?: string };
-};
-export type Forecast = {
-  month: string;
-  income: number;
-  expenses: number;
-  remaining: number;
-  deficit: boolean;
-  actual_deficit: boolean;
-  actual: {
-    expenses: number;
-    status: string;
-    marked_complete: boolean;
-    transaction_count: number;
-  };
-  lines: {
-    id: string;
-    name: string;
-    kind: string;
-    amount: number;
-    category_id: string | null;
-  }[];
-};
+export type Forecast = Contract.ForecastOut;
 export type SavingsAwareForecast = Forecast & {
   savings_balance: number | null;
   remaining_with_savings: number | null;
@@ -118,14 +73,7 @@ export type ReviewRow = {
   source_index?: number;
   classification?: string | null;
 };
-export type ImportSummary = {
-  id: string;
-  filename: string;
-  period: string;
-  status: string;
-  account_id: string;
-  error: string;
-};
+export type ImportSummary = Contract.ImportSummaryOut;
 export type ImportJob = ImportSummary & {
   commit_summary?: { added: number; skipped: number } | null;
   rows: ReviewRow[];
@@ -137,7 +85,7 @@ export type ImportJob = ImportSummary & {
     mapping_warning?: string | null;
   };
 };
-export async function api<T>(
+async function request<T>(
   path: string,
   method = 'GET',
   body?: unknown,
@@ -279,13 +227,6 @@ export type MonthlyBillScenario = {
   start_month: string;
   end_month: string | null;
 };
-export type BillEstimate = MonthlyBillScenario & {
-  id: string;
-  category_id: string;
-  due_day: number | null;
-  included: boolean;
-  recurring_id: string | null;
-};
 export type SavingsPoint = {
   month: string;
   income: number;
@@ -346,7 +287,6 @@ export type SavingsProjection = {
 export type AdvisorBillPlan = {
   savings: SavingsInputs;
   bill?: MonthlyBillScenario;
-  estimate_id?: string;
   question: string;
 };
 export function nonnegativeMinor(value: string, currency: string) {
@@ -373,61 +313,6 @@ export type SpendingAverages = {
   average: number | null;
   categories: CategoryAverage[];
   basis: string;
-};
-
-export type ReserveCheck = {
-  today: string;
-  enabled: boolean;
-  checkpoint_day: number;
-  eligible_bill_count: number;
-  status:
-    | 'no_bills'
-    | 'not_configured'
-    | 'needs_update'
-    | 'below_target'
-    | 'payment_risk'
-    | 'on_track'
-    | 'scheduled';
-  dismissed: boolean;
-  plan: null | {
-    amount: number;
-    start_date: string;
-    schedules: {
-      name: string;
-      start_month: string;
-      end_month: string | null;
-      due_day: number;
-      due_month: number;
-      changes: { month: string; amount: number; override: boolean }[];
-    }[];
-    schedule_changed: boolean;
-    dismissed_until: string | null;
-  };
-  observations: { amount: number; as_of: string }[];
-  latest?: { amount: number; as_of: string } | null;
-  checkpoint?: string | null;
-  next_checkpoint?: string;
-  target?: number;
-  target_as_of?: string;
-  next_target?: number;
-  fresh?: boolean;
-  shortfall?: number | null;
-  upcoming?: {
-    due_date: string;
-    bills: { name: string; amount: number }[];
-    amount: number;
-    projected_before_payment: number | null;
-    shortfall: number | null;
-    assumes_future_allocations: boolean;
-  }[];
-  checkpoints?: {
-    date: string;
-    target: number;
-    allocation: number;
-    allocations: { name: string; amount: number }[];
-    allocations_to_date: number;
-    payments_to_date: number;
-  }[];
 };
 
 export type AdvisorSpendingComparison = {
@@ -460,3 +345,25 @@ export type AdvisorSpendingHistory = {
   additional_payees_omitted: number;
   payee_selection: string;
 };
+
+export async function api<T>(
+  path: string,
+  method = 'GET',
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
+  const cacheable =
+    /^\/(settings|categories|accounts|recurring|forecast|forecasts|trends|spending|expenses|planning|savings)(?:[/?]|$)/.test(
+      path,
+    ) && !path.startsWith('/planning/draft');
+  if (method === 'GET' && cacheable)
+    return sharedRead(path, signal, (owned) =>
+      request<T>(path, method, body, owned),
+    );
+  if (method !== 'GET') invalidateResources(path, false);
+  try {
+    return await request<T>(path, method, body, signal);
+  } finally {
+    if (method !== 'GET') invalidateResources(path);
+  }
+}

@@ -19,6 +19,9 @@ vi.mock('./UpcomingBills', () => ({ default: () => null }));
 vi.mock('./ExpenseBreakdown', () => ({ default: () => null }));
 it('never displays November totals under December after its request fails, and skips hidden trend reads', async () => {
   vi.mocked(api).mockImplementation(async (path) => {
+    if (path === '/savings')
+      return { amount: null, month: '2026-11', floor: 0 };
+    if (path.startsWith('/imports?')) return { items: [], next_cursor: null };
     if (path === '/settings')
       return {
         currency: 'USD',
@@ -266,6 +269,9 @@ it('keeps transactions mounted through minute timers and manual refreshes while 
   let hold = false;
   const pending: (() => void)[] = [];
   vi.mocked(api).mockImplementation(async (path) => {
+    if (path === '/savings')
+      return { amount: null, month: '2026-11', floor: 0 };
+    if (path.startsWith('/imports?')) return { items: [], next_cursor: null };
     if (path === '/settings')
       return {
         currency: 'USD',
@@ -288,9 +294,14 @@ it('keeps transactions mounted through minute timers and manual refreshes while 
     if (path.startsWith('/transactions?')) {
       if (hold)
         return new Promise((resolve) =>
-          pending.push(() => resolve([{ ...transaction, amount: 1500 }])),
+          pending.push(() =>
+            resolve({
+              items: [{ ...transaction, amount: 1500 }],
+              next_cursor: null,
+            }),
+          ),
         );
-      return [transaction];
+      return { items: [transaction], next_cursor: null };
     }
     if (path === '/payee-review/payees')
       return { total: 0, groups: [], ungrouped: [], review: null };
@@ -302,11 +313,14 @@ it('keeps transactions mounted through minute timers and manual refreshes while 
   render(<App />);
   fireEvent.click(screen.getByRole('button', { name: 'Spending' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Transactions' }));
-  const anchor = await screen.findByText('Transaction anchor');
-  const row = anchor.closest('tr')!;
+  await screen.findByText('Transaction anchor');
   fireEvent.change(screen.getByLabelText('Search transactions'), {
     target: { value: 'anchor' },
   });
+  await waitFor(() =>
+    expect(screen.getByText('Transaction anchor')).toBeInTheDocument(),
+  );
+  const row = screen.getByText('Transaction anchor').closest('tr')!;
   vi.mocked(api).mockClear();
   hold = true;
   await act(async () => {

@@ -17,6 +17,10 @@ export default function ImportReview({
   onClose: () => void;
   onChanged: (update?: ImportUpdate) => void;
 }) {
+  const onChangedRef = useRef(onChanged);
+  useEffect(() => {
+    onChangedRef.current = onChanged;
+  }, [onChanged]);
   const [job, setJob] = useState(initial);
   const [rows, setRows] = useState<ReviewRow[]>(
     initial.rows.map((r, i) => ({ ...r, source_index: i })),
@@ -60,7 +64,7 @@ export default function ImportReview({
         setJob(j);
         if (j.status !== 'processing') {
           setRows(j.rows.map((r, i) => ({ ...r, source_index: i })));
-          onChanged(j);
+          onChangedRef.current(j);
           return;
         }
       } catch (e) {

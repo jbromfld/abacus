@@ -43,7 +43,7 @@ export default function SavingsSettings({
     return () => {
       active = false;
     };
-  }, [currency]);
+  }, [currency, factor]);
   const inputs = useMemo(() => {
     try {
       return amount && month

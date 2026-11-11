@@ -145,9 +145,9 @@ idempotency, revisions, permissions, pagination, redaction, and atomic reindexin
 
 Dreaming defaults off. Upgrade Babar first by rerunning its setup (or
 `uv run --no-sync python scripts/setup_memory.py`), which preserves its managed
-password and existing notes while migrating memory storage to schema 2 and
+password and existing notes while migrating memory storage to schema 3 and
 refreshing grants. Apply Abacus migration 0020, rebuild, and restart normally.
-Do not turn it on until memory status advertises `dreaming-v1`.
+Do not turn it on until memory status advertises `dreaming-controller-v1`.
 
 In Settings → Advisor memory → Memory dreaming, enable the toggle. Saving or
 editing a note queues a pass after a 60-second debounce. “Dream now” queues one
@@ -177,7 +177,10 @@ all their revisions/embeddings, and Babar's content-bearing consolidation histor
 Abacus purges its pending/recent dreaming payloads before forwarding a forget
 request, including uncertain failures. Older backups can still retain copies.
 
-Jobs/proposals are persisted before external writes. On restart, operation keys
+Babar owns proposal snapshots, policy decisions and operation recovery; Abacus
+keeps scheduling handles only. Pre-controller pending/review proposals are cancelled
+on adoption and must be freshly prepared; source memories are preserved.
+Babar persists proposals before writes. On restart, operation keys
 reconcile a possibly completed write before resuming. Turning dreaming off cancels
 queued/review work and prevents later commits; stopping Abacus also prevents a
 running model result from committing after shutdown. No dreaming pass recursively
@@ -194,3 +197,25 @@ Optional [LangSmith content capture](operations.md#optional-langsmith-model-trac
 also applies to memory-drafting and dreaming model calls. It is off by default;
 enabling it exports model inputs/outputs, including recalled notes or retained
 sources present in those prompts. Babar's MCP subprocess remains untraced.
+
+### Optional consumer boundaries
+
+Abacus works without Babar: disabling memory avoids starting the MCP subprocess or
+issuing memory/dreaming requests. A memory outage shows a notice while advisor chat
+continues. Ordinary recall and approved manual writes do not require dreaming, a
+controller capability, or a dreaming model call. Older Babar capabilities therefore
+only prevent dreaming; upgrade guidance does not disable ordinary memory.
+
+When explicitly enabled, Abacus debounces/schedules work and executes Babar's
+structured model request through the configured local-model adapter. Babar owns
+source binding, policy evaluation, atomic commits and review invariants. Abacus
+never interprets compatibility or falls back to direct consolidation. Turning
+dreaming off cancels scheduling immediately; pending Babar cancellation is retried
+after reconnecting. If memory is disabled, no remote cleanup is attempted until
+memory and dreaming are enabled again. No independent Babar worker continues
+committing while the consumer is disabled.
+
+Generated summaries, saved notes and retained sources stay untrusted when recalled.
+The quarantine is an application interface, not an OS sandbox or semantic proof.
+See Babar's [current controller](../../babar/docs/DREAMING.md) and
+[future-state README](../../babar/docs/future-state/README.md).

@@ -491,3 +491,12 @@ data rather than a historical snapshot; refresh starts at the first page.
 Core read responses have explicit OpenAPI schemas. Generate frontend contracts
 with `uv run python scripts/generate_api_types.py`; CI runs the same command with
 `--check` to detect drift. Generated files are not manually formatted or edited.
+
+### Dreaming controller ownership
+
+The existing `/api/advisor/dreaming` routes are consumer UI/scheduling endpoints.
+Their review groups are hydrated from Babar's `dreaming-controller-v1` MCP workflow;
+local job records retain operation handles only. Memory remains independently
+optional. Unsupported dreaming capabilities return upgrade guidance without
+disabling normal memory. Approval cannot override Babar's source revision, kind,
+lifecycle or date invariants. See [advisor memory](advisor-memory.md).

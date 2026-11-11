@@ -139,3 +139,26 @@ def test_real_chat_transport_records_final_ollama_usage(monkeypatch):
         "output_tokens": 3,
         "total_tokens": 13,
     }
+
+
+def test_controller_trace_is_metadata_only_even_when_capture_enabled(monkeypatch):
+    client = config(monkeypatch, capture=True)
+    tracing.controller_event(
+        "synthetic-job", "synthetic-operation", "validation", "review"
+    )
+    created = client.create_run.call_args.kwargs
+    assert created["run_type"] == "chain"
+    assert "messages" not in created["inputs"]
+    final = client.update_run.call_args.kwargs
+    assert final["outputs"] == {"outcome": "review"}
+    assert "raw" not in str(final) and "evidence" not in str(final)
+
+
+def test_controller_trace_failures_do_not_change_decisions(monkeypatch):
+    config(monkeypatch)
+    monkeypatch.setattr(
+        tracing,
+        "_new_run",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("offline")),
+    )
+    tracing.controller_event("job", "operation", "commit", "committed")

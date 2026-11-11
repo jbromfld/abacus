@@ -19,11 +19,11 @@ def test_batch_files_have_independent_statuses_and_require_review(client, accoun
         upload(client, account_id, "2025-11", "nov.csv", second),
     ]
     assert [r.status_code for r in responses] == [201, 422, 409, 201]
-    imports = client.get("/api/imports").json()
+    imports = client.get("/api/imports").json()["items"]
     assert len(imports) == 2
     assert {i["period"] for i in imports} == {"2025-10", "2025-11"}
     assert all(i["status"] == "prepared" for i in imports)
-    assert client.get("/api/transactions").json() == []
+    assert client.get("/api/transactions").json()["items"] == []
 
 
 def test_batch_files_can_target_different_cards(client, account_id):

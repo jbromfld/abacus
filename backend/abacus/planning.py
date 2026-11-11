@@ -20,6 +20,7 @@ from .db import session
 from .funding import annual_occurrence, cash_projection, funding_coverage
 from .local_model import chat_with_model
 from .models import BillPayment, Plan, PlanCategory, Recurring, Settings
+from .responses import PlanningOut
 from .schemas import BillDate, CategoryIn, Money, Month, Name
 
 router = APIRouter(prefix="/api/planning")
@@ -319,7 +320,7 @@ def planning_summary(db, inputs=None, projection_start=None, include_projection=
     )
 
 
-@router.get("")
+@router.get("", response_model=PlanningOut)
 def read_planning(db: DB, month: Month | None = None):
     return planning_summary(db, projection_start=month)
 

@@ -12,7 +12,7 @@ from .budget import ActualWindow, ForecastInputs, forecast, shift_month
 from .category_planning import category_averages
 from .clock import local_today
 from .local_model import chat_with_model
-from .models import Category, Purchase, Settings
+from .models import Category, Settings
 from .research import PublicResearchRequest, gather_research
 from .savings import advisor_savings_projection
 
@@ -46,8 +46,7 @@ def forecast_comparison(db, month, inputs=None, categories=None):
                 "name": line["name"],
                 "kind": line["kind"],
                 "category": categories.get(line["category_id"]),
-                "source": line.get("source")
-                or ("recurring" if schedule else "included_purchase"),
+                "source": line.get("source") or "recurring",
                 "frequency": schedule.frequency if schedule else None,
                 "annual_distributed": schedule.distribute_annual
                 if schedule and schedule.frequency == "annual"
@@ -133,17 +132,15 @@ def budget_context(db, request):
             }
         )
     scenario = None
-    purchase = db.get(Purchase, request.purchase_id) if request.purchase_id else None
-    if purchase or request.scenario:
-        item = purchase or request.scenario
-        included = bool(purchase and purchase.included)
+    if request.scenario:
+        item = request.scenario
         baseline = forecast(db, item.month, inputs=inputs)
-        after = baseline["remaining"] - (0 if included else item.amount)
+        after = baseline["remaining"] - item.amount
         scenario = {
             "name": item.name,
             "month": item.month,
             "amount_minor": item.amount,
-            "already_included": included,
+            "already_included": False,
             "baseline_remaining_minor": baseline["remaining"],
             "remaining_after_purchase_minor": after,
             "would_exceed_forecast": after < 0,
@@ -169,15 +166,6 @@ def budget_context(db, request):
                 ],
             }
         )
-    drafts = db.scalars(
-        select(Purchase)
-        .where(
-            Purchase.included == False,
-            Purchase.month >= months[0],
-            Purchase.month <= months[-1],
-        )
-        .order_by(Purchase.month, Purchase.name)
-    ).all()
     savings_projection = advisor_savings_projection(db, request, inputs=inputs)
     guide_end = shift_month(request.month, -1)
     guide_stats = (
@@ -236,7 +224,6 @@ def budget_context(db, request):
             "category_guides_are_informational_not_expenses": True,
             "bank_balances_and_savings_are_unknown": savings_projection is None
             or not savings_projection["savings_known"],
-            "draft_purchases_are_excluded_unless_selected_as_scenario": True,
         },
         "monthly_forecasts": projections,
         "selected_plan": {
@@ -312,11 +299,6 @@ def budget_context(db, request):
         "forecast_comparison": forecast_comparison(
             db, request.month, inputs=inputs, categories=categories
         ),
-        "draft_purchases": [
-            {"name": p.name, "month": p.month, "amount_minor": p.amount}
-            for p in drafts[:20]
-        ],
-        "additional_drafts_omitted": max(0, len(drafts) - 20),
         "purchase_scenario": scenario,
         "planning_capacity": planning_capacity(
             db, request, today, scenario, inputs=inputs
@@ -356,13 +338,7 @@ def planning_capacity(db, request, today, scenario, inputs=None):
         month = shift_month(start, offset)
         f = forecast(db, month, inputs=inputs)
         recorded = any(line["kind"] == "receivable" for line in f["lines"])
-        # A saved included purchase is already an expense. Restore it only for
-        # this hypothetical earmarking calculation, so its cost is not counted twice.
-        room = f["remaining"] + (
-            scenario["amount_minor"]
-            if scenario and scenario["already_included"] and scenario["month"] == month
-            else 0
-        )
+        room = f["remaining"]
         if buffer is not None and room < buffer:
             shortfalls.append(month)
         contribution = (

@@ -544,3 +544,12 @@ The code entry points are [`main.py`](../backend/abacus/main.py),
 [`budget.py`](../backend/abacus/budget.py), [`savings.py`](../backend/abacus/savings.py),
 [`reserves.py`](../backend/abacus/reserves.py), and
 [`classification.py`](../backend/abacus/classification.py).
+
+### Legacy planning removal (0019)
+
+Back up before upgrading. Migration 0019 permanently deletes obsolete purchases,
+bill estimates, reserve targets, reserve observations, and reserve preferences.
+Current Planning goals, savings balances, recurring bills, imports, and transactions
+are preserved. Downgrade recreates empty legacy tables; deleted records require
+a database backup to recover. The retired endpoints return 404 and removed
+request fields return validation errors. Rebuild the UI with the backend update.

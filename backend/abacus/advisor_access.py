@@ -15,10 +15,8 @@ ADVISOR_TABLES = (
     "plan_categories",
     "payee_groups",
     "payee_rules",
-    "purchases",
     "transactions",
     "month_status",
-    "bill_estimates",
 )
 ADVISOR_COLUMNS = {"accounts": ("id", "name")}
 ROLE_ATTRIBUTES = (

@@ -164,9 +164,10 @@ def test_reset_migration_preserves_imported_expenses_and_recurring_bills(
 ):
     from abacus.advisor_setup import provision_advisor
     from abacus.db import engine
-    from abacus.models import BillEstimate, Purchase, ReservePlan, StatementImport
+    from abacus.models import StatementImport
     from alembic import command
     from alembic.config import Config
+    from sqlalchemy import inspect, text
 
     bill = client.post(
         "/api/recurring",
@@ -204,29 +205,39 @@ def test_reset_migration_preserves_imported_expenses_and_recurring_bills(
     db.commit()
     tx_id = tx.id
     job_id = job.id
+    goal = client.post(
+        "/api/planning",
+        json=dict(name="Retained goal", amount=50000, target_date="2027-12-01"),
+    ).json()
+    savings = client.put(
+        "/api/savings", json=dict(amount=100000, month="2026-11", floor=1000)
+    ).json()
     before = client.get("/api/recurring").json()
     db.close()
     config = Config("alembic.ini")
     try:
-        command.downgrade(config, "0015")
-        db.add(
-            Purchase(
-                name="Obsolete draft",
-                amount=1000,
-                month="2027-01",
-                category_id=category_id,
+        command.downgrade(config, "0018")
+        db.execute(
+            text(
+                "INSERT INTO purchases (id,name,amount,month,category_id,notes,included) VALUES ('old','Old',1000,'2027-01',:category,'',false)"
+            ),
+            {"category": category_id},
+        )
+        db.execute(
+            text(
+                "INSERT INTO bill_estimates (id,name,amount,start_month,category_id) VALUES ('old','Old',1000,'2027-01',:category)"
+            ),
+            {"category": category_id},
+        )
+        db.execute(
+            text(
+                "INSERT INTO reserve_plans (id,amount,start_date,schedules) VALUES (1,1000,'2026-11-01','[]')"
             )
         )
-        db.add(
-            BillEstimate(
-                name="Obsolete bill draft",
-                amount=1000,
-                start_month="2027-01",
-                category_id=category_id,
+        db.execute(
+            text(
+                "INSERT INTO savings_observations (id,as_of,amount) VALUES ('old','2026-11-01',1000)"
             )
-        )
-        db.add(
-            ReservePlan(id=1, amount=1000, start_date=date(2026, 11, 1), schedules=[])
         )
         db.commit()
         db.close()
@@ -236,12 +247,16 @@ def test_reset_migration_preserves_imported_expenses_and_recurring_bills(
         assert db.get(Transaction, tx_id).amount == 1234
         assert db.get(Transaction, tx_id).import_id == job_id
         assert db.get(Transaction, tx_id).provenance == {"row": 1}
+        assert db.get(Plan, goal["id"]).amount == 50000
+        assert client.get("/api/savings").json() == savings
         assert client.get("/api/recurring").json() == before
         assert bill["id"] in [row["id"] for row in before]
-        assert all(
-            db.scalar(select(func.count()).select_from(model)) == 0
-            for model in [Purchase, BillEstimate, ReservePlan, Plan]
-        )
+        assert not {
+            "purchases",
+            "bill_estimates",
+            "reserve_plans",
+            "savings_observations",
+        } & set(inspect(engine).get_table_names())
     finally:
         db.close()
         command.upgrade(config, "head")

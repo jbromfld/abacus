@@ -68,7 +68,7 @@ def test_dismissals_are_permanent_idempotent_and_separate_by_month_and_type(
     assert client.delete("/api/alerts/dismissals").json() == {"restored": 3}
     assert client.get("/api/alerts/dismissals").json() == []
     assert client.delete("/api/alerts/dismissals").json() == {"restored": 0}
-    assert len(client.get("/api/transactions?month=2026-09").json()) == 2
+    assert len(client.get("/api/transactions?month=2026-09").json()["items"]) == 2
 
 
 @pytest.mark.parametrize(

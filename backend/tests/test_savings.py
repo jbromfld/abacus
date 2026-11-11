@@ -1,8 +1,7 @@
 import json
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from abacus.models import BillEstimate, Recurring, Settings, Transaction
+from abacus.models import Settings, Transaction
 from abacus.savings import infer_monthly_bill
 from sqlalchemy import func, select
 
@@ -75,7 +74,6 @@ def test_example_is_deterministic_read_only_and_monthly_budgets_stay_independent
     assert result["lowest_savings"] == 500000
     assert client.get("/api/forecast?month=2026-01").json() == before
     assert db.scalar(select(func.count()).select_from(Transaction)) == 0
-    assert db.scalar(select(func.count()).select_from(BillEstimate)) == 0
     assert db.get(Settings, 1).savings_balance is None
 
 
@@ -144,46 +142,6 @@ def test_exact_rounding_and_annual_rate_changes(client, category_id):
     )
 
 
-def test_saved_purchase_included_once_actuals_never_added_and_income_boundaries(
-    client, category_id, account_id
-):
-    baseline(client, category_id)
-    client.post(
-        "/api/purchases",
-        json=dict(
-            name="Included purchase",
-            amount=10000,
-            month="2026-01",
-            category_id=category_id,
-            included=True,
-        ),
-    )
-    client.post(
-        "/api/purchases",
-        json=dict(
-            name="Draft purchase",
-            amount=50000,
-            month="2026-01",
-            category_id=category_id,
-            included=False,
-        ),
-    )
-    client.post(
-        "/api/transactions",
-        json=dict(
-            date="2026-01-04",
-            description="Actual",
-            amount=20000,
-            kind="purchase",
-            category_id=category_id,
-            account_id=account_id,
-        ),
-    )
-    result = project(client, months=12)
-    assert result["months"][0]["cash_expenses"] == 75000
-    assert result["ending_savings"] == 670000
-
-
 def test_bill_dates_end_month_floor_and_missing_income(client, category_id):
     baseline(client, category_id)
     result = project(
@@ -245,75 +203,6 @@ def test_savings_snapshot_persists_and_does_not_reset_with_other_settings(client
     )
 
 
-def test_bill_estimate_draft_update_conversion_and_no_double_count(client, category_id):
-    baseline(client, category_id)
-    data = dict(
-        name="New insurance",
-        amount=20000,
-        start_month="2026-01",
-        category_id=category_id,
-        due_day=10,
-    )
-    response = client.post("/api/bill-estimates", json=data)
-    assert response.status_code == 201, response.text
-    estimate = response.json()
-    assert client.get("/api/forecast?month=2026-01").json()["remaining"] == 35000
-    payload = {
-        "savings": {"amount": 500000, "month": "2026-01"},
-        "estimate_id": estimate["id"],
-    }
-    preview = client.post("/api/savings/projection", json=payload).json()
-    assert preview["first_bill_month_remaining"] == 15000
-    assert (
-        client.put(
-            "/api/bill-estimates/" + estimate["id"],
-            json={**data, "name": "Insurance draft"},
-        ).status_code
-        == 200
-    )
-    result = client.post("/api/bill-estimates/" + estimate["id"] + "/include")
-    assert result.status_code == 200, result.text
-    assert result.json()["included"] and result.json()["recurring_id"]
-    assert (
-        client.post("/api/bill-estimates/" + estimate["id"] + "/include").status_code
-        == 409
-    )
-    assert (
-        client.put("/api/bill-estimates/" + estimate["id"], json=data).status_code
-        == 409
-    )
-    after = client.post("/api/savings/projection", json=payload).json()
-    assert after["ending_savings"] == preview["ending_savings"]
-    assert after["total_new_bill_cost"] == 0 and after["bill"]["already_included"]
-    assert client.get("/api/forecast?month=2026-01").json()["remaining"] == 15000
-    assert client.get("/api/transactions").json() == []
-    client.delete("/api/bill-estimates/" + estimate["id"])
-    assert client.get("/api/forecast?month=2026-01").json()["remaining"] == 15000
-
-
-def test_concurrent_conversion_adds_only_one_bill(client, category_id, db):
-    estimate = client.post(
-        "/api/bill-estimates",
-        json=dict(
-            name="Estimate",
-            amount=20000,
-            start_month="2026-01",
-            category_id=category_id,
-        ),
-    ).json()
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(
-            pool.map(
-                lambda _: client.post(
-                    "/api/bill-estimates/" + estimate["id"] + "/include"
-                ),
-                range(2),
-            )
-        )
-    assert sorted(r.status_code for r in results) == [200, 409]
-    assert db.scalar(select(func.count()).select_from(Recurring)) == 1
-
-
 @pytest.mark.parametrize(
     "changes",
     [
@@ -330,28 +219,6 @@ def test_concurrent_conversion_adds_only_one_bill(client, category_id, db):
 def test_projection_validation(client, changes):
     payload = {"savings": {"amount": 0, "month": "2026-01"}, **changes}
     assert client.post("/api/savings/projection", json=payload).status_code == 422
-
-
-def test_unknown_estimate_and_deleted_recurring_are_explicit(client, category_id):
-    payload = {"savings": {"amount": 0, "month": "2026-01"}, "estimate_id": "missing"}
-    assert client.post("/api/savings/projection", json=payload).status_code == 404
-    estimate = client.post(
-        "/api/bill-estimates",
-        json=dict(
-            name="Estimate",
-            amount=20000,
-            start_month="2026-01",
-            category_id=category_id,
-        ),
-    ).json()
-    item = client.post("/api/bill-estimates/" + estimate["id"] + "/include").json()
-    client.delete("/api/recurring/" + item["recurring_id"])
-    assert (
-        client.post(
-            "/api/savings/projection", json={**payload, "estimate_id": estimate["id"]}
-        ).status_code
-        == 422
-    )
 
 
 @pytest.mark.parametrize(
@@ -492,7 +359,6 @@ def test_modify_and_remove_recurring_are_read_only(client, category_id, db):
     assert client.get("/api/recurring").json() == before
     assert client.get("/api/forecast?month=2026-01").json()["remaining"] == 35000
     assert db.scalar(select(func.count()).select_from(Transaction)) == 0
-    assert db.scalar(select(func.count()).select_from(BillEstimate)) == 0
 
 
 def test_change_effective_window_preserves_overrides_and_later_rates(
@@ -660,85 +526,6 @@ def test_advisor_monthly_budget_context_without_saved_savings(
     assert context["savings_projection"]["first_bill_month_remaining"] == 15000
     assert not context["savings_projection"]["savings_known"]
     assert context["rules"]["bank_balances_and_savings_are_unknown"]
-
-
-@pytest.mark.parametrize("months", [12, 24])
-def test_as_is_projection_needs_no_bill_and_retains_annual_reserves(
-    client, category_id, account_id, db, months
-):
-    baseline(client, category_id, annual=True)
-    recurring(
-        client,
-        category_id,
-        "Winter tax",
-        60000,
-        frequency="annual",
-        distribute_annual=True,
-        due_day=15,
-        due_month=1,
-    )
-    client.post(
-        "/api/purchases",
-        json=dict(
-            name="Included purchase",
-            amount=10000,
-            month="2026-01",
-            category_id=category_id,
-            included=True,
-        ),
-    )
-    client.post(
-        "/api/purchases",
-        json=dict(
-            name="Excluded draft",
-            amount=50000,
-            month="2026-01",
-            category_id=category_id,
-        ),
-    )
-    client.post(
-        "/api/transactions",
-        json=dict(
-            date="2026-01-04",
-            description="Actual already tracked separately",
-            amount=20000,
-            kind="purchase",
-            category_id=category_id,
-            account_id=account_id,
-        ),
-    )
-    before = client.get("/api/forecast?month=2026-01").json()
-    response = client.post(
-        "/api/savings/projection",
-        json={"savings": {"amount": 500000, "month": "2026-01"}, "months": months},
-    )
-    assert response.status_code == 200, response.text
-    result = response.json()
-    jan, feb, july = result["months"][0], result["months"][1], result["months"][6]
-    assert result["bill"] is None and result["recurring_change"] is None
-    assert result["total_budget_change"] == 0 and result["total_new_bill_cost"] == 0
-    assert len(result["months"]) == months
-    assert jan["forecast_expenses"] == 80000 and jan["cash_expenses"] == 125000
-    assert jan["baseline_savings"] == 475000
-    assert feb["forecast_expenses"] == 70000 and feb["cash_expenses"] == 55000
-    assert feb["baseline_savings"] - jan["baseline_savings"] == 45000
-    assert july["cash_expenses"] == 175000
-    assert sum(
-        p["distributed_allocation_removed"] for p in result["months"]
-    ) == 180000 * (months // 12)
-    assert (
-        sum(p["cash_expenses"] for p in result["months"])
-        == 840000 * (months // 12) + 10000
-    )
-    assert result["ending_savings"] == 500000 + 360000 * (months // 12) - 10000
-    assert all(
-        p["baseline_savings"] == p["scenario_savings"]
-        and p["forecast_expenses"] == p["scenario_forecast_expenses"]
-        for p in result["months"]
-    )
-    assert client.get("/api/forecast?month=2026-01").json() == before
-    assert db.scalar(select(func.count()).select_from(BillEstimate)) == 0
-    assert db.scalar(select(func.count()).select_from(Transaction)) == 1
 
 
 def test_as_is_projection_without_savings_shows_cash_flow_only(client, category_id):

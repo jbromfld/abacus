@@ -283,7 +283,7 @@ def test_private_history_reaches_only_local_model_and_never_brave(
         ]
         == 11111
     )
-    assert len(client.get("/api/transactions").json()) == 2
+    assert len(client.get("/api/transactions").json()["items"]) == 2
 
 
 def test_search_adapter_receives_only_public_request_fields(client, db, monkeypatch):

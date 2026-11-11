@@ -239,7 +239,7 @@ def test_pdf_provenance_stored_once_and_expanded_on_detail(
     for transaction in db.scalars(select(Transaction)):
         assert transaction.provenance["source"] == {"page": 1}
         assert "source" not in transaction.provenance["original_review"]
-    rows = client.get("/api/transactions").json()
+    rows = client.get("/api/transactions").json()["items"]
     assert all(row["provenance"] == {} for row in rows)
     details = client.get("/api/transactions/" + rows[0]["id"]).json()
     assert details["provenance"]["source"]["original"] == "Synthetic page text"
@@ -346,7 +346,7 @@ def test_application_clock_controls_ach_and_completeness(
         },
     )
     assert response.status_code == 201, response.text
-    assert client.get("/api/transactions").json() == []
+    assert client.get("/api/transactions").json()["items"] == []
 
 
 def test_pdf_provenance_migration_round_trip(

@@ -15,7 +15,6 @@ from abacus.models import (
     AlertDismissal,
     AmountChange,
     AnnualIncome,
-    BillEstimate,
     Category,
     ImportPage,
     MonthStatus,
@@ -24,10 +23,7 @@ from abacus.models import (
     PayeeRule,
     Plan,
     PlanCategory,
-    Purchase,
     Recurring,
-    ReservePlan,
-    SavingsObservation,
     Settings,
     StatementImport,
     Transaction,
@@ -72,9 +68,6 @@ def clean_database(monkeypatch, tmp_path, advisor_credentials):
             AnnualIncome,
             AlertDismissal,
             ImportPage,
-            ReservePlan,
-            SavingsObservation,
-            BillEstimate,
             PayeeRule,
             PayeeGroup,
             PayeeReview,
@@ -82,7 +75,6 @@ def clean_database(monkeypatch, tmp_path, advisor_credentials):
             StatementImport,
             AmountChange,
             Recurring,
-            Purchase,
             Account,
             MonthStatus,
         ]:
@@ -90,7 +82,6 @@ def clean_database(monkeypatch, tmp_path, advisor_credentials):
         setting = db.get(Settings, 1)
         setting.model, setting.currency, setting.advisor_enabled = "", "USD", False
         setting.advisor_memory_enabled = False
-        setting.reserve_alerts_enabled, setting.reserve_checkpoint_day = True, 1
         setting.savings_balance, setting.savings_month, setting.savings_floor = (
             None,
             None,

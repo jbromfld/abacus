@@ -4,7 +4,7 @@ from datetime import date
 import httpx
 import pytest
 from abacus import research
-from abacus.advisor import budget_context, planning_capacity
+from abacus.advisor import planning_capacity
 from abacus.models import Settings
 from abacus.schemas import AdvisorIn
 
@@ -190,55 +190,6 @@ def test_brave_transport_uses_server_key_and_bounded_queries(monkeypatch):
     assert records[0]["snippet"] == "Main More"
 
 
-def test_web_advisor_response_contains_sources_but_no_mutation(client, db, monkeypatch):
-    setting = db.get(Settings, 1)
-    setting.advisor_enabled = True
-    setting.model = "local"
-    db.commit()
-    configure(monkeypatch)
-    monkeypatch.setattr(
-        research,
-        "plan_research",
-        lambda *args: research.ResearchPlan(
-            queries=["western NY hotels July 2027"], missing_details=["Exact weekend"]
-        ),
-    )
-    monkeypatch.setattr(
-        research,
-        "search_query",
-        lambda q: [
-            {
-                "title": "Hotel",
-                "url": "https://example.com",
-                "snippet": "A hotel in western NY",
-            }
-        ],
-    )
-    captured = []
-
-    def model(tag, messages):
-        captured.extend(messages)
-        return "Confirm your weekend first. A hotel option is listed in [S1]."
-
-    monkeypatch.setattr("abacus.advisor.chat_with_model", model)
-    response = client.post(
-        "/api/advisor/chat",
-        json=request(message="Plan a western NY trip in July 2027").model_dump(
-            mode="json"
-        ),
-    )
-    assert response.status_code == 200, response.text
-    context = response.json()["context"]
-    assert len(context["monthly_forecasts"]) == 24
-    assert context["web_research"]["sources"][0]["id"] == "S1"
-    assert (
-        "untrusted" in captured[0]["content"]
-        and "missing exact dates" in captured[0]["content"]
-    )
-    assert client.get("/api/purchases").json() == []
-    assert client.get("/api/transactions").json() == []
-
-
 def test_cash_assumptions_and_hypothetical_funding(client, category_id, db):
     client.post(
         "/api/recurring",
@@ -288,49 +239,6 @@ def test_cash_assumptions_and_hypothetical_funding(client, category_id, db):
     assert client.get("/api/forecast?month=2026-11").json()["remaining"] == 100000
 
 
-def test_funding_missing_income_is_unknown_and_included_cost_not_counted_twice(
-    client, category_id, db
-):
-    body = AdvisorIn(
-        month="2026-11",
-        message="When?",
-        planning={"available_savings": 0, "monthly_buffer": 0},
-    )
-    no_income = planning_capacity(db, body, date(2026, 11, 6), None)
-    assert no_income["months"][0]["hypothetical_trip_fund_minor"] is None
-    client.post(
-        "/api/recurring",
-        json=dict(
-            name="Income",
-            kind="receivable",
-            frequency="monthly",
-            start_month="2026-01",
-            amount=100000,
-        ),
-    )
-    purchase = client.post(
-        "/api/purchases",
-        json=dict(
-            name="Trip",
-            amount=50000,
-            month="2026-11",
-            category_id=category_id,
-            included=True,
-        ),
-    ).json()
-    body = AdvisorIn(
-        month="2026-11",
-        message="When?",
-        planning={"available_savings": 0, "monthly_buffer": 0},
-        purchase_id=purchase["id"],
-    )
-    ctx = budget_context(db, body)
-    assert ctx["purchase_scenario"]["remaining_after_purchase_minor"] == 50000
-    capacity = planning_capacity(db, body, date(2026, 11, 6), ctx["purchase_scenario"])
-    assert capacity["months"][0]["potential_contribution_minor"] == 100000
-    assert capacity["earliest_funded_month_for_selected_scenario"] == "2026-11"
-
-
 def test_disabled_research_never_contacts_search_or_query_planner(monkeypatch):
     configure(monkeypatch)
     monkeypatch.setattr(
@@ -365,3 +273,51 @@ def test_research_status_does_not_return_credentials(client, monkeypatch):
     response = client.get("/api/advisor/research-status")
     assert response.status_code == 200 and response.json()["available"]
     assert "test-key" not in response.text
+
+
+def test_web_advisor_response_contains_sources_but_no_mutation(client, db, monkeypatch):
+    setting = db.get(Settings, 1)
+    setting.advisor_enabled = True
+    setting.model = "local"
+    db.commit()
+    configure(monkeypatch)
+    monkeypatch.setattr(
+        research,
+        "plan_research",
+        lambda *args: research.ResearchPlan(
+            queries=["western NY hotels July 2027"], missing_details=["Exact weekend"]
+        ),
+    )
+    monkeypatch.setattr(
+        research,
+        "search_query",
+        lambda q: [
+            {
+                "title": "Hotel",
+                "url": "https://example.com",
+                "snippet": "A hotel in western NY",
+            }
+        ],
+    )
+    captured = []
+
+    def model(tag, messages):
+        captured.extend(messages)
+        return "Confirm your weekend first. A hotel option is listed in [S1]."
+
+    monkeypatch.setattr("abacus.advisor.chat_with_model", model)
+    response = client.post(
+        "/api/advisor/chat",
+        json=request(message="Plan a western NY trip in July 2027").model_dump(
+            mode="json"
+        ),
+    )
+    assert response.status_code == 200, response.text
+    context = response.json()["context"]
+    assert len(context["monthly_forecasts"]) == 24
+    assert context["web_research"]["sources"][0]["id"] == "S1"
+    assert (
+        "untrusted" in captured[0]["content"]
+        and "missing exact dates" in captured[0]["content"]
+    )
+    assert client.get("/api/transactions").json()["items"] == []

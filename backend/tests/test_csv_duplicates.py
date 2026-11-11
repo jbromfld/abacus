@@ -34,7 +34,7 @@ def test_same_file_repeats_are_flagged_and_both_saved(client, account_id, catego
     assert all(row["selected"] and not row["skip_duplicate"] for row in job["rows"])
     result = commit(client, job)
     assert result["commit_summary"] == {"added": 2, "skipped": 0}
-    assert len(client.get("/api/transactions").json()) == 2
+    assert len(client.get("/api/transactions").json()["items"]) == 2
 
 
 def test_overlapping_import_skips_all_exact_matches_even_if_checked(
@@ -54,9 +54,9 @@ def test_overlapping_import_skips_all_exact_matches_even_if_checked(
     assert all(not row["selected"] for row in response.json()["rows"])
     result = commit(client, overlap)
     assert result["commit_summary"] == {"added": 0, "skipped": 2}
-    assert len(client.get("/api/transactions").json()) == 2
+    assert len(client.get("/api/transactions").json()["items"]) == 2
     assert client.post("/api/imports/" + overlap["id"] + "/undo").status_code == 200
-    remaining = client.get("/api/transactions").json()
+    remaining = client.get("/api/transactions").json()["items"]
     assert len(remaining) == 2 and all(t["import_id"] == first["id"] for t in remaining)
 
 
@@ -69,7 +69,7 @@ def test_partial_overlap_skips_known_rows_and_saves_new_repeats(
     job = review_csv(client, account_id, category_id, content)
     result = commit(client, job)
     assert result["commit_summary"] == {"added": 2, "skipped": 2}
-    assert len(client.get("/api/transactions").json()) == 3
+    assert len(client.get("/api/transactions").json()["items"]) == 3
 
 
 def test_all_csv_columns_must_equal_including_unmapped_values(
@@ -81,7 +81,7 @@ def test_all_csv_columns_must_equal_including_unmapped_values(
     job = review_csv(client, account_id, category_id, changed)
     assert not job["rows"][0]["skip_duplicate"]
     assert commit(client, job)["commit_summary"]["added"] == 1
-    assert len(client.get("/api/transactions").json()) == 2
+    assert len(client.get("/api/transactions").json()["items"]) == 2
 
 
 def test_column_order_is_ignored_but_original_values_are_exact(
@@ -107,7 +107,7 @@ def test_column_order_is_ignored_but_original_values_are_exact(
             ]["added"]
             == 1
         ), suffix
-    assert len(client.get("/api/transactions").json()) == 4
+    assert len(client.get("/api/transactions").json()["items"]) == 4
 
 
 def test_different_cards_do_not_skip_and_saved_edits_are_not_overwritten(
@@ -115,7 +115,7 @@ def test_different_cards_do_not_skip_and_saved_edits_are_not_overwritten(
 ):
     content = b"Date,Description,Amount\n2025-12-01,Grocer,12.50\n"
     commit(client, review_csv(client, account_id, category_id, content))
-    transaction = client.get("/api/transactions").json()[0]
+    transaction = client.get("/api/transactions").json()["items"][0]
     other = db.scalar(select(Category.id).where(Category.id != category_id))
     client.put(
         "/api/transactions/" + transaction["id"],
@@ -131,7 +131,7 @@ def test_different_cards_do_not_skip_and_saved_edits_are_not_overwritten(
         review_csv(client, account_id, category_id, content.replace(b"\n", b"\r\n")),
     )
     assert overlap["commit_summary"]["skipped"] == 1
-    saved = client.get("/api/transactions").json()[0]
+    saved = client.get("/api/transactions").json()["items"][0]
     assert (
         saved["category_id"] == other
         and saved["amount"] == 1500
@@ -144,7 +144,7 @@ def test_different_cards_do_not_skip_and_saved_edits_are_not_overwritten(
         ]["added"]
         == 1
     )
-    assert len(client.get("/api/transactions").json()) == 2
+    assert len(client.get("/api/transactions").json()["items"]) == 2
 
 
 def test_skip_rechecked_at_commit_for_stale_reviews(client, account_id, category_id):
@@ -156,7 +156,7 @@ def test_skip_rechecked_at_commit_for_stale_reviews(client, account_id, category
     assert not second["rows"][0]["skip_duplicate"]
     assert commit(client, first)["commit_summary"]["added"] == 1
     assert commit(client, second)["commit_summary"] == {"added": 0, "skipped": 1}
-    assert len(client.get("/api/transactions").json()) == 1
+    assert len(client.get("/api/transactions").json()["items"]) == 1
 
 
 def test_concurrent_overlapping_commits_are_serialized_per_card(
@@ -177,7 +177,7 @@ def test_concurrent_overlapping_commits_are_serialized_per_card(
         outcomes = list(pool.map(save, [first, second]))
     assert sum(o["added"] for o in outcomes) == 1
     assert sum(o["skipped"] for o in outcomes) == 1
-    assert len(client.get("/api/transactions").json()) == 1
+    assert len(client.get("/api/transactions").json()["items"]) == 1
 
 
 def test_duplicate_validation_queries_are_batched(db, account_id, category_id):

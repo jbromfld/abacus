@@ -43,12 +43,6 @@ class Settings(Base):
     advisor_memory_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
-    reserve_alerts_enabled: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="true"
-    )
-    reserve_checkpoint_day: Mapped[int] = mapped_column(
-        Integer, default=1, server_default="1"
-    )
     savings_balance: Mapped[int | None] = mapped_column(BigInteger)
     savings_month: Mapped[str | None] = mapped_column(String(7))
     savings_floor: Mapped[int] = mapped_column(
@@ -68,24 +62,6 @@ class AlertDismissal(Base):
             "kind IN ('forecast_deficit','actual_deficit')", name="alert_dismissal_kind"
         ),
     )
-
-
-class ReservePlan(Base):
-    __tablename__ = "reserve_plans"
-    id: Mapped[int] = mapped_column(primary_key=True, default=1)
-    amount: Mapped[int] = mapped_column(BigInteger)
-    start_date: Mapped[date] = mapped_column(Date)
-    schedules: Mapped[list] = mapped_column(JSON)
-    dismissed_until: Mapped[date | None] = mapped_column(Date)
-    __table_args__ = (CheckConstraint("amount >= 0"),)
-
-
-class SavingsObservation(Base):
-    __tablename__ = "savings_observations"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    as_of: Mapped[date] = mapped_column(Date, unique=True)
-    amount: Mapped[int] = mapped_column(BigInteger)
-    __table_args__ = (CheckConstraint("amount >= 0"),)
 
 
 class PlanCategory(Base):
@@ -185,39 +161,6 @@ class BillPayment(Base):
     __table_args__ = (
         UniqueConstraint("recurring_id", "period"),
         CheckConstraint("amount > 0"),
-    )
-
-
-class Purchase(Base):
-    __tablename__ = "purchases"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    name: Mapped[str] = mapped_column(String(160))
-    amount: Mapped[int] = mapped_column(BigInteger)
-    month: Mapped[str] = mapped_column(String(7))
-    category_id: Mapped[str] = mapped_column(ForeignKey("categories.id"))
-    notes: Mapped[str] = mapped_column(String(2000), default="")
-    included: Mapped[bool] = mapped_column(Boolean, default=False)
-    __table_args__ = (CheckConstraint("amount > 0"),)
-
-
-class BillEstimate(Base):
-    __tablename__ = "bill_estimates"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    name: Mapped[str] = mapped_column(String(160))
-    amount: Mapped[int] = mapped_column(BigInteger)
-    start_month: Mapped[str] = mapped_column(String(7))
-    end_month: Mapped[str | None] = mapped_column(String(7))
-    category_id: Mapped[str] = mapped_column(ForeignKey("categories.id"))
-    due_day: Mapped[int | None] = mapped_column(Integer)
-    included: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false"
-    )
-    recurring_id: Mapped[str | None] = mapped_column(
-        ForeignKey("recurring.id", ondelete="SET NULL")
-    )
-    __table_args__ = (
-        CheckConstraint("amount > 0"),
-        CheckConstraint("due_day BETWEEN 1 AND 31", name="estimate_due_day_range"),
     )
 
 

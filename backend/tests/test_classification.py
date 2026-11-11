@@ -119,7 +119,7 @@ def test_correction_updates_rule_and_forgetting_stops_propagation(
     assert client.delete("/api/payee-rules/" + rules[0]["id"]).status_code == 200
     assert client.get("/api/payee-rules").json() == []
     # Existing transactions are unaffected by forgetting or editing a future rule.
-    assert client.get("/api/transactions").json()[0]["category_id"] == other
+    assert client.get("/api/transactions").json()["items"][0]["category_id"] == other
 
 
 def test_conflicts_abstain_and_refunds_keep_their_type(db, category_id):
@@ -337,7 +337,7 @@ def test_merchant_metadata_variants_share_a_category(
         and row["classification"] == "normalized_payee"
     )
     assert (
-        client.get("/api/transactions").json()[0]["description"]
+        client.get("/api/transactions").json()["items"][0]["description"]
         == original["description"]
     )
 
@@ -396,7 +396,7 @@ def test_normalized_categories_do_not_change_exact_csv_duplicate_identity(
     assert second["rows"][0]["category_id"] == category_id
     assert second["rows"][0]["skip_duplicate"] is False
     assert client.post("/api/imports/" + second["id"] + "/commit").status_code == 200
-    assert len(client.get("/api/transactions").json()) == 2
+    assert len(client.get("/api/transactions").json()["items"]) == 2
 
 
 @pytest.mark.parametrize(

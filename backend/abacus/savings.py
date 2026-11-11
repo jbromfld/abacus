@@ -13,7 +13,7 @@ from .budget import (
     shift_month,
 )
 from .clock import local_today
-from .models import BillEstimate, Recurring, Settings
+from .models import Recurring, Settings
 from .schemas import MonthlyBillScenario, SavingsIn, SavingsProjectionIn
 
 
@@ -100,22 +100,6 @@ def project_savings(db, request, inputs=None):
     if int(shift_month(start, request.months - 1).split("-")[0]) > 9998:
         raise ValueError("The projection must end by December 9998.")
     bill = request.bill
-    included = False
-    if request.estimate_id:
-        estimate = db.get(BillEstimate, request.estimate_id)
-        if estimate is None:
-            raise LookupError("Bill estimate not found.")
-        if estimate.included and not estimate.recurring_id:
-            raise ValueError(
-                "The recurring bill for this estimate was removed. Create a new estimate to preview it again."
-            )
-        bill = MonthlyBillScenario(
-            name=estimate.name,
-            amount=estimate.amount,
-            start_month=estimate.start_month,
-            end_month=estimate.end_month,
-        )
-        included = estimate.included
     edit = request.recurring_change
     target = db.get(Recurring, edit.recurring_id) if edit else None
     if edit and target is None:
@@ -171,7 +155,7 @@ def project_savings(db, request, inputs=None):
             and month >= bill.start_month
             and (bill.end_month is None or month <= bill.end_month)
         )
-        extra = bill.amount if bill_active and not included else 0
+        extra = bill.amount if bill_active else 0
         change_active = bool(
             edit
             and month >= edit.start_month
@@ -264,7 +248,7 @@ def project_savings(db, request, inputs=None):
         "start_month": start,
         "savings_floor": floor,
         "horizon_months": request.months,
-        "bill": {**bill.model_dump(), "already_included": included} if bill else None,
+        "bill": {**bill.model_dump(), "already_included": False} if bill else None,
         "recurring_change": {
             **edit.model_dump(),
             "name": target.name,
@@ -306,17 +290,12 @@ def advisor_savings_projection(db, request, inputs=None):
     )
     bill = request.monthly_bill
     inferred = False
-    if (
-        not bill
-        and not request.bill_estimate_id
-        and not request.purchase_id
-        and not request.scenario
-    ):
+    if not bill and not request.scenario:
         bill = infer_monthly_bill(
             request.message, request.month, db.get(Settings, 1).currency
         )
         inferred = bill is not None
-    if savings is None and bill is None and not request.bill_estimate_id:
+    if savings is None and bill is None:
         return None
     result = project_savings(
         db,
@@ -324,7 +303,6 @@ def advisor_savings_projection(db, request, inputs=None):
             savings=savings,
             start_month=request.month,
             bill=bill,
-            estimate_id=request.bill_estimate_id,
         ),
         inputs=inputs,
     )

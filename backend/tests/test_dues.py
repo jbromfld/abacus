@@ -294,10 +294,10 @@ def test_ach_recorded_marks_paid_without_confirmation(
     row = dues(client)["monthly_upcoming"][0]
     assert row["ach_recorded"] and row["paid"] and row["automatic"]
     assert row["paid_source"] == "ach" and row["paid_on"] == "2026-11-05"
-    transactions = client.get("/api/transactions?month=2026-11").json()
+    transactions = client.get("/api/transactions?month=2026-11").json()["items"]
     assert len(transactions) == 1 and transactions[0]["date"] == "2026-11-05"
     assert mark(client, item, "2026-11").status_code == 409
-    assert client.get("/api/transactions?month=2026-11").json() == transactions
+    assert client.get("/api/transactions?month=2026-11").json()["items"] == transactions
     assert db.scalar(select(func.count()).select_from(BillPayment)) == 0
     assert dues(client)["paid_history"][0]["paid_source"] == "ach"
 

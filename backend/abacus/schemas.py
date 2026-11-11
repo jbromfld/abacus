@@ -112,15 +112,6 @@ class ChangeIn(BaseModel):
     override: bool = False
 
 
-class PurchaseIn(BaseModel):
-    name: Name
-    amount: Money
-    month: Month
-    category_id: str
-    notes: str = Field(default="", max_length=2000)
-    included: bool = False
-
-
 class TransactionIn(BaseModel):
     date: BillDate
     description: Annotated[
@@ -139,12 +130,11 @@ class TransactionIn(BaseModel):
 
 
 class SettingsIn(BaseModel):
+    model_config = {"extra": "forbid"}
     currency: Literal["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF"] = "USD"
     model: str = Field(default="", max_length=200)
     advisor_enabled: bool = False
     advisor_memory_enabled: bool | None = None
-    reserve_alerts_enabled: bool | None = None
-    reserve_checkpoint_day: int | None = Field(default=None, ge=1, le=31)
 
 
 class MappingIn(BaseModel):
@@ -217,11 +207,6 @@ class MonthlyBillScenario(BaseModel):
         return self
 
 
-class BillEstimateIn(MonthlyBillScenario):
-    category_id: str
-    due_day: int | None = Field(default=None, ge=1, le=31)
-
-
 class RecurringChangeScenario(BaseModel):
     recurring_id: str = Field(max_length=36)
     action: Literal["modify", "remove"]
@@ -241,22 +226,16 @@ class RecurringChangeScenario(BaseModel):
 
 
 class SavingsProjectionIn(BaseModel):
+    model_config = {"extra": "forbid"}
     savings: SavingsIn | None = None
     start_month: Month | None = None
     months: Literal[12, 24] = 24
     bill: MonthlyBillScenario | None = None
-    estimate_id: str | None = Field(default=None, max_length=36)
     recurring_change: RecurringChangeScenario | None = None
 
     @model_validator(mode="after")
     def valid_scenario(self):
-        if (
-            sum(
-                value is not None
-                for value in (self.bill, self.estimate_id, self.recurring_change)
-            )
-            > 1
-        ):
+        if sum(value is not None for value in (self.bill, self.recurring_change)) > 1:
             raise ValueError(
                 "Preview one new bill, estimate, or recurring change at a time."
             )
@@ -266,6 +245,7 @@ class SavingsProjectionIn(BaseModel):
 
 
 class AdvisorIn(BaseModel):
+    model_config = {"extra": "forbid"}
     month: Month
     plan_id: str | None = Field(default=None, max_length=36)
     use_web: bool = False
@@ -279,37 +259,17 @@ class AdvisorIn(BaseModel):
     ]
     history: list[AdvisorMessage] = Field(default_factory=list, max_length=12)
     memory_epoch: str | None = Field(default=None, max_length=36)
-    purchase_id: str | None = Field(default=None, max_length=36)
     scenario: PurchaseScenario | None = None
     savings: SavingsIn | None = None
     monthly_bill: MonthlyBillScenario | None = None
-    bill_estimate_id: str | None = Field(default=None, max_length=36)
 
     @model_validator(mode="after")
     def valid_context(self):
-        if self.purchase_id and self.scenario:
-            raise ValueError("Select a saved purchase or enter an estimate, not both.")
-        if self.monthly_bill and self.bill_estimate_id:
-            raise ValueError(
-                "Choose a saved bill estimate or a new monthly bill, not both."
-            )
-        if (self.monthly_bill or self.bill_estimate_id) and (
-            self.purchase_id or self.scenario
-        ):
+        if self.monthly_bill and self.scenario:
             raise ValueError("Preview one purchase or monthly bill scenario at a time.")
         if sum(len(m.content) for m in self.history) > 24000:
             raise ValueError("Chat history is too long. Start a new conversation.")
         return self
-
-
-class SavingsObservationIn(BaseModel):
-    amount: NonnegativeMoney
-    as_of: BillDate
-
-
-class ReservePlanIn(BaseModel):
-    amount: NonnegativeMoney
-    month: Month
 
 
 class ResearchPreviewIn(BaseModel):

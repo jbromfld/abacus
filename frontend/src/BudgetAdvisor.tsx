@@ -619,6 +619,20 @@ export default function BudgetAdvisor({
             currency={currency}
           />
         )}
+        {context?.spending_history && (
+          <section className="panel advisor-evidence">
+            <div className="section-head">
+              <div>
+                <h2>Spending evidence</h2>
+                <p>Recorded categories and payees behind the advice.</p>
+              </div>
+            </div>
+            <AdvisorHistory
+              history={context.spending_history}
+              currency={currency}
+            />
+          </section>
+        )}
         {context?.savings_projection && (
           <section className="panel">
             <div className="section-head">
@@ -1049,12 +1063,6 @@ export default function BudgetAdvisor({
                       ))}
                     </div>
                   ))}
-                  {context.spending_history && (
-                    <AdvisorHistory
-                      history={context.spending_history}
-                      currency={currency}
-                    />
-                  )}
                   <h3>Draft estimates excluded from forecast</h3>
                   {context.draft_purchases.length ? (
                     context.draft_purchases.map((p, i) => (

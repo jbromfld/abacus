@@ -34,6 +34,7 @@ from .advisor_memory import (
     recalled_memory,
 )
 from .alert_api import router as alert_router
+from .annual_income import router as annual_income_router
 from .budget import (
     ActualWindow,
     ForecastInputs,
@@ -150,6 +151,7 @@ async def ach_scheduler():
 app = FastAPI(title="Abacus", lifespan=lifespan)
 app.include_router(memory_router)
 app.include_router(alert_router)
+app.include_router(annual_income_router)
 DB = Annotated[DBSession, Depends(session)]
 ReadOnlyDB = Annotated[DBSession, Depends(read_only_session)]
 

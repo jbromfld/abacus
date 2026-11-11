@@ -262,7 +262,8 @@ def test_trends_constant_query_count_and_no_provenance(client):
         event.remove(engine, "before_cursor_execute", capture)
     assert response.status_code == 200, response.text
     assert len(response.json()) == 12
-    assert len(statements) <= 6
+    # Includes one request-scoped read of annual income estimates, not one per month.
+    assert len(statements) <= 7
     assert all("provenance" not in statement for statement in statements)
 
 
@@ -348,7 +349,9 @@ def test_application_clock_controls_ach_and_completeness(
     assert client.get("/api/transactions").json() == []
 
 
-def test_pdf_provenance_migration_round_trip(db, account_id, category_id):
+def test_pdf_provenance_migration_round_trip(
+    db, account_id, category_id, advisor_credentials
+):
     """Exercise legacy JSON backfill and restoration, not just an empty schema."""
     from alembic import command
     from alembic.config import Config
@@ -400,3 +403,8 @@ def test_pdf_provenance_migration_round_trip(db, account_id, category_id):
             assert value["original_review"]["source"] == value["source"]
     finally:
         command.upgrade(config, "head")
+        # Later migrations can recreate allowlisted tables. Restore the reader
+        # grants just as the production updater does after applying migrations.
+        from abacus.advisor_setup import provision_advisor
+
+        provision_advisor(engine.url, advisor_credentials[0], advisor_credentials[1])

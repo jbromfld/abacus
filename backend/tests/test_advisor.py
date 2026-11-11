@@ -441,3 +441,62 @@ def test_reconciliation_unchanged_deficit_and_year_boundary(client, category_id,
     missing = forecast_comparison(db, "2026-12")
     assert not missing["previous"]["income_recorded"]
     assert missing["previous"]["remaining_minor"] == 0
+
+
+def test_savings_question_keeps_existing_cuts_in_the_current_baseline(
+    client, db, monkeypatch
+):
+    from abacus.models import Category
+
+    for name, previous, current in (
+        ("Entertainment", 30000, 20000),
+        ("Dining", 40000, 25000),
+    ):
+        category = db.scalar(select(Category).where(Category.name == name))
+        if category is None:
+            category = Category(name=name)
+            db.add(category)
+            db.commit()
+        bill = client.post(
+            "/api/recurring",
+            json=dict(
+                name=name,
+                kind="payable",
+                frequency="monthly",
+                start_month="2026-01",
+                amount=previous,
+                category_id=category.id,
+            ),
+        ).json()
+        client.put(
+            "/api/recurring/" + bill["id"] + "/amount",
+            json=dict(month="2026-11", amount=current),
+        )
+    enable(db)
+    captured = []
+    monkeypatch.setattr(
+        "abacus.advisor.chat_with_model",
+        lambda model, messages: (
+            captured.append(messages) or "Review optional spending."
+        ),
+    )
+    before = client.get("/api/forecast?month=2026-11").json()
+    response = client.post(
+        "/api/advisor/chat",
+        json=dict(month="2026-11", message="Suggest ways to increase savings."),
+    )
+    assert response.status_code == 200, response.text
+    system = captured[0][0]["content"]
+    sent = json.loads(system.split("BUDGET SNAPSHOT:\n")[1])["forecast_comparison"]
+    assert "already included in current totals" in sent["basis"]
+    assert "Do not copy last month's reduction as a new recommendation" in system
+    rows = {row["name"]: row for row in sent["changes"]}
+    assert rows["Entertainment"]["delta_display"] == "USD -100.00"
+    assert rows["Entertainment"]["current_display"] == "USD 200.00"
+    assert rows["Dining"]["delta_display"] == "USD -150.00"
+    assert rows["Dining"]["current_display"] == "USD 250.00"
+    assert sent["current_expense_categories"] == [
+        {"name": "Dining", "amount_display": "USD 250.00"},
+        {"name": "Entertainment", "amount_display": "USD 200.00"},
+    ]
+    assert client.get("/api/forecast?month=2026-11").json() == before

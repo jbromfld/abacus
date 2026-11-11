@@ -180,6 +180,27 @@ that occurrence. Schedule changes do not rewrite already generated actuals.
 Imported/manual bank debits are not automatically reconciled with generated ACH
 records; review overlap to avoid counting the same debit twice.
 
+### Annual expected income
+
+In **Recurring accounts**, **Annual expected income** tracks extra income estimates
+for the selected calendar year, such as tax refunds, sale proceeds, or variable
+earnings. It is separate from regular monthly income and from annual recurring
+income already scheduled in its anniversary month.
+
+Add a named source, enter its yearly amount or move its slider, and choose
+**Include in monthly income**. Inclusion defaults off. Save to apply edits; moving
+a slider alone never changes the forecast. Multiple sources can be included
+independently. Included amounts are divided across January–December, with leftover
+minor units assigned to the earliest months so the twelve allocations sum exactly
+to the annual amount. **Monthly allocation of included estimates** shows the result.
+
+The estimates apply only to that year; they do not recur in the next. They are
+budget assumptions, not confirmed receipts or a monthly deposit schedule. Included
+estimates affect forecasts, projections, and advisor context. They create no
+actual transactions and do not increase recorded savings. Avoid entering a source
+already represented by recurring income. Removing a source removes its forecast
+contribution; existing recurring income remains independent.
+
 ### Savings
 
 The **Savings** panel sits beside **Expected income**. Set an exact opening amount
@@ -530,8 +551,14 @@ and transfers do not count. Current/future months are excluded; missing months
 produce unknown changes, and incomplete months are flagged. History ends at the
 selected month or the latest finished month, whichever is earlier.
 
-**Budget context → View the snapshot used for the last answer → Local transaction
-history used for this answer** shows category amounts, data completeness, and
+For additional savings, the advisor is instructed to acknowledge cuts already
+reflected in your current budget or recorded spending, then consider remaining
+optional spending. Last month's reductions are not new savings to count again.
+Exact additional savings need a calculated preview; behavioral suggestions and
+illustrative further cuts are not promises that savings have increased.
+
+**Spending evidence → Local transaction history used for this answer**, below the
+conversation, shows category amounts, data completeness, and
 calculated differences. The visible snapshot includes up to 20 normalized payees;
 ordinary model replies receive up to eight, with explicitly mentioned labels
 prioritized. Ordinary replies receive three recent monthly values plus averages
@@ -540,6 +567,8 @@ The snapshot prioritizes
 recent increases and then recent spending; omitted-payee counts are visible.
 These are transaction labels grouped by existing normalization rules, not verified
 merchant identities. Suggestions do not change the budget or actual transactions.
+The category and payee tables scroll independently; **Selected payees** remains
+outside the category table's scroll area.
 
 The snapshot uses a **dedicated SELECT-only PostgreSQL login** and a **read-only,
 repeatable-read transaction**, released before the model responds. Setup and the

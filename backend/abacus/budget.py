@@ -4,8 +4,16 @@ from datetime import date
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import load_only
 
+from .annual_income import allocated_income
 from .clock import local_today
-from .models import AmountChange, MonthStatus, Purchase, Recurring, Transaction
+from .models import (
+    AmountChange,
+    AnnualIncome,
+    MonthStatus,
+    Purchase,
+    Recurring,
+    Transaction,
+)
 
 
 def shift_month(month, delta):
@@ -81,6 +89,7 @@ class ForecastInputs:
     def __init__(self, db):
         self.changes = db.scalars(select(AmountChange)).all()
         self.schedules = db.scalars(select(Recurring)).all()
+        self.annual_income = db.scalars(select(AnnualIncome)).all()
         self.purchases = db.scalars(
             select(Purchase).options(
                 load_only(
@@ -114,6 +123,19 @@ class ForecastInputs:
                         category_id=item.category_id,
                     )
                 )
+        if category_ids is None:
+            for item in self.annual_income:
+                if amount := allocated_income(item, month):
+                    lines.append(
+                        dict(
+                            id=item.id,
+                            name=item.name,
+                            amount=amount,
+                            kind="receivable",
+                            category_id=None,
+                            source="annual_income_estimate",
+                        )
+                    )
         for item in self.purchases_by_month[month]:
             if (item.included or item.id == preview) and (
                 category_ids is None or item.category_id in category_ids

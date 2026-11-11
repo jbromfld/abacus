@@ -17,7 +17,7 @@ def test_standard_instructions_are_short_and_keep_accounting_and_privacy_rules()
             "spending_history": {"months": []},
         },
     )
-    assert len(value) < 3800
+    assert len(value) < 4400
     for text in (
         "read-only",
         "untrusted",
@@ -32,6 +32,15 @@ def test_standard_instructions_are_short_and_keep_accounting_and_privacy_rules()
     ):
         assert text.casefold() in value.casefold()
     assert "Travel planning:" not in value and "Savings/bill scenarios:" not in value
+
+
+def test_additional_savings_guidance_does_not_recommend_repeating_past_cuts():
+    value = system_instructions(request(), {})
+    assert "acknowledge existing reductions first" in value
+    assert "Do not copy last month's reduction as a new recommendation" in value
+    assert "current planned amounts and recent spending" in value
+    assert "Without a calculated scenario" in value
+    assert "never invent a numeric cut, percentage, new cap, or savings total" in value
 
 
 def test_savings_instructions_only_when_python_projection_exists():

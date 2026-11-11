@@ -12,6 +12,7 @@ A local personal budget app: recurring income and bills, purchase estimates, act
 - [Complete API reference](docs/api.md)
 - [Classification memory and future training](training/README.md)
 - [Optional local advisor memory with Memora](docs/advisor-memory.md)
+- [Proposed simpler reserves: one savings balance, named goals and deadlines](docs/reserve-redesign.md)
 
 Use the user guide for daily workflows and Operations for maintenance. Feature details live in those guides to keep one source of truth.
 
@@ -54,6 +55,19 @@ runs one loopback worker, and restarts after process failure. Existing servers o
 the port are left alone until they stop. See [automatic startup and controls](docs/operations.md#automatic-startup-on-macos)
 for stop/start/restart/uninstall, logs, and updates. Temporal, Docker, and cron are
 not required for this local macOS setup.
+
+### Restart only
+
+For the installed macOS login service:
+
+```sh
+python3 scripts/macos_service.py restart
+python3 scripts/macos_service.py status
+```
+
+This reloads the service without installing dependencies, migrating, or building.
+Build frontend changes first with `npm run build --prefix frontend`. Changes with
+a migration or advisor permission update need the update workflow below.
 
 ### Update and restart
 

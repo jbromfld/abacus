@@ -9,6 +9,7 @@ ADVISOR_TABLES = (
     "categories",
     "recurring",
     "amount_changes",
+    "annual_income",
     "purchases",
     "transactions",
     "month_status",

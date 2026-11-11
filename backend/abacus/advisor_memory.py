@@ -15,6 +15,7 @@ from anyio.from_thread import start_blocking_portal
 from .config import local_config
 
 UNAVAILABLE = "Local memory is unavailable. Check MEMORA_PYTHON, MEMORA_CONFIG, its database, and offline model files. Advisor chat can continue without memory."
+RECALL_UNAVAILABLE = "Saved notes could not be recalled for this answer. In Settings, choose Refresh memory to check the current connection, then ask again. Chat continued without memory."
 
 
 class MemoryError(Exception):
@@ -229,5 +230,5 @@ def recalled_memory(enabled, request):
                 result["notes"].append(note)
         result["status"] = "ready"
     except (MemoryError, KeyError, TypeError, ValueError):
-        result.update(status="unavailable", warnings=[UNAVAILABLE], notes=[])
+        result.update(status="unavailable", warnings=[RECALL_UNAVAILABLE], notes=[])
     return result

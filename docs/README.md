@@ -23,6 +23,7 @@ extraction and Budget advisor; Brave adds optional public web research.
 | Monthly/annual income and expenses, amount history and overrides | [Recurring accounts](user-guide.md#recurring-accounts) |
 | Scheduled ACH actual spending | [ACH recording](user-guide.md#ach-recording) |
 | Savings slider and opening snapshot | [Savings](user-guide.md#savings) |
+| Year-specific extra income, sliders, and optional monthly allocation | [Annual expected income](user-guide.md#annual-expected-income) |
 | As-is cash projections, annual payments, and payment scenarios | [Purchase planner](user-guide.md#purchase-planner) |
 | One-time drafts and inclusion | [One-time purchases](user-guide.md#one-time-purchases) |
 | Manual transactions and custom expense ranges | [Spending](user-guide.md#spending) |
@@ -31,6 +32,7 @@ extraction and Budget advisor; Brave adds optional public web research.
 | Exact files, overlapping CSV rows, and repeated tolls | [Duplicate handling](user-guide.md#duplicate-handling) |
 | Remembered payees, merchant patterns, and similarity thresholds | [Payee classification](user-guide.md#payee-classification) |
 | Manual reserve checks and fixed annual funding targets | [Annual bill reserve checks](user-guide.md#annual-bill-reserve-checks) |
+| Proposed individual savings goals for taxes and vacations | [Reserve redesign plan](reserve-redesign.md) |
 | Optional local chat, deficit reconciliation, and travel research | [Budget advisor](user-guide.md#budget-advisor) |
 | Approved cross-conversation intentions, preferences, and decisions | [Optional advisor memory](advisor-memory.md) |
 | Currency, accounts, categories, optional models, and alerts | [Settings](user-guide.md#settings) |

@@ -87,6 +87,25 @@ occurrence membership/tracking is validated. Paid dates cannot be in the future.
 Paid-status updates leave actual transactions unchanged. Automatic ACH occurrences
 are derived from their generated actuals rather than manual confirmations.
 
+## Annual expected income
+
+| Method | Path | Purpose / inputs |
+| --- | --- | --- |
+| GET | `/api/annual-income?year=YYYY` | Year, total, included total, twelve included monthly amounts, and sources |
+| POST | `/api/annual-income` | Create `{year,name,amount,included}`; inclusion defaults false |
+| PUT | `/api/annual-income/{id}` | Replace the source's year, name, amount, and inclusion |
+| DELETE | `/api/annual-income/{id}` | Remove the source and its forecast contribution |
+
+Years range from 1900 through 9998. Amounts are positive integer minor units,
+at most 9,000,000,000,000. Each source response includes twelve `monthly_amounts`
+showing its possible allocation; summary `monthly_amounts` includes only checked
+sources. Division uses integer quotient/remainder, assigning leftover minor units
+to January onward. Included estimates affect all twelve months of that calendar
+year only. They supplement recurring income without creating transactions or
+altering savings observations. These are estimates, not dated cash receipts.
+Advisor access is SELECT-only on `annual_income`; rerun advisor setup after
+migration 0015 to maintain the explicit allowlist.
+
 ## Purchases and payment estimates
 
 | Method | Path | Purpose / inputs |

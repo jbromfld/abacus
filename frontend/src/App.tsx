@@ -54,6 +54,7 @@ import Modal from './Modal';
 import UpcomingBills from './UpcomingBills';
 const BudgetImpactPlanner = lazy(() => import('./BudgetImpactPlanner'));
 import SavingsSettings from './SavingsSettings';
+import AnnualExpectedIncome from './AnnualExpectedIncome';
 import ReserveMonitor from './ReserveMonitor';
 const HistoricalSpending = lazy(() => import('./HistoricalSpending'));
 const ImportReview = lazy(() => import('./ImportReview'));
@@ -1053,7 +1054,7 @@ export default function App() {
                               <span className="stat-icon income">
                                 <ArrowDownLeft size={17} />
                               </span>
-                              Expected income
+                              Monthly expected income
                             </span>
                             <strong>
                               {forecast && forecast.month === month
@@ -1061,7 +1062,7 @@ export default function App() {
                                 : '…'}
                             </strong>
                             <small>
-                              {monthLabel(month)} · scheduled income
+                              {monthLabel(month)} · forecast income
                             </small>
                           </div>
                         </div>
@@ -1071,6 +1072,12 @@ export default function App() {
                         onChanged={refresh}
                       />
                     </div>
+                    <AnnualExpectedIncome
+                      year={Number(month.slice(0, 4))}
+                      currency={currency}
+                      revision={revision}
+                      onChanged={refresh}
+                    />
                     <ReserveMonitor
                       manage
                       currency={currency}
@@ -1418,6 +1425,7 @@ export default function App() {
                             spendingMode === 'entries'
                           }
                           onShowEntries={() => setSpendingMode('entries')}
+                          onShowBreakdown={() => setSpendingMode('breakdown')}
                         />
                       </div>
                     )}

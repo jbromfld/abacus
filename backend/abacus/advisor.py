@@ -46,7 +46,8 @@ def forecast_comparison(db, month, inputs=None, categories=None):
                 "name": line["name"],
                 "kind": line["kind"],
                 "category": categories.get(line["category_id"]),
-                "source": "recurring" if schedule else "included_purchase",
+                "source": line.get("source")
+                or ("recurring" if schedule else "included_purchase"),
                 "frequency": schedule.frequency if schedule else None,
                 "annual_distributed": schedule.distribute_annual
                 if schedule and schedule.frequency == "annual"
@@ -78,6 +79,7 @@ def forecast_comparison(db, month, inputs=None, categories=None):
         }
 
     return {
+        "basis": "Saved forecast changes from previous_month to month, already included in current totals. These are historical edits, not proposed additional savings or evidence of actual spending reductions. Use current_expense_categories as the planned expense baseline for any further cuts.",
         "previous_month": previous_month,
         "month": month,
         "previous": totals(previous),
@@ -222,6 +224,17 @@ def budget_context(db, request):
             "draft_purchases_are_excluded_unless_selected_as_scenario": True,
         },
         "monthly_forecasts": projections,
+        "annual_income_estimates": [
+            {
+                "name": item.name,
+                "year": item.year,
+                "amount_minor": item.amount,
+                "included": item.included,
+                "basis": "Estimated extra income allocated over this calendar year when included; not verified receipts or a monthly deposit schedule.",
+            }
+            for item in inputs.annual_income
+            if int(months[0][:4]) <= item.year <= int(months[-1][:4])
+        ],
         "recent_actuals": recent,
         "spending_history": history,
         "spending_comparison": comparison,

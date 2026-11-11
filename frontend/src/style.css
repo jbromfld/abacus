@@ -2757,6 +2757,36 @@ dialog:has(.batch-table) {
 .recurring-summary-grid > .panel {
   min-width: 0;
 }
+.annual-income-content {
+  padding: 0 25px 25px;
+  min-width: 0;
+}
+.annual-income-total {
+  margin: 16px 0;
+  font-size: 14px;
+  color: var(--green);
+}
+.annual-income-sources {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+.annual-income-source {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.annual-income-source > input[type='range'] {
+  width: 100%;
+}
+.annual-income-source .form-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
 .savings-settings .section-head {
   padding-bottom: 18px;
 }
@@ -3078,6 +3108,17 @@ dialog:has(.batch-table) {
 }
 .advisor-history {
   margin-top: 14px;
+}
+.advisor-evidence .advisor-history {
+  margin-top: 0;
+}
+.advisor-history > details {
+  margin-top: 18px;
+}
+.advisor-history > .table-scroll,
+.advisor-history > details > .table-scroll {
+  margin: 12px 0 18px;
+  padding-bottom: 8px;
 }
 .advisor-history table {
   font-size: 11px;

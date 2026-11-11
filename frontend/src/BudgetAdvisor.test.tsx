@@ -144,6 +144,32 @@ it('places actual comparisons and projected impact below chat and identifies a t
           months: [],
         },
         monthly_forecasts: [],
+        spending_history: {
+          start_month: '2026-09',
+          end_month: '2026-10',
+          months: [
+            { month: '2026-09', status: 'partial' },
+            { month: '2026-10', status: 'complete' },
+          ],
+          categories: [
+            {
+              category: 'Dining',
+              monthly_net_minor: [30000, 20000],
+              comparisons: [],
+            },
+          ],
+          payees: [
+            {
+              payee: 'Local cafe',
+              category: 'Dining',
+              monthly_net_minor: [30000, 20000],
+              comparisons: [],
+            },
+          ],
+          payee_limit: 20,
+          additional_payees_omitted: 0,
+          payee_selection: 'Selected local payees',
+        },
         recent_actuals: [],
         draft_purchases: [],
       },
@@ -176,6 +202,20 @@ it('places actual comparisons and projected impact below chat and identifies a t
   });
   expect(changed.closest('.advisor-main')).toBeTruthy();
   expect(impact.closest('.advisor-main')).toBeTruthy();
+  const evidence = screen.getByRole('heading', { name: 'Spending evidence' });
+  expect(evidence.closest('.advisor-main')).toBeTruthy();
+  expect(container.querySelector('.advisor-side')).not.toContainElement(
+    evidence,
+  );
+  fireEvent.click(
+    screen.getByText('Local transaction history used for this answer'),
+  );
+  const payees = screen.getByText('Selected payees (1)');
+  expect(payees.closest('.table-scroll')).toBeNull();
+  fireEvent.click(payees);
+  expect(
+    screen.getByRole('region', { name: 'Local payee spending history' }),
+  ).toHaveTextContent('Local cafe');
   expect(container.querySelector('.advisor-side')).not.toContainElement(
     changed,
   );

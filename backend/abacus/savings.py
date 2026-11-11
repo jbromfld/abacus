@@ -289,6 +289,7 @@ def project_savings(db, request, inputs=None):
         "assumptions": [
             "Savings, when supplied, is a user-entered balance at the start of the planning month.",
             "Full-month forecast income and expenses; no interest, inflation, or intra-month payment timing.",
+            "Included annual income estimates are spread over their calendar year for budgeting, not verified monthly deposits; actual receipt timing may differ.",
             "Dated distributed annual bills replace their monthly allocation with one full payment in the due month.",
             "Undated annual allowances keep their existing budget timing; actual spending is not added again.",
             "Savings carry forward only in this hypothetical projection; saved monthly budgets remain independent.",

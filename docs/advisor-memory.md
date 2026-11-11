@@ -96,6 +96,13 @@ never claims success. Check configuration ownership/permissions (`chmod 600`), l
 PostgreSQL, migrations, the Babar environment, and cached pinned weights. Broken
 transport connections are recreated on the next attempt.
 
+An unavailable-recall warning belongs to the answer that omitted memory; it is not
+a live connection indicator. In **Settings → Advisor memory**, use **Refresh memory**
+to check the current connection, then ask the question again. A successful status
+check also verifies the cached embedding model and memory database without changing
+saved notes. A later successful connection does not retroactively add recalled
+notes to an older answer.
+
 ## Maintenance, recovery, and backups
 
 Abacus's restart script maintains its own migrations/advisor permissions. Memora

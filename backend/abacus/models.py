@@ -87,6 +87,21 @@ class SavingsObservation(Base):
     __table_args__ = (CheckConstraint("amount >= 0"),)
 
 
+class AnnualIncome(Base):
+    __tablename__ = "annual_income"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    year: Mapped[int] = mapped_column(Integer, index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    included: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    __table_args__ = (
+        CheckConstraint("year BETWEEN 1900 AND 9998"),
+        CheckConstraint("amount > 0 AND amount <= 9000000000000"),
+    )
+
+
 class Recurring(Base):
     __tablename__ = "recurring"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)

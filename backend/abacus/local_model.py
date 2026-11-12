@@ -1,6 +1,7 @@
-"""Loopback-only Ollama transport for optional PDF extraction and budget chat."""
+"""Local Ollama transport, including an explicit private container host gateway."""
 
 import json
+from ipaddress import ip_address, ip_network
 from time import monotonic
 from urllib.parse import urlparse
 
@@ -12,18 +13,31 @@ from .model_tracing import record_model_usage, traced_model
 
 
 def ollama_url():
-    url = local_config().get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    config = local_config()
+    url = config.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    hosts = {"127.0.0.1", "localhost", "::1"}
+    gateway = config.get("OLLAMA_HOST_GATEWAY")
+    if gateway:
+        address = ip_address(gateway)
+        if not any(
+            address in ip_network(network)
+            for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+        ):
+            raise ValueError("OLLAMA_HOST_GATEWAY must be a private IPv4 address.")
+        hosts.add(str(address))
     parsed = urlparse(url)
     if (
         parsed.scheme != "http"
-        or parsed.hostname not in ("127.0.0.1", "localhost", "::1")
+        or parsed.hostname not in hosts
         or parsed.username
         or parsed.password
         or parsed.path not in ("", "/")
         or parsed.query
         or parsed.fragment
     ):
-        raise ValueError("Ollama must use an HTTP loopback URL without a path.")
+        raise ValueError(
+            "Ollama must use an HTTP loopback or configured host-gateway URL without a path."
+        )
     return url
 
 

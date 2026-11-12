@@ -2,7 +2,10 @@
 
 Abacus runs as one UID-1000 API worker with its bundled Babar stdio child in
 namespace `abacus`. Access it at http://127.0.0.1:8017 through the managed loopback
-forward. PostgreSQL and Ollama remain host services. Financial schema is 0020;
+forward. PostgreSQL and Ollama remain host services. The chart explicitly sets
+`OLLAMA_HOST_GATEWAY` to its private host gateway; `OLLAMA_URL` must use that exact
+address or a loopback host. Native setups remain loopback-only by default.
+Redirects and environment proxies remain disabled for model requests. Financial schema is 0020;
 Babar schema is 3. Database placement is configured independently of the image.
 
 From `local-agent-environment`:

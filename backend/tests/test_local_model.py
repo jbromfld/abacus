@@ -228,3 +228,38 @@ def test_review_reply_allowance_does_not_change_advisor_limits(monkeypatch):
     local_model.chat_with_model("local", [], {"type": "object"}, max_tokens=2048)
     local_model.chat_with_model("local", [])
     assert budgets == [2048, 256]
+
+
+def test_explicit_private_host_gateway(monkeypatch):
+    monkeypatch.setenv("OLLAMA_HOST_GATEWAY", "192.168.5.2")
+    monkeypatch.setenv("OLLAMA_URL", "http://192.168.5.2:11434")
+    assert local_model.ollama_url() == "http://192.168.5.2:11434"
+
+
+@pytest.mark.parametrize("gateway", [None, "192.168.5.3", "8.8.8.8"])
+def test_gateway_is_not_inferred_or_broadened(monkeypatch, gateway):
+    if gateway is None:
+        monkeypatch.delenv("OLLAMA_HOST_GATEWAY", raising=False)
+    else:
+        monkeypatch.setenv("OLLAMA_HOST_GATEWAY", gateway)
+    monkeypatch.setenv("OLLAMA_URL", "http://192.168.5.2:11434")
+    with pytest.raises(ValueError):
+        local_model.ollama_url()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://192.168.5.2.evil.invalid:11434",
+        "https://192.168.5.2:11434",
+        "http://user:pass@192.168.5.2:11434",
+        "http://192.168.5.2:11434/proxy",
+        "http://192.168.5.2:11434?proxy=1",
+        "http://192.168.5.2:11434#proxy",
+    ],
+)
+def test_gateway_retains_url_restrictions(monkeypatch, url):
+    monkeypatch.setenv("OLLAMA_HOST_GATEWAY", "192.168.5.2")
+    monkeypatch.setenv("OLLAMA_URL", url)
+    with pytest.raises(ValueError):
+        local_model.ollama_url()

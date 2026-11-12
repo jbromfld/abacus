@@ -4,21 +4,50 @@ Notable changes to Abacus. Release entries describe changes between tagged versi
 
 ## [0.3.0] — 2026-11-11
 
+### Added
+
+- **Argo deployment:** a digest-pinned Linux ARM64 image includes the built
+  frontend and a separately locked **Babar 0.3.0** stdio runtime. The publisher
+  builds committed archives and records both source revisions in release metadata.
+- Dedicated runtime credentials and explicit administrator configuration for
+  financial database maintenance; memory setup can use independent administrator
+  settings and pre-provisioned databases/logins.
+- Explicit private Ollama host-gateway configuration for container deployments.
+  Loopback defaults, URL restrictions, disabled redirects/proxies, and
+  local-only model discovery remain in place.
+- Explicit `HF_HOME` propagation to the memory child for read-only offline model
+  caches without forwarding application or administrator credentials.
+
 ### Changed
 
-- Managed operation now uses Argo with a digest-pinned ARM64 image containing the
-  frontend and a separately locked Babar stdio runtime.
-- Explicit private Ollama gateway support and independent financial/memory
-  database configuration preserve optional advisor features in Kubernetes.
-- Consolidated memory lists show current notes; retained sources support evidence
-  and Undo. Approval layout uses consistent spacing, completed dreaming runs live
-  in collapsed history, and annual expense funding starts collapsed.
-- Python, frontend and API version metadata are aligned at 0.3.0.
+- Managed operation uses Argo with one API worker, serialized replacement,
+  database-backed readiness, and a managed localhost forward on port **8017**.
+  Database placement remains independent of application images.
+- Memory lists exclude superseded sources before pagination and refresh after
+  consolidation. The combined note retains original sources and revisions for
+  evidence and Undo; consolidation does not delete those historical records.
+- Completed and cancelled dreaming runs move into collapsed **Past runs**, keeping
+  pending reviews in the main view and Undo accessible from history.
+- Consolidation approval uses full-width fields, a taller text editor, and
+  consistent spacing. Annual expense funding and Planning starts collapsed,
+  including when a funding gap exists.
+- Python distribution, frontend package/lockfile, and OpenAPI versions are
+  aligned at **0.3.0**.
 
 ### Removed
 
-- Native macOS service controller, runner and service-specific tests. Historical
-  native rollback support remains in the unchanged `v0.2.0` tag.
+- Native macOS service controller, runner, updater, and service-specific tests.
+  The environment controller no longer invokes native service scripts or exposes
+  native activation/rollback commands. Historical native support remains in the
+  unchanged **`v0.2.0`** tag.
+
+### Upgrade notes
+
+- Promote the application digest through GitOps and perform required database
+  maintenance explicitly; image startup does not run migrations.
+- The deployed financial schema remains **0020**, and bundled Babar uses memory
+  schema **3**. A native rollback from the archived tag requires stopping Argo
+  writers and reviewing both schema versions before starting the older release.
 
 ## [0.2.0] — 2026-11-11
 

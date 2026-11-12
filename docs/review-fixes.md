@@ -59,11 +59,7 @@ checks. The verified production bundle was built under `/private/tmp` to avoid
 serving a new UI against the older running backend. Follow the normal
 [backup](operations.md#backup-and-restore) and [upgrade](operations.md#upgrade)
 procedure before using this version: stop the app, migrate, rebuild, restart, and
-refresh the browser. For the installed login service:
-
-```sh
-python3 scripts/update.py
-```
+refresh the browser. See [Argo operations](argo.md) for the current deployment workflow.
 
 ## Suggested squash message
 

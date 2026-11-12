@@ -17,10 +17,9 @@ Use the user guide for daily workflows and Operations for maintenance. Feature d
 
 ## Argo migration support
 
-Container packaging is being introduced alongside the native workflow. See the
+Abacus runs locally through Argo with its Babar stdio child bundled in the image. See the
 [environment migration guide](../local-agent-environment/docs/abacus-argo-migration.md)
-for staging, acceptance, cutover, and rollback. Native operation remains the
-active deployment until those gates pass.
+for staging, acceptance, cutover, and rollback. The native service is retained as a rollback option.
 
 The image includes the frontend and a separate Babar environment, runs one
 Uvicorn worker as UID 1000 on port 8000, and consumes runtime configuration through
@@ -96,21 +95,12 @@ This reloads the service without installing dependencies, migrating, or building
 Build frontend changes first with `npm run build --prefix frontend`. Changes with
 a migration or advisor permission update need the update workflow below.
 
-### Update and restart
+### Release and restart with Argo
 
-For an installed macOS login service, apply the current workspace changes with:
-
-```sh
-python3 scripts/update.py
-```
-
-This stops Abacus, syncs locked dependencies, migrates, maintains advisor permissions,
-rebuilds, and starts it.
-It can be rerun for build + restart: Alembic applies only pending migrations, and
-advisor setup preserves its managed login while refreshing permissions. Dependency
-sync and the frontend build run on every invocation.
-Use `--dry-run` to preview commands. A failed update stops before later steps.
-See [upgrade and recovery details](docs/operations.md#upgrade).
+Publish a committed image and promote its release metadata in
+`agent-platform-gitops`. Use the [Argo operations guide](docs/argo.md) for
+maintenance, restart, Secret rotation and rollback. The retired `scripts/update.py`
+workflow is removed; database migrations and image promotion are explicit steps.
 
 ### Development
 

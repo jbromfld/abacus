@@ -1,3 +1,7 @@
+> Argo deployments: follow [Argo operations](argo.md). The native macOS updater
+> has been retired. Native service instructions below support development and
+> rollback; migrations, builds and service starts must be performed explicitly.
+
 # Setup and operations
 
 For the separate optional Memora MCP service, see
@@ -326,34 +330,14 @@ occur. Model/research failures are visible and do not mutate financial records.
 
 ## Upgrade
 
-For the installed macOS login service, run this after updating the source:
+For Argo deployments, follow [Argo operations](argo.md): publish a committed
+image, perform any required administrator migrations during controlled downtime,
+and promote its digest. The native updater has been removed.
 
-```sh
-python3 scripts/update.py
-```
-
-The updater uses its own workspace as the working directory, stops the service,
-syncs Python dependencies with `uv sync --locked`, applies Alembic migrations,
-provisions/verifies the dedicated advisor account, installs frontend dependencies with `npm ci`, builds the production UI, and starts
-the service again. Run it as your normal logged-in user. It checks that `uv`,
-`npm`, local setup files, and the installed login service exist before stopping.
-The service helper verifies workspace ownership before unloading anything.
-
-Preview the exact commands without changing the service or database:
-
-```sh
-python3 scripts/update.py --dry-run
-```
-
-Invoke the updater with `python3`, rather than `uv run`, so dependency syncing does
-not happen before the service stops. Its `uv run --no-sync` commands use the
-existing environment before the explicit locked sync, and the synced environment
-afterward. Any failed step stops the update; a migration/install/build failure
-leaves Abacus stopped with login startup disabled. Fix the reported error and
-rerun the updater. If stop/start itself fails, inspect service status. Startup
-success means the LaunchAgent was requested to start; normal readiness checks
-still apply. The updater does not pull Git changes, create backups, or roll back
-migrations. Keep your normal database backup before upgrading.
+For native development or rollback, stop the service first with
+`python3 scripts/macos_service.py stop`, then use the explicit steps below.
+Use `python3 scripts/macos_service.py start` after rebuilding when an installed
+native service owns Abacus. Never start it while GitOps owns the application.
 
 For a manually launched server, use these individual steps:
 

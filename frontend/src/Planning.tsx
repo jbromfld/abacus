@@ -786,10 +786,7 @@ export function PlanningOverview({
   const annual = data.plans.filter((p) => p.monthly_allocation !== undefined);
   const point = data.projection?.months.find((p) => p.month === month);
   return (
-    <details
-      className="panel planning-overview"
-      open={annual.some((p) => (p.funding_gap ?? 0) > 0) || undefined}
-    >
+    <details className="panel planning-overview">
       <summary>Annual expense funding & Planning</summary>
       <div className="planning-overview-content">
         <div className="section-head">

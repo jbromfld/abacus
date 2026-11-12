@@ -97,3 +97,26 @@ it('requires a separate forget confirmation and clears local advisor context', a
   ).toBe(true);
   window.removeEventListener('abacus-memory-changed', changed);
 });
+
+it('refreshes current notes after a consolidation event', async () => {
+  render(<AdvisorMemory enabled />);
+  await screen.findByText(note.text);
+  vi.mocked(api).mockImplementation(async (path) =>
+    path === '/advisor/memory/status'
+      ? { message: 'Local Memora connected.' }
+      : {
+          items: [
+            {
+              ...note,
+              id: 'combined',
+              title: 'Combined savings',
+              text: 'Combined note',
+            },
+          ],
+          next_offset: null,
+        },
+  );
+  window.dispatchEvent(new Event('abacus-memory-changed'));
+  expect(await screen.findByText('Combined note')).toBeVisible();
+  expect(screen.queryByText(note.text)).not.toBeInTheDocument();
+});

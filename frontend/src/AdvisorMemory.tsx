@@ -453,6 +453,19 @@ export default function AdvisorMemory({
   const [loading, setLoading] = useState(false);
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
+    const changed = () => setRefresh((value) => value + 1);
+    window.addEventListener('abacus-memory-changed', changed);
+    const channel =
+      typeof BroadcastChannel !== 'undefined'
+        ? new BroadcastChannel('abacus-memory')
+        : null;
+    if (channel) channel.onmessage = changed;
+    return () => {
+      window.removeEventListener('abacus-memory-changed', changed);
+      channel?.close();
+    };
+  }, []);
+  useEffect(() => {
     let active = true;
     setError('');
     setNotes([]);
@@ -509,7 +522,8 @@ export default function AdvisorMemory({
         <p>
           Approved intentions, preferences, and decisions stay local. Full
           conversations are not archived. Completed and abandoned notes are
-          excluded from recall.
+          excluded from recall. After consolidation, only the combined note is
+          listed; originals remain in its history.
         </p>
         {error && (
           <p className="red" role="alert">

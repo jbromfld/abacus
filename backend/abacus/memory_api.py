@@ -172,7 +172,7 @@ def draft(data: DraftIn, db: DB):
 @router.get("")
 def list_notes(db: DB, offset: int = Query(0, ge=0, le=100000)):
     enabled(db)
-    return invoke("list", offset=offset, limit=25)
+    return invoke("list", offset=offset, limit=25, include_superseded=False)
 
 
 @router.post("/similar")

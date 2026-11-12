@@ -219,3 +219,12 @@ Generated summaries, saved notes and retained sources stay untrusted when recall
 The quarantine is an application interface, not an OS sandbox or semantic proof.
 See Babar's [current controller](../../babar/docs/DREAMING.md) and
 [future-state README](../../babar/docs/future-state/README.md).
+
+### Consolidation display
+
+The memory list shows current notes and refreshes when consolidation completes.
+Superseded originals are excluded before pagination; the combined note retains
+its originals and revision evidence for inspection. The database therefore keeps
+historical source records even when the main list shows one combined note.
+Completed and cancelled dreaming jobs are under the collapsed **Past runs**
+section, where Undo remains available. Pending reviews stay in the main view.

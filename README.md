@@ -15,11 +15,13 @@ A local personal budget app: recurring income and bills, purchase estimates, act
 
 Use the user guide for daily workflows and Operations for maintenance. Feature details live in those guides to keep one source of truth.
 
-## Argo migration support
+## Argo deployment
 
-Abacus runs locally through Argo with its Babar stdio child bundled in the image. See the
-[environment migration guide](../local-agent-environment/docs/abacus-argo-migration.md)
-for staging, acceptance, cutover, and rollback. The native service is retained as a rollback option.
+Abacus runs locally through Argo with its Babar stdio child bundled in the image.
+See [Argo operations](docs/argo.md) for releases, restart, recovery and image
+rollback. Native service support is archived in the unchanged
+[v0.2.0](https://github.com/jbromfld/abacus/tree/v0.2.0) tag; version 0.3.0 uses
+Argo for managed operation.
 
 The image includes the frontend and a separate Babar environment, runs one
 Uvicorn worker as UID 1000 on port 8000, and consumes runtime configuration through
@@ -40,7 +42,11 @@ Memory setup accepts `--admin-env` to use independent administrator `PG*`
 settings and `--pre-provisioned` to maintain an existing memory database/login.
 Keep the `abacus-advisor` namespace and existing model identity.
 
-## Quick start
+## Quick start for foreground development
+
+Use an isolated development database. When Argo is running, choose a different
+HTTP port and update the Vite proxy rather than starting a second writer against
+your live database.
 
 Requirements: Python 3.11+, `uv`, Node.js 24 LTS or 26+, and a running local PostgreSQL instance. Ollama is optional; manual transaction entry and CSV review work without it.
 
@@ -65,42 +71,13 @@ Open **http://127.0.0.1:8017**. Use one server worker: import jobs run in a sing
 
 Start in **Settings**: select your currency before creating entries, add a named card account, and optionally choose an installed Ollama model for Budget advisor or PDF extraction. Starter categories are editable. No sample financial records are inserted.
 
-### Start automatically on macOS
-
-After completing Quick start, install the per-user login service:
-
-```sh
-uv run python scripts/macos_service.py install
-uv run python scripts/macos_service.py status
-```
-
-Abacus starts now and after a restart when you log in. It waits for PostgreSQL,
-runs one loopback worker, and restarts after process failure. Existing servers on
-the port are left alone until they stop. See [automatic startup and controls](docs/operations.md#automatic-startup-on-macos)
-for stop/start/restart/uninstall, logs, and updates. Temporal, Docker, and cron are
-not required for this local macOS setup.
-
 Migration **0016** replaces the old planning flow and clears obsolete purchase, bill-estimate, and combined reserve records. Imported expenses and recurring bills are preserved. New goals live in **Planning**. Migration **0019** removes the obsolete planning tables and APIs permanently; back up before upgrading. Current Planning goals and financial records are preserved. See [upgrade and recovery details](docs/operations.md#upgrade).
-
-### Restart only
-
-For the installed macOS login service:
-
-```sh
-python3 scripts/macos_service.py restart
-python3 scripts/macos_service.py status
-```
-
-This reloads the service without installing dependencies, migrating, or building.
-Build frontend changes first with `npm run build --prefix frontend`. Changes with
-a migration or advisor permission update need the update workflow below.
 
 ### Release and restart with Argo
 
 Publish a committed image and promote its release metadata in
 `agent-platform-gitops`. Use the [Argo operations guide](docs/argo.md) for
-maintenance, restart, Secret rotation and rollback. The retired `scripts/update.py`
-workflow is removed; database migrations and image promotion are explicit steps.
+maintenance, restart, Secret rotation and image rollback. Database migrations and image promotion are explicit steps.
 
 ### Development
 

@@ -2,6 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
 from datetime import date
+from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -164,7 +165,7 @@ async def ach_scheduler():
             )
 
 
-app = FastAPI(title="Abacus", lifespan=lifespan)
+app = FastAPI(title="Abacus", version=version("abacus"), lifespan=lifespan)
 app.include_router(records_router)
 app.include_router(transaction_router)
 app.include_router(import_router)

@@ -40,7 +40,7 @@ extraction and Budget advisor; Brave adds optional public web research.
 | Responsive navigation, keyboard access, and chart tables | [Navigation and accessibility](user-guide.md#navigation-and-accessibility) |
 | Local-only operation and retained data | [Privacy and data](operations.md#privacy-and-data) |
 | Database credentials, Ollama, Brave, and timezone | [Configuration](operations.md#configuration) |
-| Start after reboot/login; start/stop/restart and logs | [Automatic macOS startup](operations.md#automatic-startup-on-macos) |
+| Managed startup, restart, recovery and logs | [Argo operations](argo.md) |
 | Recovery, missing data, timeouts, and matching problems | [Troubleshooting](operations.md#troubleshooting) |
 
 See [pre-merge review fixes and verification](review-fixes.md) for the current hardening work and migration 0012.

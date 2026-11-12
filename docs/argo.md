@@ -69,25 +69,22 @@ Missing models cause unavailable memory; runtime does not download replacements.
 
 ## Ownership and rollback
 
-`.local/abacus-owner` is independent of Lalaland/Lassy ownership. Absence means
-`native`; `transition` means an unfinished operation and recovery leaves native
-Abacus stopped. Investigate the failed step before resuming. Recovery never
-restores old backups or dependency environments automatically.
+`.local/abacus-owner` is independent of Lalaland/Lassy ownership. `gitops` permits
+recovery and restart; `transition` reports an incomplete operation without starting
+another writer. Unadopted installations are skipped by shared recovery. The current
+controller provides no native activation or rollback commands.
 
-```sh
-# From local-agent-environment; stop Kubernetes writers before native startup:
-.venv/bin/python scripts/abacus_gitops.py rollback
-# Return from native operation to the staged Argo release:
-.venv/bin/python scripts/abacus_gitops.py activate
-```
+For image rollback, promote a previous compatible digest/release record through
+GitOps. If schemas changed, review compatibility before changing images. Recovery
+never restores backups or rolls back schemas automatically.
 
-Rollback disables automation, publishes/syncs zero replicas, waits for pods to
-exit, stops only the Abacus forward, and restores native login startup. It rejects
-financial schema changes against the recorded native schema. Review Babar schema
-compatibility as well before rolling back to an older Babar release. The retained
-checkout supports schema 3. An incompatible migration requires explicit review;
-do not restore old data over newer financial writes.
+Native macOS service support is archived in
+[v0.2.0](https://github.com/jbromfld/abacus/tree/v0.2.0). Any historical native
+rollback requires stopping Argo reconciliation, scaling to zero, waiting for all
+pods/children to exit, stopping the Abacus forward, and reviewing financial and
+Babar schema compatibility before using the tagged checkout. Never run both
+owners against the same live databases or restore old data over newer writes.
 
-`macos_service.py` and `run_service.py` remain for native development and rollback.
-The obsolete native `update.py` and its tests were removed. Other scripts remain
-in use for setup, API generation, training export, and performance/model checks.
+Version 0.3.0 retains foreground development, setup, API generation, training
+export, and performance/model checks. The native service controller, runner and
+service-specific tests have been removed.

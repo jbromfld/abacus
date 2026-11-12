@@ -2,6 +2,24 @@
 
 Notable changes to Abacus. Release entries describe changes between tagged versions.
 
+## [0.3.0] — 2026-11-11
+
+### Changed
+
+- Managed operation now uses Argo with a digest-pinned ARM64 image containing the
+  frontend and a separately locked Babar stdio runtime.
+- Explicit private Ollama gateway support and independent financial/memory
+  database configuration preserve optional advisor features in Kubernetes.
+- Consolidated memory lists show current notes; retained sources support evidence
+  and Undo. Approval layout uses consistent spacing, completed dreaming runs live
+  in collapsed history, and annual expense funding starts collapsed.
+- Python, frontend and API version metadata are aligned at 0.3.0.
+
+### Removed
+
+- Native macOS service controller, runner and service-specific tests. Historical
+  native rollback support remains in the unchanged `v0.2.0` tag.
+
 ## [0.2.0] — 2026-11-11
 
 Compared with [v0.1.0](https://github.com/jbromfld/abacus/compare/v0.1.0...v0.2.0).

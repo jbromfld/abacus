@@ -1,3 +1,7 @@
+> Historical verification notes for the pre-Argo service workflow. Current
+> operation is documented in [Argo operations](argo.md); native service code is
+> preserved in tag `v0.2.0`.
+
 # Pre-merge review fixes
 
 [Documentation index](README.md) · [Operations](operations.md#upgrade)

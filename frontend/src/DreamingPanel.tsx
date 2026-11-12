@@ -30,6 +30,7 @@ function Review({
   const [busy, setBusy] = useState(false);
   return (
     <form
+      className="dream-review"
       onSubmit={async (event) => {
         event.preventDefault();
         setBusy(true);
@@ -53,6 +54,7 @@ function Review({
         Combined memory
         <textarea
           required
+          rows={5}
           maxLength={400}
           value={note.text}
           onChange={(e) => setNote({ ...note, text: e.target.value })}
@@ -123,6 +125,79 @@ export default function DreamingPanel() {
       setBusy(false);
     }
   };
+  const activeJobs =
+    state?.jobs.filter(
+      (job) => !['completed', 'cancelled'].includes(job.state),
+    ) ?? [];
+  const pastJobs =
+    state?.jobs.filter((job) =>
+      ['completed', 'cancelled'].includes(job.state),
+    ) ?? [];
+  const renderJob = (job: State['jobs'][number]) => (
+    <div className="dream-job" key={job.id}>
+      <p>
+        {job.state === 'completed' && !job.groups.length
+          ? 'No related memories to combine.'
+          : job.state}
+        {job.reason && ` · ${job.reason}`}
+      </p>
+      {job.groups.map((group) => (
+        <article className="dream-group" key={group.operation_key}>
+          {group.state === 'review' && group.note ? (
+            <Review
+              group={group}
+              apply={async (note) => {
+                await act(
+                  `/advisor/dreaming/${job.id}/${group.operation_key}/approve`,
+                  'POST',
+                  { note },
+                );
+              }}
+            />
+          ) : (
+            <p>
+              {group.note?.title ?? 'Related memories'} · {group.state}
+            </p>
+          )}
+          {group.state === 'review' && (
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() =>
+                void act(
+                  `/advisor/dreaming/${job.id}/${group.operation_key}/skip`,
+                )
+              }
+            >
+              Keep separate
+            </button>
+          )}
+          {group.state === 'committed' && (
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={async () => {
+                try {
+                  const current = await api<MemoryNote>(
+                    `/advisor/memory/${group.result_id}`,
+                  );
+                  await act(
+                    `/advisor/dreaming/undo/${group.operation_key}`,
+                    'POST',
+                    { expected_revision: current.revision },
+                  );
+                } catch (e) {
+                  setError((e as Error).message);
+                }
+              }}
+            >
+              Undo consolidation
+            </button>
+          )}
+        </article>
+      ))}
+    </div>
+  );
   return (
     <section className="dreaming-settings">
       <h3>Memory dreaming</h3>
@@ -130,89 +205,37 @@ export default function DreamingPanel() {
         Combine related memories while the advisor is idle. Originals are
         retained; uncertain changes need review.
       </p>
-      <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={state?.enabled ?? false}
-          disabled={!state || busy}
-          onChange={(e) =>
-            void act('/advisor/dreaming', 'PUT', { enabled: e.target.checked })
-          }
-        />
-        Enable dreaming
-      </label>
-      <button
-        className="secondary"
-        disabled={!state?.enabled || busy}
-        onClick={() => void act('/advisor/dreaming/run')}
-      >
-        Dream now
-      </button>
+      <div className="dream-controls">
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={state?.enabled ?? false}
+            disabled={!state || busy}
+            onChange={(e) =>
+              void act('/advisor/dreaming', 'PUT', {
+                enabled: e.target.checked,
+              })
+            }
+          />
+          Enable dreaming
+        </label>
+        <button
+          className="secondary"
+          disabled={!state?.enabled || busy}
+          onClick={() => void act('/advisor/dreaming/run')}
+        >
+          Dream now
+        </button>
+      </div>
       {state && <p>{state.pending_review} awaiting review</p>}
       {error && <p role="alert">{error}</p>}
-      {state?.jobs.map((job) => (
-        <div key={job.id}>
-          <p>
-            {job.state}
-            {job.reason && ` · ${job.reason}`}
-          </p>
-          {job.groups.map((group) => (
-            <article key={group.operation_key}>
-              {group.state === 'review' && group.note ? (
-                <Review
-                  group={group}
-                  apply={async (note) => {
-                    await act(
-                      `/advisor/dreaming/${job.id}/${group.operation_key}/approve`,
-                      'POST',
-                      { note },
-                    );
-                  }}
-                />
-              ) : (
-                <p>
-                  {group.note?.title ?? 'Related memories'} · {group.state}
-                </p>
-              )}
-              {group.state === 'review' && (
-                <button
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() =>
-                    void act(
-                      `/advisor/dreaming/${job.id}/${group.operation_key}/skip`,
-                    )
-                  }
-                >
-                  Keep separate
-                </button>
-              )}
-              {group.state === 'committed' && (
-                <button
-                  className="secondary"
-                  disabled={busy}
-                  onClick={async () => {
-                    try {
-                      const current = await api<MemoryNote>(
-                        `/advisor/memory/${group.result_id}`,
-                      );
-                      await act(
-                        `/advisor/dreaming/undo/${group.operation_key}`,
-                        'POST',
-                        { expected_revision: current.revision },
-                      );
-                    } catch (e) {
-                      setError((e as Error).message);
-                    }
-                  }}
-                >
-                  Undo consolidation
-                </button>
-              )}
-            </article>
-          ))}
-        </div>
-      ))}
+      {activeJobs.map(renderJob)}
+      {pastJobs.length > 0 && (
+        <details className="dream-history">
+          <summary>Past runs ({pastJobs.length})</summary>
+          <div className="dream-history-content">{pastJobs.map(renderJob)}</div>
+        </details>
+      )}
     </section>
   );
 }

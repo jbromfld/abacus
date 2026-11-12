@@ -216,7 +216,7 @@ it('shows annual funding separately from positive projected cash in December Ove
     />,
   );
   const warning = await screen.findByText(/\$750.00 additional funding needed/);
-  expect(warning.closest('details')).toHaveAttribute('open');
+  expect(warning.closest('details')).not.toHaveAttribute('open');
   expect(
     screen.getByText(/Projected end-of-month cash: \$3,000.00/),
   ).toBeInTheDocument();

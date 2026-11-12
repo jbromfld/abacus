@@ -2,8 +2,8 @@
 
 from types import SimpleNamespace
 
+from script_helpers import script
 from sqlalchemy.engine import URL
-from test_service import script
 
 
 def setup(monkeypatch, tmp_path):

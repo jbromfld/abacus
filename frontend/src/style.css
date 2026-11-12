@@ -3578,3 +3578,71 @@ dialog .pagination {
     padding: 0 20px 18px;
   }
 }
+
+.dreaming-settings,
+.dream-job,
+.dream-history-content {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.dreaming-settings > h3,
+.dreaming-settings p {
+  margin: 0;
+}
+.dream-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.dream-group {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-width: 0;
+}
+.dream-group .dream-review {
+  display: grid;
+  gap: 16px;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.dream-review label {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.dream-review textarea {
+  resize: vertical;
+  min-height: 130px;
+}
+.dream-review details,
+.dream-history-content {
+  padding-top: 12px;
+}
+.dream-review details article {
+  padding: 12px 0;
+}
+.dream-review blockquote {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+}
+.dream-review > button,
+.dream-group > button {
+  justify-self: start;
+}
+.dream-group > button {
+  margin-top: 12px;
+}
+@media (max-width: 600px) {
+  .dream-group {
+    padding: 14px;
+  }
+  .dream-review > button,
+  .dream-group > button {
+    width: 100%;
+  }
+}

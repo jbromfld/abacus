@@ -9,7 +9,12 @@ from abacus.advisor_setup import (
     persist_credentials,
     provision_advisor,
 )
-from abacus.config import ENV_FILE, advisor_database_url, database_url, local_config
+from abacus.config import (
+    ENV_FILE,
+    administrator_database_url,
+    advisor_database_url,
+    local_config,
+)
 from sqlalchemy.engine import make_url
 
 
@@ -38,7 +43,7 @@ def main(argv=None):
             config = local_config()
             role = config.get("ADVISOR_USER") or "abacus_advisor"
             password = provision_advisor(
-                make_url(database_url()),
+                make_url(administrator_database_url()),
                 role,
                 config.get("ADVISOR_PASS"),
                 rotate=args.rotate_password,

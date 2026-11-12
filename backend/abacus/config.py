@@ -45,3 +45,8 @@ def advisor_database_url():
     return base.set(username=user, password=password).difference_update_query(
         ["user", "password"]
     )
+
+
+def administrator_database_url():
+    """Explicit maintenance credential; never selected by application runtime."""
+    return os.environ.get("ABACUS_ADMIN_DATABASE_URL") or database_url()

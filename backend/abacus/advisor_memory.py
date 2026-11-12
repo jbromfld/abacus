@@ -58,6 +58,11 @@ class MCPMemory:
             cwd=str(Path(self.config).parent),
             env={
                 "MEMORA_CONFIG": self.config,
+                **(
+                    {"HF_HOME": os.environ["HF_HOME"]}
+                    if "HF_HOME" in os.environ
+                    else {}
+                ),
                 "HF_HUB_OFFLINE": "1",
                 "TRANSFORMERS_OFFLINE": "1",
                 "HF_HUB_DISABLE_TELEMETRY": "1",

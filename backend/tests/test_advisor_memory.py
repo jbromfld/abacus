@@ -357,3 +357,18 @@ def test_real_stdio_adapter_reuses_process_restricts_environment_and_recovers(
         value.close()
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)
+
+
+def test_memory_list_requests_current_notes_before_pagination(
+    client, enabled, monkeypatch
+):
+    calls = []
+
+    def listed(enabled, operation, **arguments):
+        calls.append((operation, arguments))
+        return {"items": [note()], "next_offset": None}
+
+    monkeypatch.setattr(memory_api, "memory_call", listed)
+    response = client.get("/api/advisor/memory?offset=25")
+    assert response.status_code == 200
+    assert calls == [("list", {"offset": 25, "limit": 25, "include_superseded": False})]

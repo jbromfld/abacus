@@ -16,6 +16,12 @@ def main(argv=None):
     parser.add_argument("--babar", type=Path, default=ENV_FILE.parent.parent / "babar")
     parser.add_argument("--config", type=Path)
     parser.add_argument("--rotate-password", action="store_true")
+    parser.add_argument(
+        "--admin-env",
+        action="store_true",
+        help="Use explicit memory administrator PG* environment instead of financial credentials",
+    )
+    parser.add_argument("--pre-provisioned", action="store_true")
     args = parser.parse_args(argv)
     try:
         root = args.babar.expanduser().resolve(strict=True)
@@ -23,23 +29,41 @@ def main(argv=None):
         runtime = (args.config or root / ".memora-abacus.json").expanduser().absolute()
         if not python.is_file() or not ENV_FILE.is_file() or ENV_FILE.is_symlink():
             raise ValueError()
-        url = make_url(database_url())
-        if url.host not in ("127.0.0.1", "localhost", "::1"):
-            raise ValueError()
-        # Provisioning alone receives administrator credentials, through env rather
-        # than command-line arguments. The runtime file has only the memory login.
         environment = {
             k: os.environ[k]
             for k in ("PATH", "HOME", "TMPDIR", "LANG")
             if k in os.environ
         }
-        environment.update(
-            PGHOST=url.host,
-            PGPORT=str(url.port or 5432),
-            PGDATABASE=url.database,
-            PGUSER=url.username or "",
-            PGPASSWORD=url.password or "",
-        )
+        if args.admin_env:
+            environment.update(
+                {
+                    k: os.environ[k]
+                    for k in (
+                        "PGHOST",
+                        "PGPORT",
+                        "PGDATABASE",
+                        "PGUSER",
+                        "PGPASSWORD",
+                        "PGSSLMODE",
+                        "PGSSLROOTCERT",
+                        "PGSSLCERT",
+                        "PGSSLKEY",
+                        "PGCONNECT_TIMEOUT",
+                    )
+                    if k in os.environ
+                }
+            )
+        else:
+            url = make_url(database_url())
+            if url.host not in ("127.0.0.1", "localhost", "::1"):
+                raise ValueError()
+            environment.update(
+                PGHOST=url.host,
+                PGPORT=str(url.port or 5432),
+                PGDATABASE=url.database,
+                PGUSER=url.username or "",
+                PGPASSWORD=url.password or "",
+            )
         command = [
             str(python),
             "-m",
@@ -53,6 +77,8 @@ def main(argv=None):
             "--user",
             "abacus_memory",
         ]
+        if args.pre_provisioned:
+            command.append("--pre-provisioned")
         if args.rotate_password:
             command.append("--rotate-password")
         result = subprocess.run(

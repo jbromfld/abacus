@@ -326,7 +326,7 @@ def test_same_user_credentials_are_not_accepted(monkeypatch, tmp_path):
 
 
 def test_setup_error_does_not_echo_password_or_connection_url(monkeypatch, capsys):
-    from test_service import script
+    from script_helpers import script
 
     setup = script("setup_advisor")
 

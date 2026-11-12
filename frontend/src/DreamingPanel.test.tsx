@@ -86,3 +86,47 @@ it('preserves review edits after Babar rejects a stale approval', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Memory changed');
   expect(text).toHaveValue('My reviewed summary');
 });
+
+it('moves approved runs into collapsed history and preserves undo', async () => {
+  vi.mocked(api).mockReset();
+  const group = {
+    operation_key: 'operation',
+    state: 'review',
+    result_id: 'combined',
+    note: { title: 'Combined savings', text: 'A synthetic combined note.' },
+    evidence: [],
+    reasons: [],
+  };
+  const job = { id: 'job', state: 'review', reason: '', groups: [group] };
+  vi.mocked(api).mockImplementation(async (_path, method) => {
+    if (method === 'POST') {
+      job.state = 'completed';
+      group.state = 'committed';
+    }
+    return {
+      enabled: true,
+      epoch: 'test',
+      pending_review: job.state === 'review' ? 1 : 0,
+      jobs: [job],
+    };
+  });
+  render(<DreamingPanel />);
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Approve consolidation' }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: 'Approve consolidation' }),
+    ).not.toBeInTheDocument(),
+  );
+  const history = screen.getByText('Past runs (1)').closest('details')!;
+  expect(history).not.toHaveAttribute('open');
+  expect(screen.getByText('completed')).not.toBeVisible();
+  expect(
+    screen.getByRole('button', { name: 'Undo consolidation' }),
+  ).not.toBeVisible();
+  fireEvent.click(screen.getByText('Past runs (1)'));
+  expect(
+    screen.getByRole('button', { name: 'Undo consolidation' }),
+  ).toBeVisible();
+});

@@ -145,4 +145,3 @@ Compared with [v0.1.0](https://github.com/jbromfld/abacus/compare/v0.1.0...v0.2.
   potentially private budget, statement, chat, and memory content.
 
 [0.2.0]: https://github.com/jbromfld/abacus/compare/v0.1.0...v0.2.0
-

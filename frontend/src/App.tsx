@@ -158,6 +158,9 @@ export default function App() {
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [overlay, setOverlay] = useState(true);
   const [query, setQuery] = useState('');
+  const [selectedTransactions, setSelectedTransactions] = useState<
+    Record<string, number>
+  >({});
   const transactionPage = usePagedRecords<Transaction>(
     `/transactions?month=${actualMonth}&q=${encodeURIComponent(query)}`,
     view === 'Spending' && spendingMode === 'transactions',
@@ -562,6 +565,26 @@ export default function App() {
   const filteredTransactions = (actualData ? transactions : []).filter((t) =>
     t.description.toLowerCase().includes(query.toLowerCase()),
   );
+  const selectedTransactionTotal = Object.values(selectedTransactions).reduce(
+    (sum, amount) => sum + amount,
+    0,
+  );
+  const allVisibleTransactionsSelected =
+    filteredTransactions.length > 0 &&
+    filteredTransactions.every((t) => t.id in selectedTransactions);
+  const toggleVisibleTransactions = () => {
+    setSelectedTransactions((selected) => {
+      const next = { ...selected };
+      if (allVisibleTransactionsSelected) {
+        filteredTransactions.forEach((t) => delete next[t.id]);
+      } else {
+        filteredTransactions.forEach((t) => {
+          next[t.id] = t.kind === 'refund' ? -t.amount : t.amount;
+        });
+      }
+      return next;
+    });
+  };
   const nav = [
     { name: 'Overview', icon: LayoutDashboard },
     { name: 'Spending', icon: ChartNoAxesCombined },
@@ -1308,30 +1331,59 @@ export default function App() {
                                 : (actualData?.actual.status ?? 'unavailable')}
                             </p>
                           </div>
-                          <div className="button-group">
-                            <button
-                              className="secondary"
-                              aria-label="Refresh spending data"
-                              disabled={loading || actualLoading}
-                              onClick={refresh}
-                            >
-                              <RotateCcw
-                                size={16}
-                                className={actualLoading ? 'spin' : ''}
+                          <div className="transactions-heading-actions">
+                            <label className="checkbox">
+                              <input
+                                type="checkbox"
+                                checked={currentActual}
+                                onChange={(e) =>
+                                  setCurrentActual(e.target.checked)
+                                }
                               />
-                              {actualLoading ? 'Refreshing…' : 'Refresh'}
-                            </button>
-                            <button onClick={() => openTransaction()}>
-                              <Plus size={16} />
-                              Add transaction
-                            </button>
+                              Current month
+                            </label>
+                            <label className="checkbox">
+                              <input
+                                type="checkbox"
+                                checked={
+                                  actualData?.actual.marked_complete ?? false
+                                }
+                                disabled={actualBusy || !actualData}
+                                onChange={(e) =>
+                                  void act(() =>
+                                    api('/months/' + actualMonth, 'PUT', {
+                                      complete: e.target.checked,
+                                    }),
+                                  )
+                                }
+                              />
+                              Actuals complete for this month
+                            </label>
+                            <div className="button-group">
+                              <button
+                                className="secondary"
+                                aria-label="Refresh spending data"
+                                disabled={loading || actualLoading}
+                                onClick={refresh}
+                              >
+                                <RotateCcw
+                                  size={16}
+                                  className={actualLoading ? 'spin' : ''}
+                                />
+                                {actualLoading ? 'Refreshing…' : 'Refresh'}
+                              </button>
+                              <button onClick={() => openTransaction()}>
+                                <Plus size={16} />
+                                Add transaction
+                              </button>
+                            </div>
                           </div>
                         </div>
                         {transactionPage.error && (
                           <p role="alert">{transactionPage.error}</p>
                         )}
                         <div
-                          className="button-group"
+                          className="transaction-pagination"
                           aria-label="Transaction pages"
                         >
                           <button
@@ -1360,43 +1412,6 @@ export default function App() {
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                           />
-                          <label className="checkbox">
-                            <input
-                              type="checkbox"
-                              checked={currentActual}
-                              onChange={(e) =>
-                                setCurrentActual(e.target.checked)
-                              }
-                            />
-                            Current month
-                          </label>
-                          <label className="checkbox">
-                            <input
-                              type="checkbox"
-                              checked={currentActual}
-                              onChange={(e) =>
-                                setCurrentActual(e.target.checked)
-                              }
-                            />
-                            Current month
-                          </label>
-                          <label className="checkbox">
-                            <input
-                              type="checkbox"
-                              checked={
-                                actualData?.actual.marked_complete ?? false
-                              }
-                              disabled={actualBusy || !actualData}
-                              onChange={(e) =>
-                                void act(() =>
-                                  api('/months/' + actualMonth, 'PUT', {
-                                    complete: e.target.checked,
-                                  }),
-                                )
-                              }
-                            />
-                            Actuals complete for this month
-                          </label>
                         </div>
                         {!accounts.length && (
                           <div className="notice">
@@ -1419,11 +1434,24 @@ export default function App() {
                             <table>
                               <thead>
                                 <tr>
+                                  <th>
+                                    <input
+                                      type="checkbox"
+                                      aria-label="Select all visible transactions"
+                                      checked={allVisibleTransactionsSelected}
+                                      onChange={toggleVisibleTransactions}
+                                    />
+                                  </th>
                                   <th>Date</th>
                                   <th>Description</th>
                                   <th>Category</th>
                                   <th>Type</th>
-                                  <th>Amount</th>
+                                  <th>
+                                    <span>Amount</span>
+                                    <span className="selected-amount">
+                                      Selected: {fmt(selectedTransactionTotal)}
+                                    </span>
+                                  </th>
                                   <th>
                                     <span className="sr-only">Actions</span>
                                   </th>
@@ -1432,6 +1460,29 @@ export default function App() {
                               <tbody>
                                 {filteredTransactions.map((t) => (
                                   <tr key={t.id}>
+                                    <td>
+                                      <input
+                                        type="checkbox"
+                                        aria-label={`Select ${t.description}`}
+                                        checked={t.id in selectedTransactions}
+                                        onChange={(e) =>
+                                          setSelectedTransactions(
+                                            (selected) => {
+                                              const next = { ...selected };
+                                              if (e.target.checked) {
+                                                next[t.id] =
+                                                  t.kind === 'refund'
+                                                    ? -t.amount
+                                                    : t.amount;
+                                              } else {
+                                                delete next[t.id];
+                                              }
+                                              return next;
+                                            },
+                                          )
+                                        }
+                                      />
+                                    </td>
                                     <td>{t.date}</td>
                                     <td>
                                       <strong>{t.description}</strong>

@@ -832,6 +832,26 @@ td small {
   max-width: 290px;
   font-size: 12px;
 }
+.transaction-category-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.transaction-category-filter select {
+  min-width: 135px;
+  padding: 5px 7px;
+  border: 1px solid #e1e8d9;
+  border-radius: 5px;
+  background: white;
+  color: #536d45;
+  font: inherit;
+}
+.transaction-select-checkbox {
+  width: 14px !important;
+  height: 14px;
+  accent-color: #578344;
+  margin: 0;
+}
 .transactions-heading-actions {
   display: flex;
   align-items: center;

@@ -158,6 +158,7 @@ export default function App() {
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [overlay, setOverlay] = useState(true);
   const [query, setQuery] = useState('');
+  const [transactionCategory, setTransactionCategory] = useState('all');
   const [selectedTransactions, setSelectedTransactions] = useState<
     Record<string, number>
   >({});
@@ -580,17 +581,10 @@ export default function App() {
     (total, t) => total + (selectedTransactions[t.id] ?? 0),
     0,
   );
-  const selectedTransactionTotal = Object.values(selectedTransactions).reduce(
-    (sum, amount) => sum + amount,
-    0,
-  );
-  const allVisibleTransactionsSelected =
-    filteredTransactions.length > 0 &&
-    filteredTransactions.every((t) => t.id in selectedTransactions);
-  const toggleVisibleTransactions = () => {
+  const toggleFilteredTransactions = () => {
     setSelectedTransactions((selected) => {
       const next = { ...selected };
-      if (allVisibleTransactionsSelected) {
+      if (allFilteredTransactionsSelected) {
         filteredTransactions.forEach((t) => delete next[t.id]);
       } else {
         filteredTransactions.forEach((t) => {
@@ -1452,16 +1446,10 @@ export default function App() {
                                   <th>
                                     <input
                                       type="checkbox"
-<<<<<<< HEAD
                                       className="transaction-select-checkbox"
                                       aria-label="Select all filtered transactions"
                                       checked={allFilteredTransactionsSelected}
                                       onChange={toggleFilteredTransactions}
-=======
-                                      aria-label="Select all visible transactions"
-                                      checked={allVisibleTransactionsSelected}
-                                      onChange={toggleVisibleTransactions}
->>>>>>> main
                                     />
                                   </th>
                                   <th>Date</th>
@@ -1502,7 +1490,7 @@ export default function App() {
                                   <th>
                                     <span>Amount</span>
                                     <span className="selected-amount">
-                                      Selected: {fmt(selectedTransactionTotal)}
+                                      Selected: {fmt(filteredSelectedTotal)}
                                     </span>
                                   </th>
                                   <th>
@@ -1516,6 +1504,7 @@ export default function App() {
                                     <td>
                                       <input
                                         type="checkbox"
+                                        className="transaction-select-checkbox"
                                         aria-label={`Select ${t.description}`}
                                         checked={t.id in selectedTransactions}
                                         onChange={(e) =>

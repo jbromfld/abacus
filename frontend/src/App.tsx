@@ -594,6 +594,12 @@ export default function App() {
       return next;
     });
   };
+  const resetTransactions = () => {
+    setQuery('');
+    setTransactionCategory('all');
+    setSelectedTransactions({});
+    transactionPage.first();
+  };
   const nav = [
     { name: 'Overview', icon: LayoutDashboard },
     { name: 'Spending', icon: ChartNoAxesCombined },
@@ -1415,12 +1421,20 @@ export default function App() {
                           </button>
                         </div>
                         <div className="transaction-toolbar">
-                          <input
-                            aria-label="Search transactions"
-                            placeholder="Search descriptions…"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                          />
+                          <div className="transaction-search-controls">
+                            <input
+                              aria-label="Search transactions"
+                              placeholder="Search descriptions…"
+                              value={query}
+                              onChange={(e) => setQuery(e.target.value)}
+                            />
+                            <button
+                              className="secondary small"
+                              onClick={resetTransactions}
+                            >
+                              Reset
+                            </button>
+                          </div>
                         </div>
                         {!accounts.length && (
                           <div className="notice">

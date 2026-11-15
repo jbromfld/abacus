@@ -828,9 +828,15 @@ td small {
   padding: 0 25px 20px;
   gap: 20px;
 }
-.transaction-toolbar > input {
+.transaction-toolbar > input,
+.transaction-search-controls > input {
   max-width: 290px;
   font-size: 12px;
+}
+.transaction-search-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .transaction-category-filter {
   display: flex;
@@ -1555,7 +1561,10 @@ form > .muted {
     padding: 0 20px 18px;
     gap: 16px;
   }
-  .transaction-toolbar > input {
+  .transaction-search-controls {
+    width: 100%;
+  }
+  .transaction-search-controls > input {
     max-width: none;
   }
   .chart {

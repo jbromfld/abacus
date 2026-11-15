@@ -158,6 +158,10 @@ export default function App() {
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [overlay, setOverlay] = useState(true);
   const [query, setQuery] = useState('');
+  const [transactionCategory, setTransactionCategory] = useState('all');
+  const [selectedTransactions, setSelectedTransactions] = useState<
+    Record<string, number>
+  >({});
   const transactionPage = usePagedRecords<Transaction>(
     `/transactions?month=${actualMonth}&q=${encodeURIComponent(query)}`,
     view === 'Spending' && spendingMode === 'transactions',
@@ -559,9 +563,37 @@ export default function App() {
   };
   const actualData = actualReport?.month === actualMonth ? actualReport : null;
   const actualBusy = actualLoading && !actualData;
-  const filteredTransactions = (actualData ? transactions : []).filter((t) =>
-    t.description.toLowerCase().includes(query.toLowerCase()),
+  const filteredTransactions = (actualData ? transactions : []).filter((t) => {
+    const matchesQuery = t.description
+      .toLowerCase()
+      .includes(query.toLowerCase());
+    const matchesCategory =
+      transactionCategory === 'all' ||
+      (transactionCategory === 'uncategorized'
+        ? !t.category_id
+        : t.category_id === transactionCategory);
+    return matchesQuery && matchesCategory;
+  });
+  const allFilteredTransactionsSelected =
+    filteredTransactions.length > 0 &&
+    filteredTransactions.every((t) => t.id in selectedTransactions);
+  const filteredSelectedTotal = filteredTransactions.reduce(
+    (total, t) => total + (selectedTransactions[t.id] ?? 0),
+    0,
   );
+  const toggleFilteredTransactions = () => {
+    setSelectedTransactions((selected) => {
+      const next = { ...selected };
+      if (allFilteredTransactionsSelected) {
+        filteredTransactions.forEach((t) => delete next[t.id]);
+      } else {
+        filteredTransactions.forEach((t) => {
+          next[t.id] = t.kind === 'refund' ? -t.amount : t.amount;
+        });
+      }
+      return next;
+    });
+  };
   const nav = [
     { name: 'Overview', icon: LayoutDashboard },
     { name: 'Spending', icon: ChartNoAxesCombined },
@@ -1419,11 +1451,56 @@ export default function App() {
                             <table>
                               <thead>
                                 <tr>
+                                  <th>
+                                    <input
+                                      type="checkbox"
+                                      className="transaction-select-checkbox"
+                                      aria-label="Select all filtered transactions"
+                                      checked={allFilteredTransactionsSelected}
+                                      onChange={toggleFilteredTransactions}
+                                    />
+                                  </th>
                                   <th>Date</th>
                                   <th>Description</th>
-                                  <th>Category</th>
+                                  <th>
+                                    <label className="transaction-category-filter">
+                                      <span>Category</span>
+                                      <select
+                                        aria-label="Filter transactions by category"
+                                        value={transactionCategory}
+                                        onChange={(e) =>
+                                          setTransactionCategory(e.target.value)
+                                        }
+                                      >
+                                        <option value="all">
+                                          All categories
+                                        </option>
+                                        {categories
+                                          .slice()
+                                          .sort((a, b) =>
+                                            a.name.localeCompare(b.name),
+                                          )
+                                          .map((category) => (
+                                            <option
+                                              key={category.id}
+                                              value={category.id}
+                                            >
+                                              {category.name}
+                                            </option>
+                                          ))}
+                                        <option value="uncategorized">
+                                          Uncategorized
+                                        </option>
+                                      </select>
+                                    </label>
+                                  </th>
                                   <th>Type</th>
-                                  <th>Amount</th>
+                                  <th>
+                                    <span>Amount</span>
+                                    <span className="selected-amount">
+                                      Selected: {fmt(filteredSelectedTotal)}
+                                    </span>
+                                  </th>
                                   <th>
                                     <span className="sr-only">Actions</span>
                                   </th>
@@ -1432,6 +1509,30 @@ export default function App() {
                               <tbody>
                                 {filteredTransactions.map((t) => (
                                   <tr key={t.id}>
+                                    <td>
+                                      <input
+                                        type="checkbox"
+                                        className="transaction-select-checkbox"
+                                        aria-label={`Select ${t.description}`}
+                                        checked={t.id in selectedTransactions}
+                                        onChange={(e) =>
+                                          setSelectedTransactions(
+                                            (selected) => {
+                                              const next = { ...selected };
+                                              if (e.target.checked) {
+                                                next[t.id] =
+                                                  t.kind === 'refund'
+                                                    ? -t.amount
+                                                    : t.amount;
+                                              } else {
+                                                delete next[t.id];
+                                              }
+                                              return next;
+                                            },
+                                          )
+                                        }
+                                      />
+                                    </td>
                                     <td>{t.date}</td>
                                     <td>
                                       <strong>{t.description}</strong>

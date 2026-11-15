@@ -158,7 +158,6 @@ export default function App() {
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [overlay, setOverlay] = useState(true);
   const [query, setQuery] = useState('');
-  const [transactionCategory, setTransactionCategory] = useState('all');
   const [selectedTransactions, setSelectedTransactions] = useState<
     Record<string, number>
   >({});
@@ -581,10 +580,17 @@ export default function App() {
     (total, t) => total + (selectedTransactions[t.id] ?? 0),
     0,
   );
-  const toggleFilteredTransactions = () => {
+  const selectedTransactionTotal = Object.values(selectedTransactions).reduce(
+    (sum, amount) => sum + amount,
+    0,
+  );
+  const allVisibleTransactionsSelected =
+    filteredTransactions.length > 0 &&
+    filteredTransactions.every((t) => t.id in selectedTransactions);
+  const toggleVisibleTransactions = () => {
     setSelectedTransactions((selected) => {
       const next = { ...selected };
-      if (allFilteredTransactionsSelected) {
+      if (allVisibleTransactionsSelected) {
         filteredTransactions.forEach((t) => delete next[t.id]);
       } else {
         filteredTransactions.forEach((t) => {
@@ -1340,30 +1346,59 @@ export default function App() {
                                 : (actualData?.actual.status ?? 'unavailable')}
                             </p>
                           </div>
-                          <div className="button-group">
-                            <button
-                              className="secondary"
-                              aria-label="Refresh spending data"
-                              disabled={loading || actualLoading}
-                              onClick={refresh}
-                            >
-                              <RotateCcw
-                                size={16}
-                                className={actualLoading ? 'spin' : ''}
+                          <div className="transactions-heading-actions">
+                            <label className="checkbox">
+                              <input
+                                type="checkbox"
+                                checked={currentActual}
+                                onChange={(e) =>
+                                  setCurrentActual(e.target.checked)
+                                }
                               />
-                              {actualLoading ? 'Refreshing…' : 'Refresh'}
-                            </button>
-                            <button onClick={() => openTransaction()}>
-                              <Plus size={16} />
-                              Add transaction
-                            </button>
+                              Current month
+                            </label>
+                            <label className="checkbox">
+                              <input
+                                type="checkbox"
+                                checked={
+                                  actualData?.actual.marked_complete ?? false
+                                }
+                                disabled={actualBusy || !actualData}
+                                onChange={(e) =>
+                                  void act(() =>
+                                    api('/months/' + actualMonth, 'PUT', {
+                                      complete: e.target.checked,
+                                    }),
+                                  )
+                                }
+                              />
+                              Actuals complete for this month
+                            </label>
+                            <div className="button-group">
+                              <button
+                                className="secondary"
+                                aria-label="Refresh spending data"
+                                disabled={loading || actualLoading}
+                                onClick={refresh}
+                              >
+                                <RotateCcw
+                                  size={16}
+                                  className={actualLoading ? 'spin' : ''}
+                                />
+                                {actualLoading ? 'Refreshing…' : 'Refresh'}
+                              </button>
+                              <button onClick={() => openTransaction()}>
+                                <Plus size={16} />
+                                Add transaction
+                              </button>
+                            </div>
                           </div>
                         </div>
                         {transactionPage.error && (
                           <p role="alert">{transactionPage.error}</p>
                         )}
                         <div
-                          className="button-group"
+                          className="transaction-pagination"
                           aria-label="Transaction pages"
                         >
                           <button
@@ -1392,43 +1427,6 @@ export default function App() {
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                           />
-                          <label className="checkbox">
-                            <input
-                              type="checkbox"
-                              checked={currentActual}
-                              onChange={(e) =>
-                                setCurrentActual(e.target.checked)
-                              }
-                            />
-                            Current month
-                          </label>
-                          <label className="checkbox">
-                            <input
-                              type="checkbox"
-                              checked={currentActual}
-                              onChange={(e) =>
-                                setCurrentActual(e.target.checked)
-                              }
-                            />
-                            Current month
-                          </label>
-                          <label className="checkbox">
-                            <input
-                              type="checkbox"
-                              checked={
-                                actualData?.actual.marked_complete ?? false
-                              }
-                              disabled={actualBusy || !actualData}
-                              onChange={(e) =>
-                                void act(() =>
-                                  api('/months/' + actualMonth, 'PUT', {
-                                    complete: e.target.checked,
-                                  }),
-                                )
-                              }
-                            />
-                            Actuals complete for this month
-                          </label>
                         </div>
                         {!accounts.length && (
                           <div className="notice">
@@ -1454,10 +1452,16 @@ export default function App() {
                                   <th>
                                     <input
                                       type="checkbox"
+<<<<<<< HEAD
                                       className="transaction-select-checkbox"
                                       aria-label="Select all filtered transactions"
                                       checked={allFilteredTransactionsSelected}
                                       onChange={toggleFilteredTransactions}
+=======
+                                      aria-label="Select all visible transactions"
+                                      checked={allVisibleTransactionsSelected}
+                                      onChange={toggleVisibleTransactions}
+>>>>>>> main
                                     />
                                   </th>
                                   <th>Date</th>
@@ -1498,7 +1502,7 @@ export default function App() {
                                   <th>
                                     <span>Amount</span>
                                     <span className="selected-amount">
-                                      Selected: {fmt(filteredSelectedTotal)}
+                                      Selected: {fmt(selectedTransactionTotal)}
                                     </span>
                                   </th>
                                   <th>
@@ -1512,7 +1516,6 @@ export default function App() {
                                     <td>
                                       <input
                                         type="checkbox"
-                                        className="transaction-select-checkbox"
                                         aria-label={`Select ${t.description}`}
                                         checked={t.id in selectedTransactions}
                                         onChange={(e) =>

@@ -832,25 +832,21 @@ td small {
   max-width: 290px;
   font-size: 12px;
 }
-.transaction-category-filter {
+.transactions-heading-actions {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px 18px;
 }
-.transaction-category-filter select {
-  min-width: 135px;
-  padding: 5px 7px;
-  border: 1px solid #e1e8d9;
-  border-radius: 5px;
-  background: white;
-  color: #536d45;
-  font: inherit;
+.transactions-heading-actions .checkbox {
+  white-space: nowrap;
 }
-.transaction-select-checkbox {
-  width: 14px !important;
-  height: 14px;
-  accent-color: #578344;
-  margin: 0;
+.transaction-pagination {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 25px 14px;
 }
 .selected-amount {
   display: block;
@@ -1324,6 +1320,13 @@ form > .muted {
   .transaction-toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .transactions-heading-actions {
+    justify-content: flex-start;
+  }
+  .transaction-pagination {
+    padding-right: 20px;
+    padding-left: 20px;
   }
   .purchase-grid {
     grid-template-columns: 1fr;

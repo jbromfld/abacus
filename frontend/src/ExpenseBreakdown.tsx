@@ -158,6 +158,7 @@ export default function ExpenseBreakdown({
     !!data && data.start === start && data.end === end && data.basis === basis;
   const fmt = (n: number) => money(n, currency);
   const selected = data?.categories.find((c) => c.category_id === focus);
+  const summary = focus === undefined ? data : selected;
   const entries =
     data?.entries.filter(
       (entry) => focus === undefined || entry.category_id === focus,
@@ -383,21 +384,21 @@ export default function ExpenseBreakdown({
               <span>
                 {basis === 'actual' ? 'Purchases & fees' : 'Planned expenses'}
               </span>
-              <strong>{fmt(data.charges)}</strong>
+              <strong>{fmt(summary?.charges ?? 0)}</strong>
             </div>
             <div>
               <span>Refunds</span>
-              <strong className="green">{fmt(data.refunds)}</strong>
+              <strong className="green">{fmt(summary?.refunds ?? 0)}</strong>
             </div>
             <div>
               <span>Net expenses</span>
-              <strong>{fmt(data.net)}</strong>
+              <strong>{fmt(summary?.net ?? 0)}</strong>
             </div>
             <div>
               <span>
                 {basis === 'actual' ? 'Transactions' : 'Planned entries'}
               </span>
-              <strong>{data.entry_count}</strong>
+              <strong>{summary?.entry_count ?? 0}</strong>
             </div>
           </div>
           {basis === 'actual' &&

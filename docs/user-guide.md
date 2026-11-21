@@ -124,7 +124,11 @@ own effective months. Annual adjustments remain yearly totals. A one-month overr
 for an annual bill paid in one month must use its due month.
 
 **Amount history** shows defaults and overrides. Changes can be removed except the
-initial default. Edit a schedule to rename it, change its category, adjust its first
+initial default. The recurring account also shows the amount effective for the
+selected forecast month; older defaults remain visible as history. A Planning
+record follows amount changes only when it is linked to that annual bill. To link
+an existing plan, edit it in Planning and choose the bill under **Use an annual
+expense**. Independent plans keep their own amounts. Edit a schedule to rename it, change its category, adjust its first
 or final month, or configure dates/ACH. Moving the first month retains changes on
 their calendar dates and establishes a starting default where needed. Structural
 edits, including the distribution flag, can recalculate historical forecasts; use

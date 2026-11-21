@@ -97,6 +97,19 @@ function Empty({
   );
 }
 
+function effectiveRecurringChange(r: Recurring, atMonth: string) {
+  if (atMonth < r.start_month || (r.end_month && atMonth > r.end_month)) {
+    return undefined;
+  }
+  const override = r.changes.find(
+    (change) => change.override && change.month === atMonth,
+  );
+  if (override) return override;
+  return r.changes
+    .filter((change) => !change.override && change.month <= atMonth)
+    .sort((a, b) => b.month.localeCompare(a.month))[0];
+}
+
 export default function App() {
   const [view, setView] = useState('Overview');
   const budgetAlerts = useAlertDismissals();
@@ -1123,6 +1136,22 @@ export default function App() {
                                       ? ' → ' + r.end_month
                                       : ' onward'}
                                   </p>
+                                  {(() => {
+                                    const effective = effectiveRecurringChange(
+                                      r,
+                                      month,
+                                    );
+                                    return effective ? (
+                                      <small className="ach-label">
+                                        Effective amount for {monthLabel(month)}:{' '}
+                                        {fmt(effective.amount)}
+                                        {r.frequency === 'annual' ? ' / year' : ''}
+                                        {effective.override
+                                          ? ' · this month only'
+                                          : ` · default from ${effective.month}`}
+                                      </small>
+                                    ) : null;
+                                  })()}
                                   {r.kind === 'payable' &&
                                     !r.due_day &&
                                     !r.ach_enabled && (
@@ -1218,6 +1247,12 @@ export default function App() {
                                   {r.changes.length === 1 ? 'entry' : 'entries'}
                                 </summary>
                                 <div className="history">
+                                  <p className="ach-label">
+                                    Older defaults stay here as history. Linked
+                                    Planning records follow the effective amount
+                                    for their bill year; independent plans need to
+                                    be linked to this annual bill to follow it.
+                                  </p>
                                   {r.changes.map((c) => (
                                     <div key={c.id}>
                                       <span>
